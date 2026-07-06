@@ -6,6 +6,7 @@ import type { Participant } from '../types'
 import { formatClock } from '../utils'
 import Modal from './Modal'
 import ParticipantPicker from './ParticipantPicker'
+import TagPicker from './TagPicker'
 import './UploadModal.css'
 
 const ACCEPT = 'audio/*,.mp3,.m4a,.wav,.webm,.ogg'
@@ -59,7 +60,7 @@ export function UploadModal({ open, onClose }: UploadModalProps) {
   const [file, setFile] = useState<File | null>(null)
   const [duration, setDuration] = useState(0)
   const [title, setTitle] = useState('')
-  const [tag, setTag] = useState('')
+  const [tag, setTag] = useState<string | null>(null)
   const [participants, setParticipants] = useState<Participant[]>([])
   const [pickerOpen, setPickerOpen] = useState(false)
   const [dragOver, setDragOver] = useState(false)
@@ -76,7 +77,7 @@ export function UploadModal({ open, onClose }: UploadModalProps) {
     setFile(null)
     setDuration(0)
     setTitle('')
-    setTag('')
+    setTag(null)
     setParticipants([])
     setPickerOpen(false)
     setDragOver(false)
@@ -146,11 +147,10 @@ export function UploadModal({ open, onClose }: UploadModalProps) {
     setUploading(true)
     setError('')
     const finalTitle = title.trim() || stripExtension(file.name) || FALLBACK_TITLE
-    const trimmedTag = tag.trim()
     try {
       const meeting = await api.createMeeting({
         title: finalTitle,
-        tag: trimmedTag || undefined,
+        tag: tag ?? undefined,
         participant_ids: participants.map((p) => p.id),
       })
       try {
@@ -235,17 +235,10 @@ export function UploadModal({ open, onClose }: UploadModalProps) {
       </div>
 
       <div className="upload-field">
-        <label className="field-label" htmlFor="upload-tag">
-          태그 (선택)
-        </label>
-        <input
-          id="upload-tag"
-          className="input"
-          placeholder="예: 주간회의"
-          value={tag}
-          onChange={(e) => setTag(e.target.value)}
-          disabled={uploading}
-        />
+        <span className="field-label">태그 (선택)</span>
+        <div style={uploading ? { pointerEvents: 'none', opacity: 0.55 } : undefined}>
+          <TagPicker value={tag} onChange={setTag} />
+        </div>
       </div>
 
       <div className="upload-field">

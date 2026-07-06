@@ -3,7 +3,9 @@ import type {
   Meeting,
   MeetingDetail,
   MeetingStatus,
+  OrgOption,
   Participant,
+  Tag,
   User,
 } from './types'
 
@@ -90,7 +92,12 @@ export const api = {
     return request<Participant[]>('/api/participants')
   },
 
-  createParticipant(data: { name: string; role?: string; color?: string }): Promise<Participant> {
+  createParticipant(data: {
+    name: string
+    role?: string
+    department?: string
+    color?: string
+  }): Promise<Participant> {
     return request<Participant>('/api/participants', {
       method: 'POST',
       body: JSON.stringify(data),
@@ -99,7 +106,7 @@ export const api = {
 
   updateParticipant(
     id: number,
-    data: { name?: string; role?: string; color?: string },
+    data: { name?: string; role?: string; department?: string; color?: string },
   ): Promise<Participant> {
     return request<Participant>(`/api/participants/${id}`, {
       method: 'PATCH',
@@ -120,9 +127,12 @@ export const api = {
     return request<Meeting>('/api/meetings', { method: 'POST', body: JSON.stringify(data) })
   },
 
-  listMeetings(q?: string): Promise<Meeting[]> {
-    const qs = q ? `?q=${encodeURIComponent(q)}` : ''
-    return request<Meeting[]>(`/api/meetings${qs}`)
+  listMeetings(q?: string, tag?: string): Promise<Meeting[]> {
+    const params = new URLSearchParams()
+    if (q) params.set('q', q)
+    if (tag) params.set('tag', tag)
+    const qs = params.toString()
+    return request<Meeting[]>(`/api/meetings${qs ? `?${qs}` : ''}`)
   },
 
   getMeeting(id: number): Promise<MeetingDetail> {
@@ -163,6 +173,37 @@ export const api = {
   audioUrl(meetingId: number): string {
     const token = getToken()
     return `/api/meetings/${meetingId}/audio${token ? `?token=${token}` : ''}`
+  },
+
+  // ---- tags (프로젝트/과제 태그 사전) ----
+  listTags(): Promise<Tag[]> {
+    return request<Tag[]>('/api/tags')
+  },
+
+  createTag(data: { name: string; color?: string }): Promise<Tag> {
+    return request<Tag>('/api/tags', { method: 'POST', body: JSON.stringify(data) })
+  },
+
+  updateTag(id: number, data: { name?: string; color?: string }): Promise<Tag> {
+    return request<Tag>(`/api/tags/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
+  },
+
+  deleteTag(id: number): Promise<{ ok: boolean }> {
+    return request<{ ok: boolean }>(`/api/tags/${id}`, { method: 'DELETE' })
+  },
+
+  // ---- org options (소속/부서 · 직책 사전) ----
+  listOrgOptions(kind?: 'department' | 'role'): Promise<OrgOption[]> {
+    const qs = kind ? `?kind=${kind}` : ''
+    return request<OrgOption[]>(`/api/org-options${qs}`)
+  },
+
+  createOrgOption(data: { kind: 'department' | 'role'; name: string }): Promise<OrgOption> {
+    return request<OrgOption>('/api/org-options', { method: 'POST', body: JSON.stringify(data) })
+  },
+
+  deleteOrgOption(id: number): Promise<{ ok: boolean }> {
+    return request<{ ok: boolean }>(`/api/org-options/${id}`, { method: 'DELETE' })
   },
 
   // ---- settings ----

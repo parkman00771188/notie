@@ -1,0 +1,188 @@
+/* ==========================================================================
+   TagPicker — 태그 선택 팝오버 (components/TagPicker.tsx)
+   색상은 global.css의 CSS 변수만 사용한다. (태그 고유 색은 인라인 스타일)
+   ========================================================================== */
+
+.tagpicker {
+  position: relative;
+  display: inline-flex;
+}
+
+/* ---------- 트리거 (현재 태그 칩 또는 "+ 태그") ---------- */
+.tagpicker-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px dashed var(--border-strong);
+  background: transparent;
+  border-radius: var(--radius-full);
+  padding: 3px 12px;
+  font-size: 12.5px;
+  font-weight: 600;
+  font-family: inherit;
+  color: var(--text-3);
+  cursor: pointer;
+  white-space: nowrap;
+  max-width: 220px;
+  transition:
+    background 0.15s,
+    color 0.15s,
+    border-color 0.15s;
+}
+
+.tagpicker-trigger-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tagpicker-trigger:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+/* 태그가 있으면 실선 칩 (색은 인라인 스타일로 태그 색 반영) */
+.tagpicker-trigger.has-tag {
+  border-style: solid;
+}
+
+.tagpicker-compact .tagpicker-trigger {
+  padding: 2px 10px;
+  font-size: 12px;
+}
+
+/* ---------- 팝오버 ---------- */
+.tagpicker-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 220px;
+  max-width: 300px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-pop);
+  padding: 6px;
+  z-index: 90;
+  animation: tagpicker-drop 0.14s ease-out;
+}
+
+@keyframes tagpicker-drop {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.tagpicker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.tagpicker-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  font-size: 13.5px;
+  font-weight: 500;
+  font-family: inherit;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.tagpicker-item:hover {
+  background: var(--gray-soft);
+}
+
+.tagpicker-item.selected {
+  background: var(--primary-soft);
+  font-weight: 600;
+}
+
+.tagpicker-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* "태그 없음"용 빈 점 */
+.tagpicker-dot-none {
+  background: transparent;
+  border: 1.5px dashed var(--border-strong);
+}
+
+.tagpicker-item-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tagpicker-check {
+  flex-shrink: 0;
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.tagpicker-empty {
+  margin: 0;
+  padding: 8px 10px;
+  font-size: 13px;
+  color: var(--text-3);
+}
+
+.tagpicker-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 0;
+}
+
+/* ---------- 새 태그 만들기 ---------- */
+.tagpicker-new {
+  border-top: 1px solid var(--border);
+  margin-top: 6px;
+  padding-top: 8px;
+}
+
+.tagpicker-new-row {
+  display: flex;
+  gap: 6px;
+}
+
+.tagpicker-new-row .tagpicker-new-input {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 10px;
+  font-size: 13px;
+}
+
+.tagpicker-new-btn {
+  flex-shrink: 0;
+  padding: 7px 12px;
+  font-size: 13px;
+}
+
+.tagpicker-error {
+  margin: 0 0 6px;
+  padding: 0 2px;
+  font-size: 12.5px;
+  color: var(--red);
+}

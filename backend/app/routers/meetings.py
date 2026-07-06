@@ -90,7 +90,7 @@ def serialize_meeting(conn: sqlite3.Connection, row: sqlite3.Row) -> dict:
     """meetings row → Meeting 응답 dict (participants 조인 포함)."""
     participants = conn.execute(
         """
-        SELECT p.id, p.name, p.role, p.color
+        SELECT p.id, p.name, p.role, p.department, p.color
         FROM meeting_participants mp
         JOIN participants p ON p.id = mp.participant_id
         WHERE mp.meeting_id = ?
@@ -145,18 +145,24 @@ def create_meeting(payload: MeetingCreate, user: dict = Depends(get_current_user
 
 
 @router.get("")
-def list_meetings(q: Optional[str] = None, user: dict = Depends(get_current_user)) -> list:
+def list_meetings(
+    q: Optional[str] = None,
+    tag: Optional[str] = None,
+    user: dict = Depends(get_current_user),
+) -> list:
     with closing(db.get_conn()) as conn:
+        where = ["user_id = ?"]
+        values: list = [user["id"]]
         if q:
-            rows = conn.execute(
-                "SELECT * FROM meetings WHERE user_id = ? AND title LIKE ? ORDER BY created_at DESC, id DESC",
-                (user["id"], f"%{q}%"),
-            ).fetchall()
-        else:
-            rows = conn.execute(
-                "SELECT * FROM meetings WHERE user_id = ? ORDER BY created_at DESC, id DESC",
-                (user["id"],),
-            ).fetchall()
+            where.append("title LIKE ?")
+            values.append(f"%{q}%")
+        if tag:
+            where.append("tag = ?")
+            values.append(tag)
+        rows = conn.execute(
+            f"SELECT * FROM meetings WHERE {' AND '.join(where)} ORDER BY created_at DESC, id DESC",
+            values,
+        ).fetchall()
         return [serialize_meeting(conn, row) for row in rows]
 
 

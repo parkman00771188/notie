@@ -30,12 +30,14 @@ COLOR_PALETTE = [
 class ParticipantCreate(BaseModel):
     name: str = Field(min_length=1)
     role: str | None = None
+    department: str | None = None
     color: str | None = None
 
 
 class ParticipantUpdate(BaseModel):
     name: str | None = None
     role: str | None = None
+    department: str | None = None
     color: str | None = None
 
 
@@ -44,6 +46,7 @@ def _to_participant(row: sqlite3.Row) -> dict:
         "id": row["id"],
         "name": row["name"],
         "role": row["role"],
+        "department": row["department"],
         "color": row["color"],
     }
 
@@ -53,7 +56,7 @@ def list_participants(user: dict = Depends(get_current_user)) -> list[dict]:
     conn = db.get_conn()
     try:
         rows = conn.execute(
-            "SELECT id, name, role, color FROM participants WHERE user_id = ? ORDER BY id",
+            "SELECT id, name, role, department, color FROM participants WHERE user_id = ? ORDER BY id",
             (user["id"],),
         ).fetchall()
     finally:
@@ -69,6 +72,9 @@ def create_participant(
     if not name:
         raise HTTPException(status_code=400, detail="참석자 이름을 입력해주세요")
     role = body.role.strip() if body.role and body.role.strip() else None
+    department = (
+        body.department.strip() if body.department and body.department.strip() else None
+    )
     color = body.color.strip() if body.color and body.color.strip() else None
 
     conn = db.get_conn()
@@ -81,14 +87,20 @@ def create_participant(
                 ).fetchone()[0]
                 color = COLOR_PALETTE[count % len(COLOR_PALETTE)]
             cur = conn.execute(
-                "INSERT INTO participants (user_id, name, role, color) VALUES (?, ?, ?, ?)",
-                (user["id"], name, role, color),
+                "INSERT INTO participants (user_id, name, role, department, color) VALUES (?, ?, ?, ?, ?)",
+                (user["id"], name, role, department, color),
             )
             participant_id = cur.lastrowid
     finally:
         conn.close()
 
-    return {"id": participant_id, "name": name, "role": role, "color": color}
+    return {
+        "id": participant_id,
+        "name": name,
+        "role": role,
+        "department": department,
+        "color": color,
+    }
 
 
 @router.patch("/{participant_id}")
@@ -109,7 +121,7 @@ def update_participant(
 
         fields: list[str] = []
         values: list = []
-        for key in ("name", "role", "color"):
+        for key in ("name", "role", "department", "color"):
             if key not in updates:
                 continue
             value = updates[key]
@@ -120,7 +132,7 @@ def update_participant(
                     raise HTTPException(
                         status_code=400, detail="참석자 이름을 입력해주세요"
                     )
-            elif key == "role":
+            elif key in ("role", "department"):
                 value = value or None  # 빈 문자열은 NULL로 저장
             elif key == "color":
                 if not value:
@@ -136,7 +148,7 @@ def update_participant(
                 )
 
         row = conn.execute(
-            "SELECT id, name, role, color FROM participants WHERE id = ?",
+            "SELECT id, name, role, department, color FROM participants WHERE id = ?",
             (participant_id,),
         ).fetchone()
     finally:

@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import type { FormEvent, MouseEvent } from 'react'
 import { api } from '../api'
-import type { Participant } from '../types'
+import type { OrgOption, Participant } from '../types'
 import Modal from './Modal'
 import './components.css'
+import './ParticipantPicker.css'
 
 export interface ParticipantPickerProps {
   open: boolean
@@ -14,17 +15,23 @@ export interface ParticipantPickerProps {
 
 export function ParticipantPicker({ open, onClose, selected, onChange }: ParticipantPickerProps) {
   const [all, setAll] = useState<Participant[]>([])
+  const [orgOptions, setOrgOptions] = useState<OrgOption[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [search, setSearch] = useState('')
   const [name, setName] = useState('')
+  const [department, setDepartment] = useState('')
   const [role, setRole] = useState('')
   const [adding, setAdding] = useState(false)
+  const deptListId = useId()
+  const roleListId = useId()
 
   useEffect(() => {
     if (!open) return
     let cancelled = false
     setLoading(true)
     setError('')
+    setSearch('')
     api
       .listParticipants()
       .then((list) => {
@@ -37,6 +44,14 @@ export function ParticipantPicker({ open, onClose, selected, onChange }: Partici
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
+      })
+    api
+      .listOrgOptions()
+      .then((opts) => {
+        if (!cancelled) setOrgOptions(opts)
+      })
+      .catch(() => {
+        /* 목록을 못 불러와도 자유 입력은 계속 가능하므로 조용히 무시 */
       })
     return () => {
       cancelled = true
@@ -53,6 +68,30 @@ export function ParticipantPicker({ open, onClose, selected, onChange }: Partici
     }
   }
 
+  const query = search.trim().toLowerCase()
+  const filtered = query
+    ? all.filter((p) =>
+        [p.name, p.department ?? '', p.role ?? ''].some((v) =>
+          v.toLowerCase().includes(query),
+        ),
+      )
+    : all
+
+  const departments = orgOptions.filter((o) => o.kind === 'department')
+  const roles = orgOptions.filter((o) => o.kind === 'role')
+
+  /** 자유 입력한 소속/직책을 org-options 사전에 자동 등록 (중복 400은 조용히 무시) */
+  const registerOrgOption = async (kind: 'department' | 'role', value: string) => {
+    if (!value) return
+    if (orgOptions.some((o) => o.kind === kind && o.name === value)) return
+    try {
+      const created = await api.createOrgOption({ kind, name: value })
+      setOrgOptions((prev) => [...prev, created])
+    } catch {
+      /* 이미 등록돼 있어요(400) 등은 조용히 무시 */
+    }
+  }
+
   const handleAdd = async (e: FormEvent) => {
     e.preventDefault()
     const trimmedName = name.trim()
@@ -60,14 +99,23 @@ export function ParticipantPicker({ open, onClose, selected, onChange }: Partici
     setAdding(true)
     setError('')
     try {
+      const trimmedDept = department.trim()
       const trimmedRole = role.trim()
-      const created = await api.createParticipant(
-        trimmedRole ? { name: trimmedName, role: trimmedRole } : { name: trimmedName },
-      )
+      const created = await api.createParticipant({
+        name: trimmedName,
+        ...(trimmedDept ? { department: trimmedDept } : {}),
+        ...(trimmedRole ? { role: trimmedRole } : {}),
+      })
       setAll((prev) => [...prev, created])
       onChange([...selected, created])
+      await Promise.all([
+        registerOrgOption('department', trimmedDept),
+        registerOrgOption('role', trimmedRole),
+      ])
       setName('')
+      setDepartment('')
       setRole('')
+      setSearch('')
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : '참석자를 추가하지 못했어요')
     } finally {
@@ -94,22 +142,36 @@ export function ParticipantPicker({ open, onClose, selected, onChange }: Partici
     <Modal open={open} title="참석자 선택" width={520} onClose={onClose}>
       {error && <div className="pp-error">{error}</div>}
 
+      <div className="pp-search">
+        <input
+          className="input"
+          type="search"
+          placeholder="이름, 소속, 직책으로 검색"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+      </div>
+
       {loading ? (
         <div className="pp-loading">
           <span className="spinner" />
         </div>
       ) : all.length === 0 ? (
         <p className="pp-empty">등록된 참석자가 없어요. 아래에서 새 참석자를 추가해보세요.</p>
+      ) : filtered.length === 0 ? (
+        <p className="pp-no-result">‘{search.trim()}’ 검색 결과가 없어요.</p>
       ) : (
         <div className="pp-chips">
-          {all.map((p) => {
+          {filtered.map((p) => {
             const sel = isSelected(p.id)
+            const tooltip = [p.department, p.role].filter(Boolean).join(' · ')
             return (
               <button
                 key={p.id}
                 type="button"
                 className="pp-chip"
                 aria-pressed={sel}
+                title={tooltip || undefined}
                 style={{
                   borderColor: p.color,
                   color: p.color,
@@ -139,22 +201,44 @@ export function ParticipantPicker({ open, onClose, selected, onChange }: Partici
 
       <form className="pp-add" onSubmit={handleAdd}>
         <div className="pp-add-title">새 참석자 추가</div>
-        <div className="pp-add-row">
-          <input
-            className="input"
-            placeholder="이름"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-          <input
-            className="input"
-            placeholder="직함/역할 (선택)"
-            value={role}
-            onChange={(e) => setRole(e.target.value)}
-          />
-          <button type="submit" className="btn btn-primary" disabled={!name.trim() || adding}>
-            {adding ? '추가 중...' : '추가'}
-          </button>
+        <div className="pp-add-fields">
+          <div className="pp-add-row">
+            <input
+              className="input"
+              placeholder="이름"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+          </div>
+          <div className="pp-add-row">
+            <input
+              className="input"
+              placeholder="소속 (선택)"
+              list={deptListId}
+              value={department}
+              onChange={(e) => setDepartment(e.target.value)}
+            />
+            <datalist id={deptListId}>
+              {departments.map((o) => (
+                <option key={o.id} value={o.name} />
+              ))}
+            </datalist>
+            <input
+              className="input"
+              placeholder="직책 (선택)"
+              list={roleListId}
+              value={role}
+              onChange={(e) => setRole(e.target.value)}
+            />
+            <datalist id={roleListId}>
+              {roles.map((o) => (
+                <option key={o.id} value={o.name} />
+              ))}
+            </datalist>
+            <button type="submit" className="btn btn-primary" disabled={!name.trim() || adding}>
+              {adding ? '추가 중...' : '추가'}
+            </button>
+          </div>
         </div>
       </form>
 

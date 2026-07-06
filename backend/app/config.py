@@ -10,6 +10,9 @@ DB_PATH = DATA_DIR / "gimnote.db"
 # STT 설정 — tiny/base/small/medium/large-v3 (클수록 정확, 느림. 한국어는 small 이상 권장)
 WHISPER_MODEL = os.environ.get("GIMNOTE_WHISPER_MODEL", "small")
 LANGUAGE = os.environ.get("GIMNOTE_LANGUAGE", "ko")
+# auto: CUDA GPU가 있으면 GPU(float16), 없거나 로드 실패 시 CPU(int8) 폴백. cpu/cuda로 강제 가능
+WHISPER_DEVICE = os.environ.get("GIMNOTE_WHISPER_DEVICE", "auto").lower()
+WHISPER_COMPUTE = os.environ.get("GIMNOTE_WHISPER_COMPUTE", "")  # 빈 값이면 디바이스별 기본값
 
 # 요약 엔진 우선순위: Gemini(키 등록 시) → Ollama → 내장 추출 요약
 # Gemini API 키는 앱 설정(UI)에서 등록해 DB(app_settings)에 저장하거나 환경변수로 지정

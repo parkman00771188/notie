@@ -5,6 +5,7 @@ import { api } from '../api'
 import { AvatarStack } from '../components/Avatar'
 import { ParticipantPicker } from '../components/ParticipantPicker'
 import { RecentMeetingsPanel } from '../components/RecentMeetingsPanel'
+import { TagPicker } from '../components/TagPicker'
 import { UploadModal } from '../components/UploadModal'
 import { Waveform } from '../components/Waveform'
 import { useRecorder } from '../hooks/useRecorder'
@@ -27,8 +28,6 @@ export default function RecordPage() {
   const [editingTitle, setEditingTitle] = useState(false)
   const [titleDraft, setTitleDraft] = useState(DEFAULT_TITLE)
   const [tag, setTag] = useState<string | null>(null)
-  const [editingTag, setEditingTag] = useState(false)
-  const [tagDraft, setTagDraft] = useState('')
   const [participants, setParticipants] = useState<Participant[]>([])
   const [pickerOpen, setPickerOpen] = useState(false)
   const [uploadOpen, setUploadOpen] = useState(false)
@@ -103,27 +102,11 @@ export default function RecordPage() {
     }
   }
 
-  const beginEditTag = () => {
-    setTagDraft(tag ?? '')
-    setEditingTag(true)
-  }
-
-  const commitTag = () => {
-    if (!editingTag) return
-    setEditingTag(false)
-    const next = tagDraft.trim()
-    if ((next || null) === tag) return
-    setTag(next || null)
-    syncMeeting({ tag: next })
-  }
-
-  const onTagKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
-      e.preventDefault()
-      commitTag()
-    } else if (e.key === 'Escape') {
-      setEditingTag(false)
-    }
+  const handleTagChange = (next: string | null) => {
+    if (next === tag) return
+    setTag(next)
+    // 태그 제거(null)는 API 계약대로 빈 문자열로 전송
+    syncMeeting({ tag: next ?? '' })
   }
 
   const handleParticipantsChange = (list: Participant[]) => {
@@ -325,26 +308,7 @@ export default function RecordPage() {
             <span className="record-meta-item">
               ⏱️ 회의 시간 <b>{formatClock(recorder.elapsedSec)}</b>
             </span>
-            {editingTag ? (
-              <input
-                className="input record-tag-input"
-                value={tagDraft}
-                autoFocus
-                placeholder="태그"
-                onChange={(e) => setTagDraft(e.target.value)}
-                onBlur={commitTag}
-                onKeyDown={onTagKeyDown}
-                aria-label="태그"
-              />
-            ) : (
-              <button
-                type="button"
-                className={`record-tag-chip${tag ? ' has-tag' : ''}`}
-                onClick={beginEditTag}
-              >
-                {tag ? `# ${tag}` : '+ 태그 추가'}
-              </button>
-            )}
+            <TagPicker value={tag} onChange={handleTagChange} />
           </div>
 
           <div className="record-participants">

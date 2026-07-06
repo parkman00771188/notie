@@ -9,7 +9,20 @@ export interface Participant {
   id: number
   name: string
   role: string | null
+  department: string | null
   color: string
+}
+
+export interface Tag {
+  id: number
+  name: string
+  color: string
+}
+
+export interface OrgOption {
+  id: number
+  kind: 'department' | 'role'
+  name: string
 }
 
 export type MeetingStatus =

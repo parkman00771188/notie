@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
 import { Avatar } from './Avatar'
-import { SettingsModal } from './SettingsModal'
 import './components.css'
 
 function HomeIcon() {
@@ -62,17 +61,25 @@ function MicIcon() {
   )
 }
 
+function GearIcon() {
+  return (
+    <span aria-hidden="true" style={{ fontSize: 15, lineHeight: 1 }}>
+      ⚙️
+    </span>
+  )
+}
+
 const NAV_ITEMS = [
   { to: '/', label: '홈', icon: <HomeIcon />, end: true },
   { to: '/meetings', label: '회의 목록', icon: <ListIcon />, end: false },
   { to: '/record', label: '회의 기록', icon: <MicIcon />, end: false },
+  { to: '/settings', label: '설정', icon: <GearIcon />, end: false },
 ]
 
 export function Sidebar() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
   const [menuOpen, setMenuOpen] = useState(false)
-  const [settingsOpen, setSettingsOpen] = useState(false)
   const userAreaRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -136,7 +143,7 @@ export function Sidebar() {
               className="sidebar-user-menu-item"
               onClick={() => {
                 setMenuOpen(false)
-                setSettingsOpen(true)
+                navigate('/settings')
               }}
             >
               <span aria-hidden="true">⚙️</span>
@@ -180,8 +187,6 @@ export function Sidebar() {
           <span className={`sidebar-user-caret${menuOpen ? ' open' : ''}`}>▾</span>
         </button>
       </div>
-
-      <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </aside>
   )
 }

@@ -1,0 +1,5 @@
+# NVIDIA GPU(CUDA 12)에서 Whisper 가속용 — GPU가 있으면 설치:
+#   .venv\Scripts\python.exe -m pip install -r requirements-gpu.txt
+# 설치 후 서버를 재시작하면 자동으로 GPU를 감지해 사용합니다 (실패 시 CPU 폴백).
+nvidia-cublas-cu12
+nvidia-cudnn-cu12

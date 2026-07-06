@@ -2,17 +2,15 @@ import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { api } from '../api'
 import type { AppSettings } from '../api'
-import Modal from './Modal'
-import './SettingsModal.css'
+import './AiEngineSettings.css'
 
-export interface SettingsModalProps {
-  open: boolean
-  onClose: () => void
-}
-
-export function SettingsModal({ open, onClose }: SettingsModalProps) {
+/**
+ * AI 요약 엔진 설정 카드 섹션 (설정 페이지에서 사용).
+ * 현재 엔진 상태 배지 + Gemini API 키 등록/테스트/삭제.
+ */
+export function AiEngineSettings() {
   const [settings, setSettings] = useState<AppSettings | null>(null)
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [keyInput, setKeyInput] = useState('')
   const [showKey, setShowKey] = useState(false)
@@ -23,17 +21,9 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null)
   const savedTimerRef = useRef<number | null>(null)
 
-  // 모달이 열릴 때 설정을 불러오고 폼 상태 초기화
+  // 마운트 시 설정 로드
   useEffect(() => {
-    if (!open) return
     let cancelled = false
-    setSettings(null)
-    setLoading(true)
-    setError('')
-    setKeyInput('')
-    setShowKey(false)
-    setSaved(false)
-    setTestResult(null)
     api
       .getSettings()
       .then((s) => {
@@ -48,7 +38,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
     return () => {
       cancelled = true
     }
-  }, [open])
+  }, [])
 
   // "저장됨 ✓" 타이머 정리
   useEffect(() => {
@@ -129,7 +119,17 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
   }
 
   return (
-    <Modal open={open} title="설정" width={520} onClose={onClose}>
+    <section className="card settings-card ai-engine-settings">
+      <div className="settings-card-head">
+        <h2 className="settings-card-title">
+          <span aria-hidden="true">✨</span> AI 요약 엔진
+        </h2>
+        <p className="settings-card-desc">
+          회의 요약에 사용할 엔진을 관리합니다. Gemini API 키를 등록하면 더 정확한 AI 요약을 받을 수
+          있어요.
+        </p>
+      </div>
+
       {error && <div className="settings-error">{error}</div>}
 
       {loading ? (
@@ -137,9 +137,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
           <span className="spinner" />
         </div>
       ) : settings ? (
-        <section className="settings-section">
-          <h4 className="settings-section-title">AI 요약 엔진</h4>
-
+        <>
           <div className="settings-status-row">
             <span className="settings-status-label">현재 엔진</span>
             {renderEngineBadge(settings)}
@@ -213,10 +211,10 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
             </a>
             에서 무료로 발급받을 수 있어요.
           </p>
-        </section>
+        </>
       ) : null}
-    </Modal>
+    </section>
   )
 }
 
-export default SettingsModal
+export default AiEngineSettings

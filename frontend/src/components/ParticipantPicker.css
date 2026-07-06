@@ -1,0 +1,33 @@
+/* ==========================================================================
+   ParticipantPicker 업그레이드 스타일 (components/ParticipantPicker.tsx)
+   기본 pp-* 스타일은 components.css에 있고, 여기에는 확장분만 둔다.
+   색상은 global.css의 CSS 변수만 사용한다.
+   ========================================================================== */
+
+/* ---------- 상단 검색 인풋 ---------- */
+.pp-search {
+  margin-bottom: 12px;
+}
+
+.pp-search .input {
+  padding: 9px 12px;
+}
+
+/* 검색 결과 없음 안내 */
+.pp-no-result {
+  color: var(--text-3);
+  font-size: 13.5px;
+  padding: 10px 0 16px;
+}
+
+/* ---------- 새 참석자 추가 폼 (이름 / 소속·직책 콤보박스 2단) ---------- */
+.pp-add-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* datalist 콤보박스 인풋 — 브라우저 기본 화살표 영역 확보 */
+.pp-add-row .input[list] {
+  padding-right: 8px;
+}

@@ -7,6 +7,7 @@ import HomePage from './pages/HomePage'
 import MeetingDetailPage from './pages/MeetingDetailPage'
 import MeetingsPage from './pages/MeetingsPage'
 import RecordPage from './pages/RecordPage'
+import SettingsPage from './pages/SettingsPage'
 import type { User } from './types'
 
 interface AuthContextValue {
@@ -66,6 +67,7 @@ export default function App() {
               <Route path="/meetings" element={<MeetingsPage />} />
               <Route path="/meetings/:id" element={<MeetingDetailPage />} />
               <Route path="/record" element={<RecordPage />} />
+              <Route path="/settings" element={<SettingsPage />} />
             </Route>
           ) : (
             <Route path="*" element={<Navigate to="/auth" replace />} />

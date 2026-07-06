@@ -1,8 +1,35 @@
 /* ==========================================================================
-   SettingsModal — 설정 팝업 (AI 요약 엔진 / Gemini API 키)
-   색상은 global.css의 CSS 변수만 사용한다.
+   AiEngineSettings — AI 요약 엔진 설정 카드 섹션 (Gemini API 키 관리)
+   (구 SettingsModal.css에서 이전. 색상은 global.css의 CSS 변수만 사용한다.)
    ========================================================================== */
 
+/* 설정 카드 섹션 공통 — SettingsPage의 다른 섹션 카드에서도 재사용 */
+.settings-card {
+  padding: 24px;
+}
+
+.settings-card-head {
+  margin-bottom: 18px;
+}
+
+.settings-card-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: -0.3px;
+  color: var(--text);
+}
+
+.settings-card-desc {
+  margin-top: 5px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-3);
+}
+
+/* 에러 박스 */
 .settings-error {
   background: var(--red-soft);
   color: var(--red);
@@ -16,18 +43,6 @@
   display: flex;
   justify-content: center;
   padding: 32px 0;
-}
-
-.settings-section {
-  padding: 2px 0;
-}
-
-.settings-section-title {
-  font-size: 14.5px;
-  font-weight: 700;
-  color: var(--text);
-  margin-bottom: 12px;
-  letter-spacing: -0.2px;
 }
 
 /* 현재 엔진 상태 줄 */

@@ -73,6 +73,24 @@ CREATE TABLE IF NOT EXISTS summaries (
   created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
 );
 
+CREATE TABLE IF NOT EXISTS tags (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  color TEXT NOT NULL DEFAULT '#16a34a',
+  created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+  UNIQUE(user_id, name)
+);
+
+CREATE TABLE IF NOT EXISTS org_options (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL CHECK (kind IN ('department', 'role')),
+  name TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+  UNIQUE(user_id, kind, name)
+);
+
 CREATE TABLE IF NOT EXISTS app_settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL,
@@ -96,3 +114,11 @@ def get_conn() -> sqlite3.Connection:
 def init_db() -> None:
     with get_conn() as conn:
         conn.executescript(SCHEMA)
+        _migrate(conn)
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """기존 DB에 추가된 컬럼 반영 (CREATE IF NOT EXISTS로 못 잡는 변경)"""
+    cols = [row[1] for row in conn.execute("PRAGMA table_info(participants)")]
+    if "department" not in cols:
+        conn.execute("ALTER TABLE participants ADD COLUMN department TEXT")

@@ -5,6 +5,7 @@ import { api } from '../api'
 import { AvatarStack } from '../components/Avatar'
 import { ParticipantPicker } from '../components/ParticipantPicker'
 import { StatusBadge } from '../components/StatusBadge'
+import { TagPicker } from '../components/TagPicker'
 import type { Bookmark, MeetingDetail, MeetingStatus, Participant } from '../types'
 import { formatClock, formatKoreanDateTime } from '../utils'
 import './MeetingDetailPage.css'
@@ -124,6 +125,16 @@ export default function MeetingDetailPage() {
       alert(e instanceof Error ? e.message : '제목 저장에 실패했어요')
       api.getMeeting(meetingId).then(setMeeting).catch(() => {})
     }
+  }
+
+  // ----- 태그 변경 (TagPicker) -----
+  const handleTagChange = (tag: string | null) => {
+    if (!meeting || tag === meeting.tag) return
+    setMeeting((prev) => (prev ? { ...prev, tag } : prev))
+    // 태그 제거(null)는 API 계약대로 빈 문자열로 전송
+    api.updateMeeting(meeting.id, { tag: tag ?? '' }).catch(() => {
+      api.getMeeting(meetingId).then(setMeeting).catch(() => {})
+    })
   }
 
   // ----- 참석자 편집 -----
@@ -299,7 +310,7 @@ export default function MeetingDetailPage() {
               <span>{formatClock(meeting.duration_sec)}</span>
             </>
           )}
-          {meeting.tag && <span className="detail-tag">#{meeting.tag}</span>}
+          <TagPicker compact value={meeting.tag} onChange={handleTagChange} />
         </div>
 
         <div className="detail-people">

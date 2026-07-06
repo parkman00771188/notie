@@ -5,22 +5,47 @@ import { api } from '../api'
 import { AvatarStack } from '../components/Avatar'
 import { StatusBadge } from '../components/StatusBadge'
 import { UploadModal } from '../components/UploadModal'
-import type { Meeting } from '../types'
+import type { Meeting, Tag } from '../types'
 import { formatClock, formatKoreanDateTime } from '../utils'
 import './MeetingsPage.css'
+
+/** 태그 필터: 'all'(전체) | 'none'(태그 없음) | { tag: 태그명 } */
+type TagFilter = 'all' | 'none' | { tag: string }
+
+interface MeetingGroup {
+  key: string
+  name: string
+  color: string | null
+  items: Meeting[]
+}
 
 export default function MeetingsPage() {
   const navigate = useNavigate()
   const [q, setQ] = useState('')
   const [meetings, setMeetings] = useState<Meeting[] | null>(null)
   const [uploadOpen, setUploadOpen] = useState(false)
+  const [tags, setTags] = useState<Tag[]>([])
+  const [tagFilter, setTagFilter] = useState<TagFilter>('all')
+  const [view, setView] = useState<'list' | 'folder'>('list')
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
 
-  // 검색어 300ms 디바운스 후 목록 조회
+  // 태그 사전 로드 (필터 칩 + 폴더 색)
+  useEffect(() => {
+    api
+      .listTags()
+      .then(setTags)
+      .catch(() => {
+        /* 태그 사전 없이도 목록은 동작 */
+      })
+  }, [])
+
+  // 검색어/태그 필터 300ms 디바운스 후 목록 조회
   useEffect(() => {
     let alive = true
     const timer = window.setTimeout(() => {
+      const tagName = typeof tagFilter === 'object' ? tagFilter.tag : undefined
       api
-        .listMeetings(q.trim() || undefined)
+        .listMeetings(q.trim() || undefined, tagName)
         .then((list) => {
           if (alive) setMeetings(list)
         })
@@ -32,7 +57,7 @@ export default function MeetingsPage() {
       alive = false
       window.clearTimeout(timer)
     }
-  }, [q])
+  }, [q, tagFilter])
 
   const handleDelete = async (e: MouseEvent, m: Meeting) => {
     e.stopPropagation()
@@ -45,9 +70,76 @@ export default function MeetingsPage() {
     }
   }
 
+  const toggleGroup = (key: string) => {
+    setCollapsed((prev) => ({ ...prev, [key]: !prev[key] }))
+  }
+
   const loading = meetings === null
   const list = meetings ?? []
-  const searching = q.trim().length > 0
+  // '태그 없음'은 클라이언트에서 tag가 비어 있는 회의만 필터
+  const visible = tagFilter === 'none' ? list.filter((m) => !m.tag) : list
+  const filtered = q.trim().length > 0 || tagFilter !== 'all'
+
+  /** 폴더(그룹) 보기: 등록 태그(name ASC) → 미등록 태그 → 미분류 순 */
+  const buildGroups = (): MeetingGroup[] => {
+    const byTag = new Map<string, Meeting[]>()
+    for (const m of visible) {
+      const key = m.tag ?? ''
+      const arr = byTag.get(key)
+      if (arr) arr.push(m)
+      else byTag.set(key, [m])
+    }
+    const registered = tags.map((t) => t.name).filter((name) => byTag.has(name))
+    const unknown = [...byTag.keys()]
+      .filter((key) => key !== '' && !tags.some((t) => t.name === key))
+      .sort((a, b) => a.localeCompare(b, 'ko'))
+    const keys = [...registered, ...unknown]
+    if (byTag.has('')) keys.push('') // 태그 없는 회의는 '미분류'로 맨 마지막
+    return keys.map((key) => ({
+      key: key || '__untagged__',
+      name: key || '미분류',
+      color: tags.find((t) => t.name === key)?.color ?? null,
+      items: byTag.get(key) ?? [],
+    }))
+  }
+
+  const renderRow = (m: Meeting) => (
+    <div
+      key={m.id}
+      className="meeting-row"
+      role="button"
+      tabIndex={0}
+      onClick={() => navigate(`/meetings/${m.id}`)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') navigate(`/meetings/${m.id}`)
+      }}
+    >
+      <span className="row-title" title={m.title}>
+        {m.title}
+        {m.tag && <span className="row-tag">#{m.tag}</span>}
+      </span>
+      <span className="row-badge">
+        <StatusBadge status={m.status} />
+      </span>
+      <span className="row-date">{formatKoreanDateTime(m.started_at)}</span>
+      <span className="row-dur">{formatClock(m.duration_sec)}</span>
+      <span className="row-people">
+        {m.participants.length > 0 ? (
+          <AvatarStack participants={m.participants} max={3} />
+        ) : (
+          <span className="muted">-</span>
+        )}
+      </span>
+      <button
+        className="btn-icon row-delete"
+        aria-label="회의 삭제"
+        title="삭제"
+        onClick={(e) => handleDelete(e, m)}
+      >
+        🗑️
+      </button>
+    </div>
+  )
 
   return (
     <div className="page meetings-page">
@@ -67,17 +159,79 @@ export default function MeetingsPage() {
         </div>
       </div>
 
+      {/* 태그 필터 칩 행 + 보기 토글 */}
+      <div className="meetings-toolbar">
+        <div className="tag-filter-row" role="group" aria-label="태그 필터">
+          <button
+            type="button"
+            className={`tag-filter-chip${tagFilter === 'all' ? ' active' : ''}`}
+            onClick={() => setTagFilter('all')}
+          >
+            전체
+          </button>
+          {tags.map((t) => {
+            const active = typeof tagFilter === 'object' && tagFilter.tag === t.name
+            return (
+              <button
+                key={t.id}
+                type="button"
+                className={`tag-filter-chip${active ? ' active' : ''}`}
+                style={
+                  active
+                    ? {
+                        borderColor: t.color,
+                        color: t.color,
+                        background: `color-mix(in srgb, ${t.color} 12%, transparent)`,
+                      }
+                    : undefined
+                }
+                onClick={() => setTagFilter({ tag: t.name })}
+              >
+                <span className="tag-filter-dot" style={{ background: t.color }} />
+                {t.name}
+              </button>
+            )
+          })}
+          <button
+            type="button"
+            className={`tag-filter-chip${tagFilter === 'none' ? ' active' : ''}`}
+            onClick={() => setTagFilter('none')}
+          >
+            태그 없음
+          </button>
+        </div>
+
+        <div className="view-toggle" role="group" aria-label="보기 방식">
+          <button
+            type="button"
+            className={`view-toggle-btn${view === 'list' ? ' active' : ''}`}
+            aria-pressed={view === 'list'}
+            onClick={() => setView('list')}
+          >
+            ☰ 목록
+          </button>
+          <button
+            type="button"
+            className={`view-toggle-btn${view === 'folder' ? ' active' : ''}`}
+            aria-pressed={view === 'folder'}
+            onClick={() => setView('folder')}
+          >
+            📁 폴더
+          </button>
+        </div>
+      </div>
+
       {loading ? (
         <div className="meetings-loading">
           <span className="spinner" />
         </div>
-      ) : list.length === 0 ? (
+      ) : visible.length === 0 ? (
         <div className="card">
-          {searching ? (
+          {filtered ? (
             <div className="empty-state">
               <div className="emoji">🔍</div>
-              <p className="empty-title">검색 결과가 없어요</p>
-              <p>다른 검색어로 다시 시도해보세요.</p>
+              <p className="empty-title">조건에 맞는 회의가 없어요</p>
+              <p>다른 검색어나 태그로 다시 시도해보세요.</p>
             </div>
           ) : (
             <div className="empty-state">
@@ -90,45 +244,30 @@ export default function MeetingsPage() {
             </div>
           )}
         </div>
+      ) : view === 'list' ? (
+        <div className="card meeting-list">{visible.map(renderRow)}</div>
       ) : (
-        <div className="card meeting-list">
-          {list.map((m) => (
-            <div
-              key={m.id}
-              className="meeting-row"
-              role="button"
-              tabIndex={0}
-              onClick={() => navigate(`/meetings/${m.id}`)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') navigate(`/meetings/${m.id}`)
-              }}
-            >
-              <span className="row-title" title={m.title}>
-                {m.title}
-                {m.tag && <span className="row-tag">#{m.tag}</span>}
-              </span>
-              <span className="row-badge">
-                <StatusBadge status={m.status} />
-              </span>
-              <span className="row-date">{formatKoreanDateTime(m.started_at)}</span>
-              <span className="row-dur">{formatClock(m.duration_sec)}</span>
-              <span className="row-people">
-                {m.participants.length > 0 ? (
-                  <AvatarStack participants={m.participants} max={3} />
-                ) : (
-                  <span className="muted">-</span>
-                )}
-              </span>
-              <button
-                className="btn-icon row-delete"
-                aria-label="회의 삭제"
-                title="삭제"
-                onClick={(e) => handleDelete(e, m)}
-              >
-                🗑️
-              </button>
-            </div>
-          ))}
+        <div className="folder-groups">
+          {buildGroups().map((g) => {
+            const isCollapsed = !!collapsed[g.key]
+            return (
+              <div key={g.key} className="card folder-group">
+                <button
+                  type="button"
+                  className="folder-head"
+                  aria-expanded={!isCollapsed}
+                  onClick={() => toggleGroup(g.key)}
+                >
+                  <span className={`folder-caret${isCollapsed ? '' : ' open'}`}>▸</span>
+                  <span className="folder-icon">📁</span>
+                  {g.color && <span className="folder-dot" style={{ background: g.color }} />}
+                  <span className="folder-name">{g.name}</span>
+                  <span className="folder-count">{g.items.length}</span>
+                </button>
+                {!isCollapsed && <div className="folder-body">{g.items.map(renderRow)}</div>}
+              </div>
+            )
+          })}
         </div>
       )}
 

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
 import { Avatar } from './Avatar'
+import { SettingsModal } from './SettingsModal'
 import './components.css'
 
 function HomeIcon() {
@@ -71,6 +72,7 @@ export function Sidebar() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
   const [menuOpen, setMenuOpen] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const userAreaRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -131,6 +133,17 @@ export function Sidebar() {
           <div className="sidebar-user-menu">
             <button
               type="button"
+              className="sidebar-user-menu-item"
+              onClick={() => {
+                setMenuOpen(false)
+                setSettingsOpen(true)
+              }}
+            >
+              <span aria-hidden="true">⚙️</span>
+              설정
+            </button>
+            <button
+              type="button"
               className="sidebar-user-menu-item danger"
               onClick={handleLogout}
             >
@@ -167,6 +180,8 @@ export function Sidebar() {
           <span className={`sidebar-user-caret${menuOpen ? ' open' : ''}`}>▾</span>
         </button>
       </div>
+
+      <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </aside>
   )
 }

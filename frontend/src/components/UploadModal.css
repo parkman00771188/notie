@@ -1,0 +1,208 @@
+/* ==========================================================================
+   UploadModal — 오디오 파일 업로드 모달 (components/UploadModal.tsx)
+   색상은 global.css의 CSS 변수만 사용한다.
+   ========================================================================== */
+
+.upload-error {
+  background: var(--red-soft);
+  color: var(--red);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+
+.upload-file-input {
+  display: none;
+}
+
+/* ---------- 파일 선택 영역 (클릭 + 드래그&드롭) ---------- */
+.upload-dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 28px 16px;
+  border: 2px dashed var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg);
+  text-align: center;
+  cursor: pointer;
+  outline: none;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
+}
+
+.upload-dropzone:hover,
+.upload-dropzone:focus-visible {
+  border-color: var(--primary);
+}
+
+.upload-dropzone.drag-over {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.upload-dropzone-emoji {
+  font-size: 34px;
+  line-height: 1;
+  margin-bottom: 4px;
+}
+
+.upload-dropzone-text {
+  font-size: 14.5px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.upload-dropzone-hint {
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+
+/* 선택된 파일 정보 */
+.upload-file-name {
+  max-width: 100%;
+  font-size: 14.5px;
+  font-weight: 700;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.upload-file-meta {
+  font-size: 13px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.upload-file-change {
+  margin-top: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--primary);
+}
+
+.upload-dropzone:hover .upload-file-change {
+  text-decoration: underline;
+}
+
+/* ---------- 폼 필드 ---------- */
+.upload-field {
+  margin-top: 16px;
+}
+
+/* ---------- 참석자 칩 ---------- */
+.upload-participants {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.upload-p-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: var(--radius-full);
+  border: 1.5px solid;
+  background: var(--surface);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.upload-p-role {
+  font-size: 12px;
+  font-weight: 500;
+  opacity: 0.75;
+}
+
+.upload-p-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  margin-right: -4px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.7;
+  transition:
+    opacity 0.15s,
+    background 0.15s;
+}
+
+.upload-p-remove:hover:not(:disabled) {
+  opacity: 1;
+  background: rgba(16, 24, 40, 0.1);
+}
+
+.upload-p-add {
+  padding: 6px 12px;
+  font-size: 13px;
+  border-radius: var(--radius-full);
+}
+
+/* ---------- 푸터 ---------- */
+.upload-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 22px;
+}
+
+/* 파란 버튼 안에서 보이도록 스피너 색 조정 */
+.upload-btn-spinner {
+  width: 14px;
+  height: 14px;
+  border-width: 2px;
+  border-color: rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+}
+
+/* ==========================================================================
+   진입점 (모달을 여는 버튼 주변 레이아웃)
+   ========================================================================== */
+
+/* MeetingsPage 헤더: 검색 인풋 + 업로드 버튼 묶음 */
+.upload-entry-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+}
+
+/* RecordPage 녹음 시작 전 보조 진입점 텍스트 버튼 */
+.upload-entry-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  font-family: inherit;
+  color: var(--text-3);
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.upload-entry-link:hover:not(:disabled) {
+  color: var(--primary);
+  text-decoration: underline;
+}
+
+.upload-entry-link:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}

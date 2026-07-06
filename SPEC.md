@@ -186,6 +186,48 @@ api.ts의 함수 시그니처를 그대로 사용한다(수정 금지). utils.ts
 - 성공 시 `setUser(res.user)` (api가 토큰 저장) → `navigate('/')`. 에러 메시지는 카드 상단 빨간 박스.
 - 로고: 상단 좌측 `/logo.png` + Gimnote.
 
+## 설정 & Gemini 요약 엔진 (추가 기능)
+
+요약 엔진 우선순위: **Gemini(키 등록 시) → Ollama → 내장 추출 요약** (각 단계 실패 시 다음으로 폴백).
+Gemini API 키는 `app_settings` 테이블(key='gemini_api_key') 또는 환경변수 `GIMNOTE_GEMINI_API_KEY`(DB 우선).
+
+### settings API (`routers/settings.py`, prefix `/api/settings`, 인증 필요)
+- `GET ""` → `{gemini_api_key_set: bool, gemini_key_preview: "...abcd"|null, gemini_model, ollama_available: bool}`
+  (preview는 키 마지막 4자, ollama_available은 /api/tags 1.5초 체크)
+- `PUT ""` `{gemini_api_key?: str}` → 키 upsert(공백 trim), 빈 문자열이면 삭제 → GET과 동일 응답
+- `POST "/test-gemini"` → 등록된 키로 generateContent 미니 호출(timeout 15s) → `{ok: bool, message: str}` (성공: 모델명 포함, 실패: 원인 요약 — HTTP 4xx면 "API 키가 올바르지 않아요" 등 한국어)
+
+### summarizer Gemini 엔진
+- `POST {GEMINI_BASE_URL}/models/{GEMINI_MODEL}:generateContent?key=...`
+  body: `{"contents":[{"parts":[{"text": 프롬프트}]}], "generationConfig":{"response_mime_type":"application/json"}}`
+- 프롬프트: 한국어 회의 스크립트(+북마크/참석자 컨텍스트) → JSON `{key_points:[], decisions:[], action_items:[{text,owner,due}], detail: "상세 내용 문단"}` 요구
+- engine=`"gemini:<model>"`. 응답 파싱은 방어적으로, 실패 시 Ollama → extractive 폴백. minutes_md는 공용 빌더 재사용(detail 문단을 상세 내용 섹션에 사용).
+
+### 프론트 설정 UI
+- `components/SettingsModal.tsx` `{open: boolean; onClose: () => void}` — "설정" Modal:
+  현재 엔진 상태 배지(Gemini 연결됨(...abcd)/Ollama 사용 가능/내장 추출 요약), Gemini API 키 입력(password + 표시 토글),
+  저장/연결 테스트/키 삭제 버튼, 결과 메시지, 발급 안내(aistudio.google.com/apikey, 키는 로컬 DB에만 저장).
+- Sidebar 사용자 드롭다운에 "⚙️ 설정" 항목 → SettingsModal.
+- MeetingDetailPage: summary.engine이 'extractive'면 힌트 문구("설정에서 Gemini API 키를 등록하면 더 정확한 AI 요약을 받을 수 있어요").
+
+## 오디오 파일 업로드 (추가 기능)
+
+녹음 대신 기존 오디오 파일(mp3/m4a/wav/webm/ogg)을 업로드해 같은 파이프라인(STT→요약)을 태운다.
+
+### 백엔드
+- `POST /api/meetings/{id}/audio`: 확장자 결정 시 content_type 매핑에 더해 **업로드 파일명 suffix 폴백** 지원
+  (audio/mpeg→.mp3, audio/mp4|x-m4a→.m4a, audio/wav|x-wav→.wav, audio/ogg→.ogg, audio/webm→.webm, 그 외 파일명 확장자, 최종 기본 .webm).
+- `pipeline.py`: 변환 완료 후 meeting.duration_sec이 NULL/0이면 마지막 세그먼트 end_sec으로 갱신
+  (브라우저가 duration을 못 읽는 포맷 대비).
+
+### 프론트
+- `components/UploadModal.tsx` `{open: boolean; onClose: () => void}` — "오디오 파일 업로드" Modal:
+  파일 선택 영역(클릭 + 드래그&드롭, accept="audio/*,.mp3,.m4a,.wav,.webm,.ogg"), 선택 시 파일명/크기 표시 +
+  HTMLAudioElement(createObjectURL)로 duration 미리 읽기(실패 시 0), 제목 인풋(기본값 = 확장자 뗀 파일명),
+  태그 인풋, ParticipantPicker 연동(선택 참석자 칩 표시), [업로드] btn-primary →
+  api.createMeeting → api.uploadAudio(file, duration) → navigate(`/meetings/${id}`). 업로드 중 스피너/비활성화.
+- 진입점: MeetingsPage 헤더에 [⬆ 파일 업로드] btn-ghost, RecordPage 녹음 시작 전 화면에 보조 버튼("또는 오디오 파일 업로드").
+
 ## 디자인 규칙
 - global.css의 CSS 변수/클래스만 색상 소스로 사용. 배경 `--bg`, 카드 흰색 radius 12~16px + `--shadow-card`.
 - 버튼: `.btn .btn-primary|.btn-ghost|.btn-danger|.btn-soft`. 인풋: `.input`. 배지: `.badge .badge-*`. 칩: `.chip`.

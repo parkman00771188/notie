@@ -434,6 +434,12 @@ export default function MeetingDetailPage() {
               </section>
 
               <p className="muted engine-note">엔진: {summary.engine}</p>
+
+              {summary.engine.startsWith('extractive') && (
+                <div className="gemini-hint">
+                  💡 설정에서 Gemini API 키를 등록하면 더 정확한 AI 요약을 받을 수 있어요.
+                </div>
+              )}
             </div>
           ) : (
             <div className="empty-state">

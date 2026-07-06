@@ -1,23 +1,31 @@
-"""요약 서비스 — Ollama 우선, 실패 시 한국어 추출 요약 폴백.
+"""요약 서비스 — Gemini(키 등록 시) → Ollama → 한국어 추출 요약 폴백.
 
 계약 (SPEC.md):
 - summarize(meeting, segments, bookmarks, participants) ->
   {"key_points": [str], "decisions": [str],
    "action_items": [{"text": str, "owner": str|None, "due": str|None}],
    "minutes_md": str, "engine": str}
-- 1차: Ollama — GET {OLLAMA_URL}/api/tags (timeout 2s)로 가용성 확인,
+- 1차: Gemini — API 키(app_settings 'gemini_api_key' 우선, 없으면 환경변수)가 있으면
+  POST {GEMINI_BASE_URL}/models/{GEMINI_MODEL}:generateContent
+  (generationConfig.response_mime_type="application/json", timeout 120s).
+  engine="gemini:<model>". 응답 파싱은 방어적으로(코드펜스 제거, 항목별 폴백 병합).
+- 2차: Ollama — GET {OLLAMA_URL}/api/tags (timeout 2s)로 가용성 확인,
   POST /api/chat (stream=False, format="json", timeout 300s). engine="ollama:<model>".
   응답 JSON 파싱은 방어적으로: 키 누락/타입 오류 시 추출 요약 결과를 병합.
-- 폴백: 추출 요약 (engine="extractive").
-- minutes_md 마크다운 구조는 두 엔진 공통.
+- 폴백: 추출 요약 (engine="extractive"). 각 엔진 실패는 로그 출력 후 다음으로.
+- minutes_md 마크다운 구조는 모든 엔진 공통 (Gemini의 detail 문단은 상세 내용 섹션에 사용).
 - 세그먼트 0개(무음)면 빈 배열 + "인식된 음성이 없습니다" 안내.
+- test_gemini_key(key) -> (ok, message): settings API의 연결 테스트에서 재사용.
 """
 
 import json
+import logging
 import re
 from collections import Counter
 
-from .. import config
+from .. import config, db
+
+logger = logging.getLogger("gimnote.summarizer")
 
 # 추출 요약 패턴 (SPEC 고정)
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?다요죠음됨함])\s+")
@@ -27,8 +35,10 @@ _WORD_RE = re.compile(r"[가-힣a-zA-Z0-9]{2,}")
 
 _MIN_SENTENCE_LEN = 10       # 이보다 짧은 문장 제외
 _MAX_ITEMS_EXTRACTIVE = 5    # 폴백 시 각 항목 최대 개수
-_MAX_ITEMS_OLLAMA = 8        # Ollama 응답 방어적 상한
+_MAX_ITEMS_LLM = 8           # LLM(Gemini/Ollama) 응답 방어적 상한
 _MAX_TRANSCRIPT_CHARS = 12000  # 프롬프트에 넣을 녹취록 길이 제한
+
+GEMINI_KEY_SETTING = "gemini_api_key"
 
 
 # ---------------------------------------------------------------------------
@@ -81,18 +91,41 @@ def summarize(
     action_items: list | None = None
     overview: str | None = None
 
-    try:
-        parsed, model_name = _summarize_with_ollama(meeting, transcript, bookmarks, participants)
-        engine = f"ollama:{model_name}"
-        key_points = _clean_str_list(parsed.get("key_points"), _MAX_ITEMS_OLLAMA)
-        decisions = _clean_str_list(parsed.get("decisions"), _MAX_ITEMS_OLLAMA)
-        action_items = _clean_action_items(parsed.get("action_items"), _MAX_ITEMS_OLLAMA)
-        raw_overview = parsed.get("overview")
-        if isinstance(raw_overview, str) and raw_overview.strip():
-            overview = raw_overview.strip()
-    except Exception:
-        # Ollama 미설치/미실행/타임아웃/JSON 파싱 실패 → 전체 추출 요약 폴백
-        engine = "extractive"
+    # 1차: Gemini (API 키가 등록된 경우)
+    gemini_key = get_gemini_key()
+    if gemini_key:
+        try:
+            parsed, model_name = _try_gemini(
+                meeting, transcript, bookmarks, participants, gemini_key
+            )
+            engine = f"gemini:{model_name}"
+            key_points = _clean_str_list(parsed.get("key_points"), _MAX_ITEMS_LLM)
+            decisions = _clean_str_list(parsed.get("decisions"), _MAX_ITEMS_LLM)
+            action_items = _clean_action_items(parsed.get("action_items"), _MAX_ITEMS_LLM)
+            # detail 문단 → minutes_md의 상세 내용 섹션 (overview 키도 방어적으로 허용)
+            overview = _clean_detail(parsed.get("detail")) or _clean_detail(
+                parsed.get("overview")
+            )
+        except Exception as exc:
+            # 네트워크/HTTP 오류/JSON 파싱 실패 → Ollama로 폴백
+            logger.warning("summarizer: Gemini 요약 실패 — Ollama로 폴백: %s", exc)
+            engine = "extractive"
+
+    # 2차: Ollama (Gemini 키가 없거나 실패한 경우)
+    if engine == "extractive":
+        try:
+            parsed, model_name = _summarize_with_ollama(
+                meeting, transcript, bookmarks, participants
+            )
+            engine = f"ollama:{model_name}"
+            key_points = _clean_str_list(parsed.get("key_points"), _MAX_ITEMS_LLM)
+            decisions = _clean_str_list(parsed.get("decisions"), _MAX_ITEMS_LLM)
+            action_items = _clean_action_items(parsed.get("action_items"), _MAX_ITEMS_LLM)
+            overview = _clean_detail(parsed.get("overview"))
+        except Exception as exc:
+            # Ollama 미설치/미실행/타임아웃/JSON 파싱 실패 → 전체 추출 요약 폴백
+            logger.warning("summarizer: Ollama 요약 실패 — 추출 요약으로 폴백: %s", exc)
+            engine = "extractive"
 
     # 방어적 병합: 키 누락/타입 오류(None) 시 폴백 결과 사용
     if not key_points:
@@ -115,6 +148,167 @@ def summarize(
         "minutes_md": minutes_md,
         "engine": engine,
     }
+
+
+# ---------------------------------------------------------------------------
+# LLM 공통 (프롬프트)
+# ---------------------------------------------------------------------------
+
+_LLM_SYSTEM_PROMPT = (
+    "당신은 한국어 회의록 작성 전문가입니다. "
+    "반드시 유효한 JSON 객체 하나만 출력하고, JSON 외의 텍스트는 절대 포함하지 마세요."
+)
+
+
+def _build_llm_user_prompt(
+    meeting: dict,
+    transcript: str,
+    bookmarks: list[dict],
+    participants: list[dict],
+    detail_key: str,
+) -> str:
+    """Gemini/Ollama 공용 요약 프롬프트. detail_key는 상세 문단의 JSON 키 이름."""
+    names = ", ".join(str(p.get("name") or "") for p in participants if p.get("name")) or "미지정"
+    bookmark_lines = "\n".join(
+        f"- {_format_clock(b.get('time_sec') or 0)} {str(b.get('title') or '').strip()}"
+        for b in bookmarks
+    ) or "없음"
+    clipped = transcript[:_MAX_TRANSCRIPT_CHARS]
+
+    return (
+        "다음 회의 녹취록을 분석해서 아래 JSON 형식으로 요약해주세요.\n\n"
+        f"회의 제목: {str(meeting.get('title') or '제목 없음')}\n"
+        f"참석자: {names}\n"
+        f"회의 중 메모(북마크):\n{bookmark_lines}\n\n"
+        f"녹취록:\n{clipped}\n\n"
+        "출력 JSON 형식 (모든 값은 한국어로 작성):\n"
+        "{\n"
+        '  "key_points": ["회의의 핵심 내용을 요약한 문장 3~5개"],\n'
+        '  "decisions": ["회의에서 확정/결정된 사항 (없으면 빈 배열)"],\n'
+        '  "action_items": [{"text": "해야 할 일", "owner": "담당자 이름 또는 null", "due": "기한 또는 null"}],\n'
+        f'  "{detail_key}": "회의 전체 내용을 3~5문장으로 정리한 상세 요약 문단"\n'
+        "}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Gemini
+# ---------------------------------------------------------------------------
+
+def get_gemini_key() -> str | None:
+    """Gemini API 키 조회 — app_settings(DB) 우선, 없으면 환경변수, 둘 다 없으면 None."""
+    try:
+        conn = db.get_conn()
+        try:
+            row = conn.execute(
+                "SELECT value FROM app_settings WHERE key = ?",
+                (GEMINI_KEY_SETTING,),
+            ).fetchone()
+        finally:
+            conn.close()
+        if row is not None:
+            value = str(row["value"] or "").strip()
+            if value:
+                return value
+    except Exception as exc:
+        logger.warning("summarizer: app_settings 조회 실패 — 환경변수로 폴백: %s", exc)
+    env_key = (config.GEMINI_API_KEY_ENV or "").strip()
+    return env_key or None
+
+
+def _try_gemini(
+    meeting: dict,
+    transcript: str,
+    bookmarks: list[dict],
+    participants: list[dict],
+    api_key: str,
+) -> tuple[dict, str]:
+    """Gemini generateContent REST 호출로 요약 JSON을 받는다. 실패 시 예외를 던진다."""
+    import httpx  # 미설치 시 ImportError → 폴백
+
+    model_name = config.GEMINI_MODEL
+    prompt = _LLM_SYSTEM_PROMPT + "\n\n" + _build_llm_user_prompt(
+        meeting, transcript, bookmarks, participants, detail_key="detail"
+    )
+
+    resp = httpx.post(
+        f"{config.GEMINI_BASE_URL.rstrip('/')}/models/{model_name}:generateContent",
+        params={"key": api_key},
+        json={
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {"response_mime_type": "application/json"},
+        },
+        timeout=120.0,
+    )
+    resp.raise_for_status()
+
+    text = _extract_gemini_text(resp.json())
+    parsed = json.loads(_strip_code_fences(text))
+    if not isinstance(parsed, dict):
+        raise ValueError("Gemini 응답이 JSON 객체가 아닙니다")
+    return parsed, model_name
+
+
+def _extract_gemini_text(body) -> str:
+    """Gemini 응답에서 candidates[0].content.parts[0].text를 방어적으로 추출."""
+    candidates = body.get("candidates") if isinstance(body, dict) else None
+    if not isinstance(candidates, list) or not candidates:
+        raise ValueError("Gemini 응답에 candidates가 없습니다")
+    content = candidates[0].get("content") if isinstance(candidates[0], dict) else None
+    parts = content.get("parts") if isinstance(content, dict) else None
+    if not isinstance(parts, list) or not parts:
+        raise ValueError("Gemini 응답에 parts가 없습니다")
+    text = parts[0].get("text") if isinstance(parts[0], dict) else None
+    if not isinstance(text, str) or not text.strip():
+        raise ValueError("Gemini 응답에 text가 없습니다")
+    return text
+
+
+def _strip_code_fences(text: str) -> str:
+    """마크다운 코드펜스(```json ... ```)로 감싸진 JSON 응답 방어적 정리."""
+    text = text.strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```[\w-]*[ \t]*\r?\n?", "", text)
+        if text.rstrip().endswith("```"):
+            text = text.rstrip()[:-3]
+    return text.strip()
+
+
+def test_gemini_key(key: str) -> tuple[bool, str]:
+    """Gemini API 키 연결 테스트 — 미니 generateContent 호출(timeout 15s).
+
+    settings API의 POST /api/settings/test-gemini 에서 재사용한다.
+    반환: (ok, 한국어 메시지).
+    """
+    key = (key or "").strip()
+    if not key:
+        return False, "테스트할 Gemini API 키가 없어요"
+
+    model_name = config.GEMINI_MODEL
+    try:
+        import httpx
+    except ImportError:
+        return False, "httpx 패키지가 설치되어 있지 않아요"
+
+    try:
+        resp = httpx.post(
+            f"{config.GEMINI_BASE_URL.rstrip('/')}/models/{model_name}:generateContent",
+            params={"key": key},
+            json={"contents": [{"parts": [{"text": "안녕이라고만 답해주세요."}]}]},
+            timeout=15.0,
+        )
+    except httpx.TimeoutException:
+        return False, "Gemini 서버가 15초 안에 응답하지 않았어요. 네트워크 상태를 확인해주세요"
+    except Exception as exc:
+        return False, f"Gemini 연결 실패: {str(exc).strip() or exc.__class__.__name__}"
+
+    if resp.status_code in (400, 401, 403):
+        return False, "API 키가 올바르지 않아요"
+    if resp.status_code == 429:
+        return False, "요청 한도를 초과했어요. 잠시 후 다시 시도해주세요"
+    if resp.status_code >= 400:
+        return False, f"Gemini 호출 실패 (HTTP {resp.status_code})"
+    return True, f"Gemini 연결 성공 — {model_name} 모델을 사용할 수 있어요"
 
 
 # ---------------------------------------------------------------------------
@@ -144,30 +338,9 @@ def _summarize_with_ollama(
     if not model_name:
         raise RuntimeError("사용 가능한 Ollama 모델이 없습니다")
 
-    names = ", ".join(str(p.get("name") or "") for p in participants if p.get("name")) or "미지정"
-    bookmark_lines = "\n".join(
-        f"- {_format_clock(b.get('time_sec') or 0)} {str(b.get('title') or '').strip()}"
-        for b in bookmarks
-    ) or "없음"
-    clipped = transcript[:_MAX_TRANSCRIPT_CHARS]
-
-    system_prompt = (
-        "당신은 한국어 회의록 작성 전문가입니다. "
-        "반드시 유효한 JSON 객체 하나만 출력하고, JSON 외의 텍스트는 절대 포함하지 마세요."
-    )
-    user_prompt = (
-        "다음 회의 녹취록을 분석해서 아래 JSON 형식으로 요약해주세요.\n\n"
-        f"회의 제목: {str(meeting.get('title') or '제목 없음')}\n"
-        f"참석자: {names}\n"
-        f"회의 중 메모(북마크):\n{bookmark_lines}\n\n"
-        f"녹취록:\n{clipped}\n\n"
-        "출력 JSON 형식 (모든 값은 한국어로 작성):\n"
-        "{\n"
-        '  "key_points": ["회의의 핵심 내용을 요약한 문장 3~5개"],\n'
-        '  "decisions": ["회의에서 확정/결정된 사항 (없으면 빈 배열)"],\n'
-        '  "action_items": [{"text": "해야 할 일", "owner": "담당자 이름 또는 null", "due": "기한 또는 null"}],\n'
-        '  "overview": "회의 전체 내용을 3~5문장으로 정리한 상세 요약 문단"\n'
-        "}"
+    system_prompt = _LLM_SYSTEM_PROMPT
+    user_prompt = _build_llm_user_prompt(
+        meeting, transcript, bookmarks, participants, detail_key="overview"
     )
 
     chat_resp = httpx.post(
@@ -254,6 +427,13 @@ def _opt_str(value) -> str | None:
     return text
 
 
+def _clean_detail(value) -> str | None:
+    """상세 문단(detail/overview)을 방어적으로 정제. 문자열이 아니거나 비면 None(→폴백)."""
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return None
+
+
 # ---------------------------------------------------------------------------
 # 추출 요약 폴백
 # ---------------------------------------------------------------------------
@@ -315,7 +495,7 @@ def _extractive_summary(transcript: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# 회의록 마크다운 (두 엔진 공통)
+# 회의록 마크다운 (모든 엔진 공통)
 # ---------------------------------------------------------------------------
 
 def _format_clock(seconds) -> str:

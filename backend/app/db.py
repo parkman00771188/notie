@@ -73,6 +73,12 @@ CREATE TABLE IF NOT EXISTS summaries (
   created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
 );
 
+CREATE TABLE IF NOT EXISTS app_settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+);
+
 CREATE INDEX IF NOT EXISTS idx_meetings_user ON meetings(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_bookmarks_meeting ON bookmarks(meeting_id, time_sec);
 CREATE INDEX IF NOT EXISTS idx_segments_meeting ON transcript_segments(meeting_id, start_sec);

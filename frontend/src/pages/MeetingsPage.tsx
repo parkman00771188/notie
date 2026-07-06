@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { api } from '../api'
 import { AvatarStack } from '../components/Avatar'
 import { StatusBadge } from '../components/StatusBadge'
+import { UploadModal } from '../components/UploadModal'
 import type { Meeting } from '../types'
 import { formatClock, formatKoreanDateTime } from '../utils'
 import './MeetingsPage.css'
@@ -12,6 +13,7 @@ export default function MeetingsPage() {
   const navigate = useNavigate()
   const [q, setQ] = useState('')
   const [meetings, setMeetings] = useState<Meeting[] | null>(null)
+  const [uploadOpen, setUploadOpen] = useState(false)
 
   // 검색어 300ms 디바운스 후 목록 조회
   useEffect(() => {
@@ -51,13 +53,18 @@ export default function MeetingsPage() {
     <div className="page meetings-page">
       <div className="meetings-header">
         <h1 className="page-title">회의 목록</h1>
-        <input
-          className="input meetings-search"
-          type="search"
-          placeholder="회의 제목 검색"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-        />
+        <div className="upload-entry-actions">
+          <input
+            className="input meetings-search"
+            type="search"
+            placeholder="회의 제목 검색"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+          />
+          <button type="button" className="btn btn-ghost" onClick={() => setUploadOpen(true)}>
+            ⬆ 파일 업로드
+          </button>
+        </div>
       </div>
 
       {loading ? (
@@ -124,6 +131,8 @@ export default function MeetingsPage() {
           ))}
         </div>
       )}
+
+      <UploadModal open={uploadOpen} onClose={() => setUploadOpen(false)} />
     </div>
   )
 }

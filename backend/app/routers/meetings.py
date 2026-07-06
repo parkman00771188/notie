@@ -46,10 +46,14 @@ _MEDIA_BY_EXT = {
     ".ogg": "audio/ogg",
     ".mp3": "audio/mpeg",
     ".m4a": "audio/mp4",
+    ".mp4": "audio/mp4",
     ".aac": "audio/aac",
     ".wav": "audio/wav",
     ".flac": "audio/flac",
 }
+
+# 업로드 파일명 suffix 폴백 시 허용하는 확장자 화이트리스트 (그 외는 .webm)
+_ALLOWED_UPLOAD_EXTS = {".mp3", ".m4a", ".wav", ".webm", ".ogg", ".mp4", ".aac", ".flac"}
 
 
 class MeetingCreate(BaseModel):
@@ -239,11 +243,12 @@ def upload_audio(
     duration_sec: float = Form(...),
     user: dict = Depends(get_current_user),
 ) -> dict:
+    # 확장자 결정: content_type 매핑 → 업로드 파일명 suffix 폴백 → 최종 기본 .webm
     content_type = (file.content_type or "").split(";")[0].strip().lower()
     ext = _EXT_BY_CONTENT_TYPE.get(content_type)
     if ext is None:
         suffix = Path(file.filename or "").suffix.lower()
-        ext = suffix if suffix in _MEDIA_BY_EXT else ".webm"
+        ext = suffix if suffix in _ALLOWED_UPLOAD_EXTS else ".webm"
     filename = f"meeting_{meeting_id}{ext}"
 
     with closing(db.get_conn()) as conn:

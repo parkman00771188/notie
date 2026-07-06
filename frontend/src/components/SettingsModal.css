@@ -1,0 +1,121 @@
+/* ==========================================================================
+   SettingsModal — 설정 팝업 (AI 요약 엔진 / Gemini API 키)
+   색상은 global.css의 CSS 변수만 사용한다.
+   ========================================================================== */
+
+.settings-error {
+  background: var(--red-soft);
+  color: var(--red);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+
+.settings-loading {
+  display: flex;
+  justify-content: center;
+  padding: 32px 0;
+}
+
+.settings-section {
+  padding: 2px 0;
+}
+
+.settings-section-title {
+  font-size: 14.5px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 12px;
+  letter-spacing: -0.2px;
+}
+
+/* 현재 엔진 상태 줄 */
+.settings-status-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 14px;
+  border-radius: 10px;
+  background: var(--bg);
+  margin-bottom: 16px;
+}
+
+.settings-status-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+/* API 키 인풋 + 표시 토글 */
+.settings-key-wrap {
+  position: relative;
+}
+
+.settings-key-input {
+  padding-right: 44px;
+}
+
+.settings-key-toggle {
+  position: absolute;
+  top: 50%;
+  right: 7px;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  padding: 6px;
+  border-radius: 8px;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--text-3);
+}
+
+.settings-key-toggle:hover {
+  background: var(--gray-soft);
+}
+
+/* 버튼 행 */
+.settings-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.settings-actions .settings-delete {
+  margin-left: auto;
+}
+
+/* 연결 테스트 결과 메시지 박스 */
+.settings-test-result {
+  margin-top: 12px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 13.5px;
+  font-weight: 600;
+  word-break: break-all;
+}
+
+.settings-test-result.ok {
+  background: var(--green-soft);
+  color: var(--green);
+}
+
+.settings-test-result.fail {
+  background: var(--red-soft);
+  color: var(--red);
+}
+
+/* 하단 안내 문구 */
+.settings-note {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.settings-note a {
+  font-weight: 600;
+}

@@ -5,6 +5,7 @@ import { api } from '../api'
 import { AvatarStack } from '../components/Avatar'
 import { ParticipantPicker } from '../components/ParticipantPicker'
 import { RecentMeetingsPanel } from '../components/RecentMeetingsPanel'
+import { UploadModal } from '../components/UploadModal'
 import { Waveform } from '../components/Waveform'
 import { useRecorder } from '../hooks/useRecorder'
 import type { Bookmark, Participant } from '../types'
@@ -30,6 +31,7 @@ export default function RecordPage() {
   const [tagDraft, setTagDraft] = useState('')
   const [participants, setParticipants] = useState<Participant[]>([])
   const [pickerOpen, setPickerOpen] = useState(false)
+  const [uploadOpen, setUploadOpen] = useState(false)
   const [startedAt] = useState(() => new Date().toISOString())
 
   // ---- 녹음/북마크 ----
@@ -374,6 +376,14 @@ export default function RecordPage() {
               >
                 <span className="record-start-dot" /> 녹음 시작
               </button>
+              <button
+                type="button"
+                className="upload-entry-link"
+                onClick={() => setUploadOpen(true)}
+                disabled={starting}
+              >
+                또는 오디오 파일 업로드
+              </button>
             </div>
           ) : (
             <>
@@ -523,6 +533,8 @@ export default function RecordPage() {
         selected={participants}
         onChange={handleParticipantsChange}
       />
+
+      <UploadModal open={uploadOpen} onClose={() => setUploadOpen(false)} />
 
       {uploading && (
         <div className="upload-overlay">

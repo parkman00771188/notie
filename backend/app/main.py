@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from . import config, db
-from .routers import auth, bookmarks, meetings, participants
+from .routers import auth, bookmarks, meetings, participants, settings
 
 app = FastAPI(title="Gimnote", version="0.1.0")
 
@@ -27,6 +27,7 @@ app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(participants.router, prefix="/api/participants", tags=["participants"])
 app.include_router(meetings.router, prefix="/api/meetings", tags=["meetings"])
 app.include_router(bookmarks.router, prefix="/api", tags=["bookmarks"])
+app.include_router(settings.router, prefix="/api/settings", tags=["settings"])
 
 
 @app.get("/api/health")

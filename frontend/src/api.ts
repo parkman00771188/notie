@@ -46,6 +46,13 @@ export interface AuthResponse {
   user: User
 }
 
+export interface AppSettings {
+  gemini_api_key_set: boolean
+  gemini_key_preview: string | null
+  gemini_model: string
+  ollama_available: boolean
+}
+
 export const api = {
   // ---- auth ----
   async signup(data: { email: string; password: string; name: string; team?: string }) {
@@ -138,7 +145,8 @@ export const api = {
 
   uploadAudio(meetingId: number, blob: Blob, durationSec: number): Promise<Meeting> {
     const form = new FormData()
-    form.append('file', blob, 'recording.webm')
+    const filename = blob instanceof File && blob.name ? blob.name : 'recording.webm'
+    form.append('file', blob, filename)
     form.append('duration_sec', String(durationSec))
     return request<Meeting>(`/api/meetings/${meetingId}/audio`, { method: 'POST', body: form })
   },
@@ -155,6 +163,25 @@ export const api = {
   audioUrl(meetingId: number): string {
     const token = getToken()
     return `/api/meetings/${meetingId}/audio${token ? `?token=${token}` : ''}`
+  },
+
+  // ---- settings ----
+  getSettings(): Promise<AppSettings> {
+    return request<AppSettings>('/api/settings')
+  },
+
+  /** gemini_api_key에 빈 문자열을 주면 키 삭제 */
+  updateSettings(data: { gemini_api_key?: string }): Promise<AppSettings> {
+    return request<AppSettings>('/api/settings', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    })
+  },
+
+  testGemini(): Promise<{ ok: boolean; message: string }> {
+    return request<{ ok: boolean; message: string }>('/api/settings/test-gemini', {
+      method: 'POST',
+    })
   },
 
   // ---- bookmarks ----

@@ -72,6 +72,13 @@ def _run_full_job(meeting_id: int) -> None:
                     for seg in segments
                 ],
             )
+            # duration_sec이 NULL/0이면(브라우저가 duration을 못 읽은 업로드 대비)
+            # 마지막 세그먼트 end_sec으로 보정
+            if segments and not meeting.get("duration_sec"):
+                conn.execute(
+                    "UPDATE meetings SET duration_sec = ? WHERE id = ?",
+                    (segments[-1]["end"], meeting_id),
+                )
 
         # 2) 요약
         _set_status(conn, meeting_id, "summarizing")

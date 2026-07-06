@@ -11,7 +11,14 @@ DB_PATH = DATA_DIR / "gimnote.db"
 WHISPER_MODEL = os.environ.get("GIMNOTE_WHISPER_MODEL", "small")
 LANGUAGE = os.environ.get("GIMNOTE_LANGUAGE", "ko")
 
-# 요약 엔진 — Ollama가 로컬에서 실행 중이면 사용, 아니면 추출 요약 폴백
+# 요약 엔진 우선순위: Gemini(키 등록 시) → Ollama → 내장 추출 요약
+# Gemini API 키는 앱 설정(UI)에서 등록해 DB(app_settings)에 저장하거나 환경변수로 지정
+GEMINI_API_KEY_ENV = os.environ.get("GIMNOTE_GEMINI_API_KEY", "")
+GEMINI_MODEL = os.environ.get("GIMNOTE_GEMINI_MODEL", "gemini-2.0-flash")
+GEMINI_BASE_URL = os.environ.get(
+    "GIMNOTE_GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta"
+)
+
 OLLAMA_URL = os.environ.get("GIMNOTE_OLLAMA_URL", "http://127.0.0.1:11434")
 OLLAMA_MODEL = os.environ.get("GIMNOTE_OLLAMA_MODEL", "")  # 빈 값이면 설치된 첫 모델 사용
 

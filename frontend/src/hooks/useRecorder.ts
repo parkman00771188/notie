@@ -1,0 +1,183 @@
+import { useCallback, useEffect, useRef, useState } from 'react'
+
+export type RecorderStatus = 'idle' | 'recording' | 'paused' | 'stopped'
+
+export interface RecorderResult {
+  blob: Blob
+  durationSec: number
+}
+
+export interface UseRecorderReturn {
+  status: RecorderStatus
+  elapsedSec: number
+  analyser: AnalyserNode | null
+  start: () => Promise<void>
+  pause: () => void
+  resume: () => void
+  stop: () => Promise<RecorderResult>
+}
+
+/** 브라우저가 지원하는 webm 오디오 mimeType 선택 */
+function pickMimeType(): string {
+  if (typeof MediaRecorder === 'undefined') return ''
+  const candidates = ['audio/webm;codecs=opus', 'audio/webm']
+  for (const c of candidates) {
+    if (MediaRecorder.isTypeSupported(c)) return c
+  }
+  return ''
+}
+
+/**
+ * 마이크 녹음 훅.
+ * - getUserMedia(audio) + MediaRecorder(audio/webm)
+ * - AudioContext + AnalyserNode(fftSize 256) 를 파형 시각화용으로 노출
+ * - elapsedSec 는 일시정지 시간을 제외한 실경과(250ms 간격 갱신)
+ * - stop() 시 스트림/오디오컨텍스트 정리 후 {blob, durationSec} 반환
+ */
+export function useRecorder(): UseRecorderReturn {
+  const [status, setStatus] = useState<RecorderStatus>('idle')
+  const [elapsedSec, setElapsedSec] = useState(0)
+  const [analyser, setAnalyser] = useState<AnalyserNode | null>(null)
+
+  const streamRef = useRef<MediaStream | null>(null)
+  const recorderRef = useRef<MediaRecorder | null>(null)
+  const audioCtxRef = useRef<AudioContext | null>(null)
+  const chunksRef = useRef<Blob[]>([])
+  const intervalRef = useRef<number | null>(null)
+  /** 일시정지 이전까지 누적된 녹음 시간(ms) */
+  const accumulatedMsRef = useRef(0)
+  /** 현재 진행 중인 녹음 구간의 시작 timestamp (일시정지 중엔 null) */
+  const segmentStartRef = useRef<number | null>(null)
+
+  const currentElapsedMs = useCallback((): number => {
+    const running =
+      segmentStartRef.current != null ? Date.now() - segmentStartRef.current : 0
+    return accumulatedMsRef.current + running
+  }, [])
+
+  const cleanup = useCallback(() => {
+    if (intervalRef.current != null) {
+      window.clearInterval(intervalRef.current)
+      intervalRef.current = null
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop())
+      streamRef.current = null
+    }
+    const ctx = audioCtxRef.current
+    if (ctx && ctx.state !== 'closed') {
+      void ctx.close().catch(() => {})
+    }
+    audioCtxRef.current = null
+    recorderRef.current = null
+    segmentStartRef.current = null
+    setAnalyser(null)
+  }, [])
+
+  // 언마운트 시 녹음 중이면 강제 정리
+  useEffect(() => {
+    return () => {
+      const rec = recorderRef.current
+      if (rec && rec.state !== 'inactive') {
+        try {
+          rec.stop()
+        } catch {
+          /* 이미 종료된 경우 무시 */
+        }
+      }
+      cleanup()
+    }
+  }, [cleanup])
+
+  const start = useCallback(async () => {
+    if (recorderRef.current && recorderRef.current.state !== 'inactive') return
+
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    streamRef.current = stream
+
+    // 파형용 AnalyserNode
+    const AudioCtx =
+      window.AudioContext ??
+      (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+    if (AudioCtx) {
+      const ctx = new AudioCtx()
+      audioCtxRef.current = ctx
+      const source = ctx.createMediaStreamSource(stream)
+      const node = ctx.createAnalyser()
+      node.fftSize = 256
+      source.connect(node)
+      setAnalyser(node)
+    }
+
+    const mimeType = pickMimeType()
+    const rec = new MediaRecorder(stream, mimeType ? { mimeType } : undefined)
+    chunksRef.current = []
+    rec.ondataavailable = (e: BlobEvent) => {
+      if (e.data && e.data.size > 0) chunksRef.current.push(e.data)
+    }
+    rec.start(1000) // 1초 단위로 청크 수집
+    recorderRef.current = rec
+
+    accumulatedMsRef.current = 0
+    segmentStartRef.current = Date.now()
+    setElapsedSec(0)
+    setStatus('recording')
+
+    if (intervalRef.current != null) window.clearInterval(intervalRef.current)
+    intervalRef.current = window.setInterval(() => {
+      setElapsedSec(currentElapsedMs() / 1000)
+    }, 250)
+  }, [currentElapsedMs])
+
+  const pause = useCallback(() => {
+    const rec = recorderRef.current
+    if (!rec || rec.state !== 'recording') return
+    rec.pause()
+    accumulatedMsRef.current = currentElapsedMs()
+    segmentStartRef.current = null
+    setElapsedSec(accumulatedMsRef.current / 1000)
+    setStatus('paused')
+  }, [currentElapsedMs])
+
+  const resume = useCallback(() => {
+    const rec = recorderRef.current
+    if (!rec || rec.state !== 'paused') return
+    rec.resume()
+    segmentStartRef.current = Date.now()
+    setStatus('recording')
+  }, [])
+
+  const stop = useCallback((): Promise<RecorderResult> => {
+    return new Promise<RecorderResult>((resolve, reject) => {
+      const rec = recorderRef.current
+      if (!rec || rec.state === 'inactive') {
+        reject(new Error('녹음 중이 아닙니다.'))
+        return
+      }
+      const durationMs = currentElapsedMs()
+      accumulatedMsRef.current = durationMs
+      segmentStartRef.current = null
+      const durationSec = durationMs / 1000
+
+      rec.onstop = () => {
+        const type = rec.mimeType || 'audio/webm'
+        const blob = new Blob(chunksRef.current, { type })
+        cleanup()
+        setElapsedSec(durationSec)
+        setStatus('stopped')
+        resolve({ blob, durationSec })
+      }
+      try {
+        rec.stop()
+      } catch (err) {
+        cleanup()
+        setStatus('stopped')
+        reject(err instanceof Error ? err : new Error('녹음 종료에 실패했습니다.'))
+      }
+    })
+  }, [cleanup, currentElapsedMs])
+
+  return { status, elapsedSec, analyser, start, pause, resume, stop }
+}
+
+export default useRecorder

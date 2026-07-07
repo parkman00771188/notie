@@ -24,6 +24,12 @@
   font-size: 14.5px;
 }
 
+.home-greeting-mobile,
+.home-sub-mobile,
+.mobile-record-cta {
+  display: none;
+}
+
 /* 통계 카드 */
 .stat-grid {
   display: grid;
@@ -187,13 +193,240 @@
   gap: 10px;
 }
 
-.meeting-card-open {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-3);
-  transition: color 0.15s;
+@media (max-width: 1380px) {
+  .home-hero {
+    gap: 18px;
+    margin-bottom: 24px;
+  }
+
+  .stat-grid {
+    gap: 12px;
+    margin-bottom: 30px;
+  }
+
+  .stat-card {
+    gap: 14px;
+    padding: 20px;
+  }
+
+  .meeting-card-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
-.meeting-card:hover .meeting-card-open {
-  color: var(--primary);
+@media (max-width: 900px) {
+  .meeting-card-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .home-page {
+    padding-top: 18px;
+  }
+
+  .home-hero {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 22px;
+  }
+
+  .home-greeting {
+    font-size: 29px;
+    line-height: 1.22;
+    letter-spacing: -0.3px;
+  }
+
+  .home-greeting-desktop,
+  .home-sub-desktop,
+  .home-hero-button {
+    display: none !important;
+  }
+
+  .home-greeting-mobile,
+  .home-sub-mobile {
+    display: inline;
+  }
+
+  .home-sub {
+    margin-top: 8px;
+    font-size: 16px;
+    line-height: 1.55;
+  }
+
+  .mobile-record-cta {
+    position: relative;
+    display: grid;
+    grid-template-columns: 58px minmax(0, 1fr) 52px;
+    align-items: center;
+    gap: 0;
+    width: 100%;
+    min-height: 142px;
+    margin-bottom: 24px;
+    overflow: hidden;
+    padding: 22px 20px;
+    border: none;
+    border-radius: 16px;
+    background: linear-gradient(135deg, #2563eb 0%, #1557f4 100%);
+    box-shadow: 0 18px 34px rgba(37, 99, 235, 0.24);
+    color: #fff;
+    cursor: pointer;
+    text-align: left;
+  }
+
+  .mobile-record-icon {
+    display: inline-flex;
+    position: relative;
+    z-index: 1;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: #fff;
+    color: var(--primary);
+    font-size: 25px;
+    box-shadow: 0 8px 20px rgba(16, 24, 40, 0.18);
+  }
+
+  .mobile-record-copy {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .mobile-record-copy strong {
+    font-size: 21px;
+    font-weight: 900;
+    line-height: 1.2;
+  }
+
+  .mobile-record-copy span {
+    max-width: 190px;
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 14.5px;
+    line-height: 1.5;
+    word-break: keep-all;
+  }
+
+  .mobile-record-arrow {
+    display: inline-flex;
+    position: relative;
+    z-index: 1;
+    align-items: center;
+    justify-content: center;
+    justify-self: end;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: #fff;
+    color: var(--primary);
+    font-size: 29px;
+    font-weight: 800;
+    box-shadow: 0 8px 20px rgba(16, 24, 40, 0.18);
+  }
+
+  .mobile-record-wave {
+    position: absolute;
+    top: 34px;
+    right: 14px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 44px;
+    opacity: 0.18;
+  }
+
+  .mobile-record-wave span {
+    width: 6px;
+    border-radius: 999px;
+    background: #fff;
+  }
+
+  .mobile-record-wave span:nth-child(odd) {
+    height: 18px;
+  }
+
+  .mobile-record-wave span:nth-child(even) {
+    height: 36px;
+  }
+
+  .mobile-record-wave span:nth-child(3n) {
+    height: 28px;
+  }
+
+  .stat-grid {
+    display: none;
+  }
+
+  .home-section-head {
+    margin-bottom: 14px;
+  }
+
+  .home-section-title {
+    font-size: 21px;
+    font-weight: 900;
+  }
+
+  .home-view-all {
+    min-height: auto;
+    padding: 4px 0;
+    border: none;
+    background: transparent;
+    color: var(--primary);
+    font-size: 14px;
+  }
+
+  .meeting-card-grid {
+    gap: 12px;
+  }
+
+  .meeting-card {
+    min-height: 126px;
+    padding: 16px;
+    border-radius: 16px;
+  }
+
+  .meeting-card-top {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 10px 8px;
+    margin-bottom: 12px;
+  }
+
+  .meeting-card-title {
+    flex-basis: 100%;
+    order: 2;
+    font-size: 17px;
+    font-weight: 900;
+    white-space: normal;
+  }
+
+  .meeting-card-top .badge {
+    order: 1;
+    margin-left: auto;
+    padding: 5px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+  }
+
+  .meeting-card-top .lock-pill {
+    order: 3;
+  }
+
+  .meeting-card-meta {
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 14px;
+    font-size: 14px;
+  }
+
+  .meeting-card-foot {
+    font-size: 14px;
+  }
+
 }

@@ -9,6 +9,7 @@ import type {
   Participant,
   Summary,
   Tag,
+  TranscriptSegment,
   User,
 } from './types'
 
@@ -144,6 +145,18 @@ export const api = {
     return request<Meeting>('/api/meetings', { method: 'POST', body: JSON.stringify(data) })
   },
 
+  createSchedule(data: {
+    title: string
+    tag?: string
+    started_at: string
+    participant_ids?: number[]
+  }): Promise<Meeting> {
+    return request<Meeting>('/api/meetings/schedule', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  },
+
   listMeetings(q?: string, tag?: string): Promise<Meeting[]> {
     const params = new URLSearchParams()
     if (q) params.set('q', q)
@@ -158,7 +171,13 @@ export const api = {
 
   updateMeeting(
     id: number,
-    data: { title?: string; tag?: string; started_at?: string; participant_ids?: number[] },
+    data: {
+      title?: string
+      tag?: string
+      started_at?: string
+      participant_ids?: number[]
+      locked?: boolean
+    },
   ): Promise<Meeting> {
     return request<Meeting>(`/api/meetings/${id}`, {
       method: 'PATCH',
@@ -214,6 +233,18 @@ export const api = {
     },
   ): Promise<Summary> {
     return request<Summary>(`/api/meetings/${id}/summary`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    })
+  },
+
+  /** 전체 스크립트 행 텍스트 수정 — 시간 정보는 서버에서 변경하지 않음 */
+  updateTranscriptSegment(
+    meetingId: number,
+    segmentId: number,
+    data: { text: string },
+  ): Promise<TranscriptSegment> {
+    return request<TranscriptSegment>(`/api/meetings/${meetingId}/segments/${segmentId}`, {
       method: 'PATCH',
       body: JSON.stringify(data),
     })

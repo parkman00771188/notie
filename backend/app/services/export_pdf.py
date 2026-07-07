@@ -11,7 +11,7 @@ docx와 동일한 표 구조를 재현한다:
   │ 참석자   │ 이름(소속 · 직책) 콤마 목록               │
   └─────────┴──────────────────────────────────────────┘
   ┌─────────┬──────────────────────────────────────────┐
-  │ 회의내용 │ 1. 내용 / 핵심 내용 / 결정 사항 / 타임라인… │  ← 좌측 라벨 셀이
+  │ 회의내용 │ 1. 내용 / 핵심 내용 / 결정 사항…            │  ← 좌측 라벨 셀이
   └─────────┴──────────────────────────────────────────┘     페이지를 넘어도 이어짐
   ┌─────────┬──────────────────────────────────────────┐
   │ 특이사항 │ (빈칸 — 출력 후 직접 작성)                │
@@ -20,17 +20,24 @@ docx와 동일한 표 구조를 재현한다:
 
 from pathlib import Path
 
-from .export_doc import _fmt_clock, _fmt_datetime, format_participants_grouped
+from .export_doc import _fmt_datetime, format_participants_grouped
 
 FONT = "Malgun"
 LABEL_BG = (231, 230, 230)
 LABEL_W = 24  # 좌측 라벨 셀 폭 (mm)
 PAD = 2.5     # 내용 셀 안쪽 여백 (mm)
 
-# 맑은 고딕 우선, 없으면 다른 한글 폰트 폴백
+# 맑은 고딕 우선, 없으면 OS별 한글 폰트 폴백
 _FONT_CANDIDATES = [
     (r"C:\Windows\Fonts\malgun.ttf", r"C:\Windows\Fonts\malgunbd.ttf"),
     (r"C:\Windows\Fonts\gulim.ttc", None),
+    ("/System/Library/Fonts/Supplemental/Arial Unicode.ttf", None),
+    ("/Library/Fonts/Arial Unicode.ttf", None),
+    ("/System/Library/Fonts/AppleSDGothicNeo.ttc", None),
+    ("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc", None),
+    ("/usr/share/fonts/opentype/noto/NotoSansCJKkr-Regular.otf", None),
+    ("/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc", None),
+    ("/usr/share/fonts/truetype/nanum/NanumGothic.ttf", "/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf"),
 ]
 
 
@@ -41,7 +48,7 @@ def _register_fonts(pdf) -> None:
             pdf.add_font(FONT, "B", bold if bold and Path(bold).is_file() else regular)
             return
     raise RuntimeError(
-        "PDF 생성에 사용할 한글 폰트를 찾지 못했습니다 (맑은 고딕). Word(.docx)로 내보내주세요."
+        "PDF 생성에 사용할 한글 폰트를 찾지 못했습니다. Word(.docx)로 내보내주세요."
     )
 
 
@@ -218,17 +225,6 @@ def build_minutes_pdf(
             section_no += 1
             for item in followups:
                 _line(pdf, f"□ {item}", indent=3)
-
-        timed = [b for b in bookmarks if b.get("kind") != "note"]
-        if timed:
-            _heading(pdf, f"{section_no}. 타임라인")
-            section_no += 1
-            for b in sorted(timed, key=lambda x: float(x.get("time_sec") or 0)):
-                _line(
-                    pdf,
-                    f"**{_fmt_clock(b.get('time_sec'))}** — {str(b.get('title') or '').strip()}",
-                    indent=3,
-                )
 
         if not discussion and not key_points and not decisions:
             _line(pdf, "요약이 아직 생성되지 않았습니다.")

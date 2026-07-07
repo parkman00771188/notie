@@ -49,12 +49,47 @@ const FALLBACK_AMP = 0.14
 const PLAYED_COLOR = 'rgba(37, 99, 235, 1)'
 const REMAIN_COLOR = 'rgba(37, 99, 235, 0.3)'
 const CURSOR_COLOR = '#1d4ed8'
+const HAVE_NOTHING = 0
+const HAVE_CURRENT_DATA = 2
 
 interface Pin {
   x: number
   timeSec: number
   title: string
   kind: BookmarkKind
+}
+
+function waitForAudioReady(audio: HTMLAudioElement, timeoutMs = 6000): Promise<void> {
+  if (audio.readyState >= HAVE_CURRENT_DATA) return Promise.resolve()
+
+  return new Promise((resolve, reject) => {
+    let done = false
+    let timer: number | null = null
+
+    const cleanup = () => {
+      audio.removeEventListener('loadeddata', onReady)
+      audio.removeEventListener('canplay', onReady)
+      audio.removeEventListener('canplaythrough', onReady)
+      audio.removeEventListener('error', onError)
+      if (timer != null) window.clearTimeout(timer)
+    }
+
+    const finish = (fn: () => void) => {
+      if (done) return
+      done = true
+      cleanup()
+      fn()
+    }
+
+    const onReady = () => finish(resolve)
+    const onError = () => finish(() => reject(new Error('오디오를 불러오지 못했어요.')))
+
+    audio.addEventListener('loadeddata', onReady)
+    audio.addEventListener('canplay', onReady)
+    audio.addEventListener('canplaythrough', onReady)
+    audio.addEventListener('error', onError)
+    timer = window.setTimeout(() => finish(resolve), timeoutMs)
+  })
 }
 
 /** 폭 → 점 슬롯 수/점 트랙 폭(첫 점 시작 ~ 마지막 점 끝) */
@@ -86,6 +121,8 @@ export const AudioPlayerCard = forwardRef<AudioPlayerCardHandle, AudioPlayerCard
     const [mediaDuration, setMediaDuration] = useState<number | null>(null)
     const [bufferDuration, setBufferDuration] = useState<number | null>(null)
     const [panelWidth, setPanelWidth] = useState(0)
+    const [playBusy, setPlayBusy] = useState(false)
+    const [playError, setPlayError] = useState<string | null>(null)
 
     // duration: audio.duration(유한) → props.durationSec → 디코드 buffer.duration
     const propDuration =
@@ -101,13 +138,30 @@ export const AudioPlayerCard = forwardRef<AudioPlayerCardHandle, AudioPlayerCard
     durationRef.current = duration
     const currentRef = useRef(0)
     currentRef.current = currentSec
+    const playRequestRef = useRef(0)
 
     // src 변경 시 재생 상태 초기화 (+ 재디코드는 아래 디코드 effect가 담당)
     useEffect(() => {
+      playRequestRef.current += 1
       setPlaying(false)
+      setPlayBusy(false)
+      setPlayError(null)
       setCurrentSec(0)
       setMediaDuration(null)
+      const audio = audioRef.current
+      if (audio) {
+        audio.pause()
+        audio.load()
+      }
     }, [src])
+
+    useEffect(() => {
+      return () => {
+        playRequestRef.current += 1
+        const audio = audioRef.current
+        if (audio) audio.pause()
+      }
+    }, [])
 
     // 서버 계산 피크 조회 — 실패/미지정 시 균일 점 폴백 (재생/시크는 <audio>로 정상 동작)
     useEffect(() => {
@@ -160,9 +214,24 @@ export const AudioPlayerCard = forwardRef<AudioPlayerCardHandle, AudioPlayerCard
           setCurrentSec(audio.currentTime)
         })
       }
-      const onPlay = () => setPlaying(true)
-      const onPause = () => setPlaying(false)
-      const onEnded = () => setPlaying(false)
+      const onPlay = () => {
+        setPlaying(true)
+        setPlayBusy(false)
+        setPlayError(null)
+      }
+      const onPause = () => {
+        setPlaying(false)
+        setPlayBusy(false)
+      }
+      const onEnded = () => {
+        setPlaying(false)
+        setPlayBusy(false)
+      }
+      const onError = () => {
+        setPlaying(false)
+        setPlayBusy(false)
+        setPlayError('오디오를 불러오지 못했어요.')
+      }
 
       onDuration()
       audio.addEventListener('loadedmetadata', onDuration)
@@ -172,6 +241,7 @@ export const AudioPlayerCard = forwardRef<AudioPlayerCardHandle, AudioPlayerCard
       audio.addEventListener('play', onPlay)
       audio.addEventListener('pause', onPause)
       audio.addEventListener('ended', onEnded)
+      audio.addEventListener('error', onError)
       return () => {
         if (rafId != null) cancelAnimationFrame(rafId)
         audio.removeEventListener('loadedmetadata', onDuration)
@@ -181,6 +251,7 @@ export const AudioPlayerCard = forwardRef<AudioPlayerCardHandle, AudioPlayerCard
         audio.removeEventListener('play', onPlay)
         audio.removeEventListener('pause', onPause)
         audio.removeEventListener('ended', onEnded)
+        audio.removeEventListener('error', onError)
       }
     }, [src])
 
@@ -259,6 +330,40 @@ export const AudioPlayerCard = forwardRef<AudioPlayerCardHandle, AudioPlayerCard
       return () => window.removeEventListener('resize', onResize)
     }, [draw])
 
+    const startPlayback = useCallback(async () => {
+      const audio = audioRef.current
+      if (!audio) return
+
+      const requestId = playRequestRef.current + 1
+      playRequestRef.current = requestId
+      setPlayBusy(true)
+      setPlayError(null)
+
+      if (audio.readyState === HAVE_NOTHING) {
+        audio.load()
+      }
+
+      try {
+        await audio.play()
+      } catch {
+        if (playRequestRef.current !== requestId || !audio.paused) return
+        try {
+          await waitForAudioReady(audio)
+          if (playRequestRef.current === requestId && audio.paused) {
+            await audio.play()
+          }
+        } catch {
+          if (playRequestRef.current === requestId) {
+            setPlayError('재생을 시작하지 못했어요. 다시 눌러주세요.')
+          }
+        }
+      } finally {
+        if (playRequestRef.current === requestId) {
+          setPlayBusy(false)
+        }
+      }
+    }, [])
+
     const applySeek = useCallback((sec: number, autoplay?: boolean) => {
       const audio = audioRef.current
       if (!audio) return
@@ -270,8 +375,8 @@ export const AudioPlayerCard = forwardRef<AudioPlayerCardHandle, AudioPlayerCard
         // 아직 시크 불가 상태면 표시만 갱신
       }
       setCurrentSec(t)
-      if (autoplay) void audio.play().catch(() => {})
-    }, [])
+      if (autoplay) void startPlayback()
+    }, [startPlayback])
 
     useImperativeHandle(ref, () => ({ seekTo: applySeek }), [applySeek])
 
@@ -334,14 +439,22 @@ export const AudioPlayerCard = forwardRef<AudioPlayerCardHandle, AudioPlayerCard
     const togglePlay = () => {
       const audio = audioRef.current
       if (!audio) return
-      if (audio.paused) void audio.play().catch(() => {})
-      else audio.pause()
+      if (playBusy && audio.paused) {
+        playRequestRef.current += 1
+        setPlayBusy(false)
+        return
+      }
+      if (audio.paused) void startPlayback()
+      else {
+        playRequestRef.current += 1
+        audio.pause()
+      }
     }
 
     return (
       <div className="card audio-player-card">
         {/* 실제 재생은 숨긴 audio 엘리먼트가 담당 */}
-        <audio ref={audioRef} className="audio-player-audio" src={src} preload="metadata" />
+        <audio ref={audioRef} className="audio-player-audio" src={src} preload="auto" />
 
         <div className="audio-player-timer">
           <span className="audio-player-current">{formatClock(currentSec)}</span>
@@ -379,8 +492,12 @@ export const AudioPlayerCard = forwardRef<AudioPlayerCardHandle, AudioPlayerCard
         </div>
 
         <div className="audio-player-controls">
-          <button className="btn btn-primary btn-lg audio-player-play" onClick={togglePlay}>
-            {playing ? '⏸ 일시정지' : '▶ 재생'}
+          <button
+            className="btn btn-primary btn-lg audio-player-play"
+            onClick={togglePlay}
+            aria-busy={playBusy}
+          >
+            {playing ? '⏸ 일시정지' : playBusy ? '불러오는 중...' : '▶ 재생'}
           </button>
           {onAddMark && (
             <button
@@ -392,6 +509,7 @@ export const AudioPlayerCard = forwardRef<AudioPlayerCardHandle, AudioPlayerCard
             </button>
           )}
         </div>
+        {playError && <p className="audio-player-error">{playError}</p>}
       </div>
     )
   },

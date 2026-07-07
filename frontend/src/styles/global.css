@@ -234,6 +234,36 @@ button {
   color: var(--red);
 }
 
+.lock-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-strong);
+  background: var(--gray-soft);
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+.lock-pill.compact {
+  padding: 1px 7px;
+  font-size: 11px;
+}
+
+.lock-pill-icon {
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  font-size: 12px;
+  line-height: 1;
+}
+
 /* ---------- 칩 (참석자 라벨 등) ---------- */
 .chip {
   display: inline-flex;
@@ -345,4 +375,63 @@ button {
 
 ::-webkit-scrollbar-track {
   background: transparent;
+}
+
+@media (max-width: 1380px) and (min-width: 769px) {
+  :root {
+    --sidebar-width: 224px;
+    --panel-width: 340px;
+  }
+
+  .page {
+    padding: 28px 32px;
+  }
+}
+
+@media (max-width: 768px) {
+  body {
+    background:
+      radial-gradient(circle at 50% -120px, rgba(37, 99, 235, 0.08), transparent 340px),
+      var(--bg);
+    font-size: 15px;
+  }
+
+  .page {
+    width: 100%;
+    max-width: none;
+    padding: 24px 18px 104px;
+  }
+
+  .page-title {
+    font-size: 26px;
+    line-height: 1.2;
+    letter-spacing: -0.3px;
+  }
+
+  .card {
+    border-radius: 16px;
+  }
+
+  .btn {
+    min-height: 40px;
+    border-radius: 12px;
+    font-size: 14px;
+  }
+
+  .btn-lg {
+    min-height: 50px;
+    border-radius: 16px;
+    font-size: 16px;
+  }
+
+  .input {
+    min-height: 46px;
+    border-radius: 12px;
+    font-size: 15px;
+  }
+
+  .badge {
+    font-size: 12px;
+    border-radius: var(--radius-full);
+  }
 }

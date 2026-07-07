@@ -5,6 +5,7 @@ import AiEngineSettings from '../components/AiEngineSettings'
 import { Avatar } from '../components/Avatar'
 import ComboBox from '../components/ComboBox'
 import { useConfirm } from '../components/confirm'
+import Modal from '../components/Modal'
 import type { OrgKind, OrgOption, Participant, Tag } from '../types'
 import './SettingsPage.css'
 
@@ -130,7 +131,9 @@ export default function SettingsPage() {
   // 참석자 디렉터리
   const [participants, setParticipants] = useState<Participant[] | null>(null)
   const [peopleError, setPeopleError] = useState('')
+  const [participantAddError, setParticipantAddError] = useState('')
   const [draft, setDraft] = useState<ParticipantDraft>(EMPTY_DRAFT)
+  const [participantAddOpen, setParticipantAddOpen] = useState(false)
   const [pAdding, setPAdding] = useState(false)
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({})
   const [editingId, setEditingId] = useState<number | null>(null)
@@ -359,7 +362,7 @@ export default function SettingsPage() {
     const name = draft.name.trim()
     if (!name || pAdding) return
     setPAdding(true)
-    setPeopleError('')
+    setParticipantAddError('')
     try {
       const data: {
         name: string
@@ -377,11 +380,25 @@ export default function SettingsPage() {
       const created = await api.createParticipant(data)
       setParticipants((prev) => [...(prev ?? []), created])
       setDraft(EMPTY_DRAFT)
+      setParticipantAddOpen(false)
     } catch (err: unknown) {
-      setPeopleError(errMsg(err, '참석자를 추가하지 못했어요'))
+      setParticipantAddError(errMsg(err, '참석자를 추가하지 못했어요'))
     } finally {
       setPAdding(false)
     }
+  }
+
+  const openParticipantAdd = () => {
+    setParticipantAddError('')
+    setDraft(EMPTY_DRAFT)
+    setParticipantAddOpen(true)
+  }
+
+  const closeParticipantAdd = () => {
+    if (pAdding) return
+    setParticipantAddOpen(false)
+    setParticipantAddError('')
+    setDraft(EMPTY_DRAFT)
   }
 
   const startEdit = (p: Participant) => {
@@ -685,77 +702,29 @@ export default function SettingsPage() {
 
   const renderPeopleSection = () => (
     <section className="card settings-card">
-      <div className="settings-card-head">
-        <h2 className="settings-card-title">
-          <span aria-hidden="true">👥</span> 참석자
-        </h2>
-        <p className="settings-card-desc">
-          회의에 참석하는 사람들의 디렉터리입니다. 소속별로 묶어서 보여드려요. 행을 클릭하면 바로
-          수정할 수 있어요.
-        </p>
+      <div className="settings-card-head sp-card-head-action">
+        <div className="sp-card-head-copy">
+          <h2 className="settings-card-title">
+            <span aria-hidden="true">👥</span> 참석자
+          </h2>
+          <p className="settings-card-desc">
+            회의에 참석하는 사람들의 디렉터리입니다. 소속별로 묶어서 보여드려요. 행을 클릭하면 바로
+            수정할 수 있어요.
+          </p>
+        </div>
+        <button type="button" className="btn btn-primary sp-add-person-btn" onClick={openParticipantAdd}>
+          + 추가
+        </button>
       </div>
 
       {peopleError && <div className="sp-error">{peopleError}</div>}
-
-      <form className="sp-people-add" onSubmit={handleAddParticipant}>
-        <input
-          className="input"
-          placeholder="이름 *"
-          value={draft.name}
-          onChange={(e) => setDraftField('name', e.target.value)}
-        />
-        <ComboBox
-          value={draft.organization}
-          onChange={(v) => setDraftField('organization', v)}
-          options={organizationNames}
-          placeholder="소속 (회사/기관)"
-          onCreateOption={registerOrgOption('organization')}
-          onDeleteOption={removeOrgOption('organization')}
-        />
-        <ComboBox
-          value={draft.department}
-          onChange={(v) => setDraftField('department', v)}
-          options={departmentNames}
-          placeholder="부서"
-          onCreateOption={registerOrgOption('department')}
-          onDeleteOption={removeOrgOption('department')}
-        />
-        <ComboBox
-          value={draft.role}
-          onChange={(v) => setDraftField('role', v)}
-          options={roleNames}
-          placeholder="직책"
-          onCreateOption={registerOrgOption('role')}
-          onDeleteOption={removeOrgOption('role')}
-        />
-        <input
-          className="input sp-add-email"
-          type="email"
-          placeholder="이메일"
-          value={draft.email}
-          onChange={(e) => setDraftField('email', e.target.value)}
-        />
-        <input
-          className="input"
-          placeholder="전화"
-          value={draft.phone}
-          onChange={(e) => setDraftField('phone', e.target.value)}
-        />
-        <button type="submit" className="btn btn-primary" disabled={!draft.name.trim() || pAdding}>
-          {pAdding ? '추가 중...' : '+ 추가'}
-        </button>
-      </form>
-      <p className="sp-hint">
-        소속/부서/직책은 목록에서 고르거나 직접 입력할 수 있어요. 드롭다운의 ‘+ 추가’로 제안
-        목록에 등록하고, × 로 목록에서 뺄 수 있어요.
-      </p>
 
       {participants === null ? (
         <div className="sp-loading">
           <span className="spinner" />
         </div>
       ) : participants.length === 0 ? (
-        <p className="sp-empty">등록된 참석자가 없어요. 위에서 새 참석자를 추가해보세요.</p>
+        <p className="sp-empty">등록된 참석자가 없어요. + 추가 버튼으로 새 참석자를 추가해보세요.</p>
       ) : (
         <div className="sp-groups">
           {participantGroups.map((g) => {
@@ -826,6 +795,100 @@ export default function SettingsPage() {
           })}
         </div>
       )}
+
+      <Modal open={participantAddOpen} title="새 참석자 추가" width={820} onClose={closeParticipantAdd}>
+        <form className="sp-person-modal-form" onSubmit={handleAddParticipant}>
+          <div className="sp-person-modal-body">
+            {participantAddError && <div className="sp-error">{participantAddError}</div>}
+
+            <label className="sp-person-field sp-person-field-full">
+              <span className="sp-person-label">이름 *</span>
+              <input
+                className="input sp-person-input"
+                placeholder="이름을 입력하세요"
+                value={draft.name}
+                autoFocus
+                onChange={(e) => setDraftField('name', e.target.value)}
+              />
+            </label>
+
+            <div className="sp-person-field">
+              <span className="sp-person-label">소속 (회사/기관)</span>
+              <ComboBox
+                value={draft.organization}
+                onChange={(v) => setDraftField('organization', v)}
+                options={organizationNames}
+                placeholder="소속을 선택하거나 입력하세요"
+                onCreateOption={registerOrgOption('organization')}
+                onDeleteOption={removeOrgOption('organization')}
+              />
+            </div>
+
+            <div className="sp-person-field">
+              <span className="sp-person-label">부서</span>
+              <ComboBox
+                value={draft.department}
+                onChange={(v) => setDraftField('department', v)}
+                options={departmentNames}
+                placeholder="부서를 선택하거나 입력하세요"
+                onCreateOption={registerOrgOption('department')}
+                onDeleteOption={removeOrgOption('department')}
+              />
+            </div>
+
+            <div className="sp-person-field">
+              <span className="sp-person-label">직책</span>
+              <ComboBox
+                value={draft.role}
+                onChange={(v) => setDraftField('role', v)}
+                options={roleNames}
+                placeholder="직책을 선택하거나 입력하세요"
+                onCreateOption={registerOrgOption('role')}
+                onDeleteOption={removeOrgOption('role')}
+              />
+            </div>
+
+            <label className="sp-person-field">
+              <span className="sp-person-label">이메일</span>
+              <input
+                className="input sp-person-input"
+                type="email"
+                placeholder="이메일을 입력하세요"
+                value={draft.email}
+                onChange={(e) => setDraftField('email', e.target.value)}
+              />
+            </label>
+
+            <label className="sp-person-field sp-person-field-full">
+              <span className="sp-person-label">전화</span>
+              <input
+                className="input sp-person-input"
+                placeholder="전화번호를 입력하세요"
+                value={draft.phone}
+                onChange={(e) => setDraftField('phone', e.target.value)}
+              />
+            </label>
+          </div>
+
+          <div className="sp-person-modal-footer">
+            <p className="sp-person-modal-hint">
+              <span aria-hidden="true">ⓘ</span>
+              <span>
+                소속/부서/직책은 목록에서 고르거나 직접 입력할 수 있어요. 드롭다운의 ‘+ 추가’로
+                제안 목록에 등록하고, × 로 목록에서 뺄 수 있어요.
+              </span>
+            </p>
+            <div className="sp-person-modal-actions">
+              <button type="button" className="btn btn-ghost" onClick={closeParticipantAdd} disabled={pAdding}>
+                취소
+              </button>
+              <button type="submit" className="btn btn-primary" disabled={!draft.name.trim() || pAdding}>
+                {pAdding ? '추가 중...' : '+ 추가'}
+              </button>
+            </div>
+          </div>
+        </form>
+      </Modal>
     </section>
   )
 
@@ -836,13 +899,14 @@ export default function SettingsPage() {
 
       <div className="sp-layout">
         {/* 좌측 탭 네비 */}
-        <nav className="sp-nav" aria-label="설정 섹션">
+        <nav className="sp-nav" role="tablist" aria-label="설정 섹션">
           {SECTIONS.map((s) => (
             <button
               key={s.id}
               type="button"
+              role="tab"
               className={`sp-nav-link${activeSection === s.id ? ' active' : ''}`}
-              aria-current={activeSection === s.id ? 'true' : undefined}
+              aria-selected={activeSection === s.id}
               onClick={() => goToSection(s.id)}
             >
               <span className="sp-nav-icon" aria-hidden="true">

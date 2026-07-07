@@ -115,3 +115,11 @@
 .audio-player-play {
   min-width: 148px;
 }
+
+.audio-player-error {
+  margin: -4px 0 0;
+  color: var(--red);
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+}

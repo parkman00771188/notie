@@ -22,6 +22,20 @@
   padding: 34px 8px;
 }
 
+.trash-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.trash-clear-all {
+  flex-shrink: 0;
+  padding: 8px 14px;
+  font-size: 13px;
+}
+
 .trash-list {
   display: flex;
   flex-direction: column;
@@ -98,4 +112,28 @@
 
 .trash-hint {
   margin-top: 14px;
+}
+
+@media (max-width: 520px) {
+  .trash-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .trash-clear-all {
+    width: 100%;
+  }
+
+  .trash-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .trash-row-meta {
+    white-space: normal;
+  }
+
+  .trash-row-actions {
+    justify-content: flex-end;
+  }
 }

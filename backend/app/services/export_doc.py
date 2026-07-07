@@ -10,7 +10,7 @@
   │ 참석자   │ 이름(소속 · 직책) 콤마 목록               │
   └─────────┴──────────────────────────────────────────┘
   ┌─────────┬──────────────────────────────────────────┐
-  │ 회의내용 │ 1. 내용 / 핵심 내용 / 결정 사항 / 타임라인… │
+  │ 회의내용 │ 1. 내용 / 핵심 내용 / 결정 사항…            │
   └─────────┴──────────────────────────────────────────┘
   ┌─────────┬──────────────────────────────────────────┐
   │ 특이사항 │ (빈칸 — 출력 후 직접 작성)                │
@@ -37,11 +37,6 @@ def _fmt_datetime(iso: str | None) -> str:
     except ValueError:
         return iso
     return f"{d.year}년 {d.month:02d}월 {d.day:02d}일 {WEEKDAYS[d.weekday()]} {d.hour:02d}:{d.minute:02d}"
-
-
-def _fmt_clock(sec: float | None) -> str:
-    s = int(sec or 0)
-    return f"{s // 3600:02d}:{s % 3600 // 60:02d}:{s % 60:02d}"
 
 
 def format_participants_grouped(participants: list[dict]) -> str:
@@ -85,6 +80,84 @@ def _qn(tag):
     from docx.oxml.ns import qn
 
     return qn(tag)
+
+
+def _twips(length) -> str:
+    """python-docx Length/Cm 값을 WordprocessingML twips 문자열로 변환."""
+    return str(int(length.twips))
+
+
+def _set_cell_width(cell, width) -> None:
+    """셀 폭을 tcW에 직접 기록한다. cell.width만으로는 Word에서 자동 재배치될 수 있다."""
+    from docx.oxml import OxmlElement
+
+    cell.width = width
+    tc_pr = cell._tc.get_or_add_tcPr()
+    tc_w = tc_pr.find(_qn("w:tcW"))
+    if tc_w is None:
+        tc_w = OxmlElement("w:tcW")
+        tc_pr.append(tc_w)
+    tc_w.set(_qn("w:type"), "dxa")
+    tc_w.set(_qn("w:w"), _twips(width))
+
+
+def _set_cell_margins(cell, top=90, start=120, bottom=90, end=120) -> None:
+    """셀 안쪽 여백을 twips 단위로 지정한다."""
+    from docx.oxml import OxmlElement
+
+    tc_pr = cell._tc.get_or_add_tcPr()
+    tc_mar = tc_pr.find(_qn("w:tcMar"))
+    if tc_mar is None:
+        tc_mar = OxmlElement("w:tcMar")
+        tc_pr.append(tc_mar)
+    for edge, value in (("top", top), ("start", start), ("bottom", bottom), ("end", end)):
+        node = tc_mar.find(_qn(f"w:{edge}"))
+        if node is None:
+            node = OxmlElement(f"w:{edge}")
+            tc_mar.append(node)
+        node.set(_qn("w:w"), str(value))
+        node.set(_qn("w:type"), "dxa")
+
+
+def _fix_table_layout(table, widths) -> None:
+    """표 전체 grid를 고정한다.
+
+    python-docx의 cell.width는 각 셀 tcW만 바꾸고 tblGrid는 그대로 둘 수 있어
+    Word/한글에서 열 폭이 균등 폭으로 재계산되는 문제가 있다.
+    """
+    from docx.oxml import OxmlElement
+
+    table.autofit = False
+    tbl = table._tbl
+    tbl_pr = tbl.tblPr
+
+    tbl_layout = tbl_pr.find(_qn("w:tblLayout"))
+    if tbl_layout is None:
+        tbl_layout = OxmlElement("w:tblLayout")
+        tbl_pr.append(tbl_layout)
+    tbl_layout.set(_qn("w:type"), "fixed")
+
+    tbl_w = tbl_pr.find(_qn("w:tblW"))
+    if tbl_w is None:
+        tbl_w = OxmlElement("w:tblW")
+        tbl_pr.append(tbl_w)
+    tbl_w.set(_qn("w:type"), "dxa")
+    tbl_w.set(_qn("w:w"), str(sum(int(w.twips) for w in widths)))
+
+    old_grid = tbl.find(_qn("w:tblGrid"))
+    if old_grid is not None:
+        tbl.remove(old_grid)
+    grid = OxmlElement("w:tblGrid")
+    for width in widths:
+        col = OxmlElement("w:gridCol")
+        col.set(_qn("w:w"), _twips(width))
+        grid.append(col)
+    tbl.insert(1, grid)
+
+    for row in table.rows:
+        for index, cell in enumerate(row.cells[: len(widths)]):
+            _set_cell_width(cell, widths[index])
+            _set_cell_margins(cell)
 
 
 def _shade_cell(cell, color: str):
@@ -187,9 +260,7 @@ def build_minutes_docx(
     t1 = doc.add_table(rows=3, cols=4)
     t1.style = "Table Grid"
     widths = [Cm(2.6), Cm(5.8), Cm(2.0), Cm(usable_cm - 2.6 - 5.8 - 2.0)]
-    for row in t1.rows:
-        for i, cell in enumerate(row.cells):
-            cell.width = widths[i]
+    _fix_table_layout(t1, widths)
 
     tag = str(meeting.get("tag") or "").strip()
 
@@ -200,10 +271,12 @@ def build_minutes_docx(
 
     _label_cell(t1.cell(1, 0), "회의명")
     name_cell = t1.cell(1, 1).merge(t1.cell(1, 2)).merge(t1.cell(1, 3))
+    _set_cell_width(name_cell, Cm(usable_cm - 2.6))
     _cell_text(name_cell, str(meeting.get("title") or ""))
 
     _label_cell(t1.cell(2, 0), "참석자")
     body = t1.cell(2, 1).merge(t1.cell(2, 2)).merge(t1.cell(2, 3))
+    _set_cell_width(body, Cm(usable_cm - 2.6))
     _cell_text(body, format_participants_grouped(participants) or "-")
 
     doc.add_paragraph().paragraph_format.space_after = Pt(2)
@@ -211,8 +284,7 @@ def build_minutes_docx(
     # ---- 표 2: 회의내용 ----
     t2 = doc.add_table(rows=1, cols=2)
     t2.style = "Table Grid"
-    t2.cell(0, 0).width = Cm(2.6)
-    t2.cell(0, 1).width = Cm(usable_cm - 2.6)
+    _fix_table_layout(t2, [Cm(2.6), Cm(usable_cm - 2.6)])
     _label_cell(t2.cell(0, 0), "회의내용")
 
     content = t2.cell(0, 1)
@@ -250,17 +322,6 @@ def build_minutes_docx(
         for item in followups:
             _add_line(content, f"☐ {item}", indent_cm=0.25)
 
-    timed = [b for b in bookmarks if b.get("kind") != "note"]
-    if timed:
-        _section(content, section_no, "타임라인")
-        section_no += 1
-        for b in sorted(timed, key=lambda x: float(x.get("time_sec") or 0)):
-            _add_line(
-                content,
-                f"**{_fmt_clock(b.get('time_sec'))}** — {str(b.get('title') or '').strip()}",
-                indent_cm=0.25,
-            )
-
     if not discussion and not key_points and not decisions:
         _add_line(content, "요약이 아직 생성되지 않았습니다.")
 
@@ -269,8 +330,7 @@ def build_minutes_docx(
     # ---- 표 3: 특이사항 (일반 메모) ----
     t3 = doc.add_table(rows=1, cols=2)
     t3.style = "Table Grid"
-    t3.cell(0, 0).width = Cm(2.6)
-    t3.cell(0, 1).width = Cm(usable_cm - 2.6)
+    _fix_table_layout(t3, [Cm(2.6), Cm(usable_cm - 2.6)])
     _label_cell(t3.cell(0, 0), "특이사항")
     # 특이사항은 비워 둔다 — 출력 후 직접 작성 (사용자 요청)
     _cell_text(t3.cell(0, 1), "")

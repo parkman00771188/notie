@@ -258,3 +258,103 @@
   line-height: 1.5;
   color: var(--text-3);
 }
+
+@media (max-width: 768px) {
+  .settings-card {
+    padding: 22px 20px;
+  }
+
+  .settings-card-head {
+    margin-bottom: 20px;
+  }
+
+  .settings-card-title {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    font-size: 21px;
+    line-height: 1.35;
+  }
+
+  .settings-card-desc {
+    margin-top: 8px;
+    font-size: 16px;
+  }
+
+  .settings-status-row {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+    padding: 14px;
+  }
+
+  .settings-status-label {
+    font-size: 15px;
+  }
+
+  .settings-actions {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .settings-actions .btn {
+    flex: 1 1 auto;
+  }
+
+  .settings-actions .settings-delete {
+    margin-left: 0;
+  }
+
+  .settings-key-toggle {
+    right: 9px;
+    font-size: 18px;
+  }
+
+  .settings-model-row {
+    gap: 10px;
+  }
+
+  .settings-model-row .btn {
+    min-width: 92px;
+  }
+
+  .settings-note,
+  .settings-model-current,
+  .settings-model-hint {
+    font-size: 14px;
+  }
+
+  .stt-options {
+    gap: 12px;
+  }
+
+  .stt-option {
+    gap: 14px;
+    padding: 18px 16px;
+    border-radius: 16px;
+  }
+
+  .stt-option-title {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 8px;
+    font-size: 18px;
+    line-height: 1.35;
+  }
+
+  .stt-option-desc {
+    font-size: 16px;
+  }
+}
+
+@media (max-width: 420px) {
+  .settings-actions,
+  .settings-model-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .settings-actions .btn,
+  .settings-model-row .btn {
+    width: 100%;
+  }
+}

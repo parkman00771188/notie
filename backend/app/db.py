@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS meetings (
   duration_sec REAL,
   audio_filename TEXT,
   error_message TEXT,
+  locked INTEGER NOT NULL DEFAULT 0,
   deleted_at TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
 );
@@ -145,6 +146,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
     mcols = [row[1] for row in conn.execute("PRAGMA table_info(meetings)")]
     if "deleted_at" not in mcols:
         conn.execute("ALTER TABLE meetings ADD COLUMN deleted_at TEXT")
+    if "locked" not in mcols:
+        conn.execute("ALTER TABLE meetings ADD COLUMN locked INTEGER NOT NULL DEFAULT 0")
 
     scols = [row[1] for row in conn.execute("PRAGMA table_info(summaries)")]
     if "discussion" not in scols:

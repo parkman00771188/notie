@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api'
 import type { Meeting, Tag } from '../types'
-import { formatClock, formatRelativeDate } from '../utils'
+import { formatClock, formatKoreanDateTime } from '../utils'
 import { MeetingDetailView } from './MeetingDetailView'
 import Modal from './Modal'
 import StatusBadge from './StatusBadge'
@@ -11,6 +11,7 @@ import './RecentMeetingsModal.css'
 
 export interface RecentMeetingsPanelProps {
   refreshKey?: number
+  recordingActive?: boolean
 }
 
 /** 전체 보기 모달 태그 필터: 'all'(전체) | { tag: 태그명 } */
@@ -24,7 +25,7 @@ interface ModalGroup {
   items: Meeting[]
 }
 
-export function RecentMeetingsPanel({ refreshKey = 0 }: RecentMeetingsPanelProps) {
+export function RecentMeetingsPanel({ refreshKey = 0, recordingActive = false }: RecentMeetingsPanelProps) {
   const [meetings, setMeetings] = useState<Meeting[]>([])
   const [loading, setLoading] = useState(true)
   const [reloadKey, setReloadKey] = useState(0)
@@ -64,13 +65,22 @@ export function RecentMeetingsPanel({ refreshKey = 0 }: RecentMeetingsPanelProps
     }
   }, [refreshKey, reloadKey])
 
-  const recent = meetings.slice(0, 6)
+  const recordedMeetings = useMemo(
+    () => meetings.filter((meeting) => meeting.status !== 'scheduled'),
+    [meetings],
+  )
+  const recent = recordedMeetings.slice(0, 5)
 
   const openAll = () => {
     setTagFilter('all')
     setView('folder')
     setCollapsed({})
     setDetailId(null)
+    setModalOpen(true)
+  }
+
+  const openDetail = (id: number) => {
+    setDetailId(id)
     setModalOpen(true)
   }
 
@@ -81,19 +91,21 @@ export function RecentMeetingsPanel({ refreshKey = 0 }: RecentMeetingsPanelProps
 
   const reloadList = () => setReloadKey((k) => k + 1)
 
-  const goAllMeetings = () => {
-    closeModal()
-    navigate('/meetings')
-  }
-
   // 태그 필터 적용된 모달 목록
   const visible = useMemo(() => {
-    if (typeof tagFilter === 'object') return meetings.filter((m) => m.tag === tagFilter.tag)
-    return meetings
-  }, [meetings, tagFilter])
+    if (typeof tagFilter === 'object') {
+      return recordedMeetings.filter((m) => m.tag === tagFilter.tag)
+    }
+    return recordedMeetings
+  }, [recordedMeetings, tagFilter])
 
   const tagColor = (name: string): string | null =>
     tags.find((t) => t.name === name)?.color ?? null
+
+  const meetingMeta = (meeting: Meeting) =>
+    `${formatKoreanDateTime(meeting.started_at)} · ${
+      meeting.status === 'scheduled' ? '예정' : formatClock(meeting.duration_sec)
+    }`
 
   /** 폴더(그룹) 보기: 등록 태그(name ASC) → 미등록 태그 → "태그 없음" 마지막 */
   const groups = useMemo<ModalGroup[]>(() => {
@@ -140,12 +152,15 @@ export function RecentMeetingsPanel({ refreshKey = 0 }: RecentMeetingsPanelProps
               #{m.tag}
             </span>
           )}
-          {m.title}
+          <span className="rmm-row-title-text">{m.title}</span>
+          {m.locked && (
+            <span className="lock-pill lock-pill-icon" title="잠금됨" aria-label="잠금됨">
+              🔒
+            </span>
+          )}
         </span>
         <StatusBadge status={m.status} />
-        <span className="rmm-row-meta">
-          {formatRelativeDate(m.started_at)} · {formatClock(m.duration_sec)}
-        </span>
+        <span className="rmm-row-meta">{meetingMeta(m)}</span>
       </button>
     )
   }
@@ -173,7 +188,7 @@ export function RecentMeetingsPanel({ refreshKey = 0 }: RecentMeetingsPanelProps
                 key={m.id}
                 type="button"
                 className="recent-item"
-                onClick={() => navigate(`/meetings/${m.id}`)}
+                onClick={() => openDetail(m.id)}
               >
                 <span className="recent-item-title">
                   <span className="recent-item-icon">📄</span>
@@ -194,13 +209,16 @@ export function RecentMeetingsPanel({ refreshKey = 0 }: RecentMeetingsPanelProps
                       )
                     })()}
                   <span className="recent-item-name">{m.title}</span>
+                  {m.locked && (
+                    <span className="lock-pill lock-pill-icon" title="잠금됨" aria-label="잠금됨">
+                      🔒
+                    </span>
+                  )}
                 </span>
                 <span className="recent-item-meta">
                   {/* 요약 완료(정상 상태)는 배지 생략 — 진행 중/실패만 표시 */}
                   {m.status !== 'done' && <StatusBadge status={m.status} />}
-                  <span className="muted">
-                    {formatRelativeDate(m.started_at)} · {formatClock(m.duration_sec)}
-                  </span>
+                  <span className="muted">{meetingMeta(m)}</span>
                 </span>
               </button>
             ))}
@@ -211,13 +229,21 @@ export function RecentMeetingsPanel({ refreshKey = 0 }: RecentMeetingsPanelProps
       <div className="ai-promo">
         <div className="ai-promo-emoji">✨</div>
         <p className="ai-promo-title">회의를 더 빠르게 정리해보세요</p>
-        <button type="button" className="ai-promo-link" onClick={() => navigate('/meetings')}>
-          AI 요약 사용하기 →
+        <button
+          type="button"
+          className="ai-promo-link"
+          onClick={() => {
+            if (!recordingActive) navigate('/meetings')
+          }}
+          disabled={recordingActive}
+          title={recordingActive ? '녹음 중에는 화면 이동을 막았어요.' : undefined}
+        >
+          AI 회의록 사용하기 →
         </button>
       </div>
 
       {/* 전체 보기 팝업 — 태그 필터 + 목록/폴더 보기 + 팝업 내 상세 */}
-      <Modal open={modalOpen} title="전체 회의" width={960} onClose={closeModal}>
+      <Modal open={modalOpen} title={detailId == null ? '전체 회의' : '회의 내용'} width={960} onClose={closeModal}>
         <div className="rmm-root">
           {detailId == null ? (
             <>
@@ -279,7 +305,7 @@ export function RecentMeetingsPanel({ refreshKey = 0 }: RecentMeetingsPanelProps
                 {visible.length === 0 ? (
                   <div className="empty-state">
                     <div className="emoji">🔍</div>
-                    {meetings.length === 0 ? '아직 회의 기록이 없어요' : '조건에 맞는 회의가 없어요'}
+                    {recordedMeetings.length === 0 ? '아직 회의 기록이 없어요' : '조건에 맞는 회의가 없어요'}
                   </div>
                 ) : view === 'list' ? (
                   <div className="rmm-list">{visible.map(renderRow)}</div>
@@ -315,6 +341,7 @@ export function RecentMeetingsPanel({ refreshKey = 0 }: RecentMeetingsPanelProps
             <div className="rmm-scroll rmm-detail">
               <MeetingDetailView
                 meetingId={detailId}
+                audioPlaybackDisabled={recordingActive}
                 onBack={() => setDetailId(null)}
                 onDeleted={() => {
                   setDetailId(null)
@@ -329,9 +356,6 @@ export function RecentMeetingsPanel({ refreshKey = 0 }: RecentMeetingsPanelProps
             <span className="muted rmm-footer-hint">
               💡 회의를 클릭하면 상세 내용을 확인할 수 있어요.
             </span>
-            <button type="button" className="link-btn" onClick={goAllMeetings}>
-              전체 회의 보기 →
-            </button>
           </div>
         </div>
       </Modal>

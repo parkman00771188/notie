@@ -398,149 +398,153 @@ export default function RecordPage() {
           </div>
         </header>
 
-        {/* ---- 레코더 카드 ---- */}
-        <section className="card recorder-card">
-          {!showRecorder ? (
-            <div className="recorder-idle">
-              <div className="recorder-idle-emoji">🎙️</div>
-              <p className="recorder-idle-hint">
-                녹음을 시작하면 회의가 만들어지고, 메모는 실시간으로 저장돼요.
-              </p>
-              <button
-                type="button"
-                className="btn btn-primary btn-lg record-start-btn"
-                onClick={() => void handleStart()}
-                disabled={starting}
-              >
-                <span className="record-start-dot" /> 녹음 시작
-              </button>
-              <button
-                type="button"
-                className="upload-entry-link"
-                onClick={() => setUploadOpen(true)}
-                disabled={starting}
-              >
-                또는 오디오 파일 업로드
-              </button>
-            </div>
-          ) : (
-            <>
-              <div
-                className={`recorder-status${recorder.status === 'paused' ? ' paused' : ''}`}
-              >
-                <span
-                  className={`rec-dot${recorder.status === 'paused' ? ' paused' : ''}`}
-                />
-                {recorder.status === 'paused' ? '일시정지됨' : '녹음 중'}
+        <div className="record-content-row">
+          <div className="record-content-main">
+            {/* ---- 레코더 카드 ---- */}
+            <section className="card recorder-card">
+              {!showRecorder ? (
+                <div className="recorder-idle">
+                  <div className="recorder-idle-emoji">🎙️</div>
+                  <p className="recorder-idle-hint">
+                    녹음을 시작하면 회의가 만들어지고, 메모는 실시간으로 저장돼요.
+                  </p>
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-lg record-start-btn"
+                    onClick={() => void handleStart()}
+                    disabled={starting}
+                  >
+                    <span className="record-start-dot" /> 녹음 시작
+                  </button>
+                  <button
+                    type="button"
+                    className="upload-entry-link"
+                    onClick={() => setUploadOpen(true)}
+                    disabled={starting}
+                  >
+                    또는 오디오 파일 업로드
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <div
+                    className={`recorder-status${recorder.status === 'paused' ? ' paused' : ''}`}
+                  >
+                    <span
+                      className={`rec-dot${recorder.status === 'paused' ? ' paused' : ''}`}
+                    />
+                    {recorder.status === 'paused' ? '일시정지됨' : '녹음 중'}
+                  </div>
+
+                  <div className="recorder-timer">{formatClock(recorder.elapsedSec)}</div>
+
+                  <Waveform
+                    analyser={recorder.analyser}
+                    active={recorder.status === 'recording'}
+                    marks={waveMarks}
+                    elapsedSec={recorder.elapsedSec}
+                  />
+
+                  <div className="recorder-controls">
+                    {recorder.status === 'paused' ? (
+                      <button
+                        type="button"
+                        className="btn btn-primary"
+                        onClick={recorder.resume}
+                      >
+                        ▶ 재개
+                      </button>
+                    ) : (
+                      <button type="button" className="btn btn-ghost" onClick={recorder.pause}>
+                        ⏸ 일시정지
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="btn record-stop-btn"
+                      onClick={() => void handleStop()}
+                      disabled={uploading}
+                    >
+                      ■ 종료
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-soft"
+                      onClick={() => void handleAddMark()}
+                      disabled={!canMemo}
+                    >
+                      🔖 마크 추가
+                    </button>
+                  </div>
+                </>
+              )}
+            </section>
+
+            {/* ---- 메모 카드 ---- */}
+            <section className="card memo-card">
+              <div className="memo-header">
+                <h2 className="memo-title">메모</h2>
+                <span className="memo-count">{bookmarks.length}개</span>
               </div>
 
-              <div className="recorder-timer">{formatClock(recorder.elapsedSec)}</div>
-
-              <Waveform
-                analyser={recorder.analyser}
-                active={recorder.status === 'recording'}
-                marks={waveMarks}
-                elapsedSec={recorder.elapsedSec}
-              />
-
-              <div className="recorder-controls">
-                {recorder.status === 'paused' ? (
+              <div className="memo-input-area">
+                <textarea
+                  ref={memoAreaRef}
+                  className="input memo-textarea"
+                  placeholder="회의 중 메모를 입력하세요... (Enter 제출, Shift+Enter 줄바꿈)"
+                  rows={2}
+                  value={memoText}
+                  onChange={(e) => setMemoText(e.target.value)}
+                  onKeyDown={onMemoKeyDown}
+                  disabled={!canMemo}
+                />
+                <div className="memo-input-footer">
+                  <label className="memo-time-toggle">
+                    <input
+                      type="checkbox"
+                      checked={withTime}
+                      onChange={(e) => setWithTime(e.target.checked)}
+                      disabled={!canMemo}
+                    />
+                    ⏱ 시간 기록
+                  </label>
                   <button
                     type="button"
                     className="btn btn-primary"
-                    onClick={recorder.resume}
+                    onClick={() => void handleAddMemo()}
+                    disabled={!canMemo || !memoText.trim()}
                   >
-                    ▶ 재개
+                    + 메모 추가
                   </button>
-                ) : (
-                  <button type="button" className="btn btn-ghost" onClick={recorder.pause}>
-                    ⏸ 일시정지
-                  </button>
-                )}
-                <button
-                  type="button"
-                  className="btn record-stop-btn"
-                  onClick={() => void handleStop()}
-                  disabled={uploading}
-                >
-                  ■ 종료
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-soft"
-                  onClick={() => void handleAddMark()}
-                  disabled={!canMemo}
-                >
-                  🔖 마크 추가
-                </button>
-              </div>
-            </>
-          )}
-        </section>
-
-        {/* ---- 메모 카드 ---- */}
-        <section className="card memo-card">
-          <div className="memo-header">
-            <h2 className="memo-title">메모</h2>
-            <span className="memo-count">{bookmarks.length}개</span>
-          </div>
-
-          <div className="memo-input-area">
-            <textarea
-              ref={memoAreaRef}
-              className="input memo-textarea"
-              placeholder="회의 중 메모를 입력하세요... (Enter 제출, Shift+Enter 줄바꿈)"
-              rows={2}
-              value={memoText}
-              onChange={(e) => setMemoText(e.target.value)}
-              onKeyDown={onMemoKeyDown}
-              disabled={!canMemo}
-            />
-            <div className="memo-input-footer">
-              <label className="memo-time-toggle">
-                <input
-                  type="checkbox"
-                  checked={withTime}
-                  onChange={(e) => setWithTime(e.target.checked)}
-                  disabled={!canMemo}
-                />
-                ⏱ 시간 기록
-              </label>
-              <button
-                type="button"
-                className="btn btn-primary"
-                onClick={() => void handleAddMemo()}
-                disabled={!canMemo || !memoText.trim()}
-              >
-                + 메모 추가
-              </button>
-            </div>
-          </div>
-
-          {!canMemo && bookmarks.length === 0 ? (
-            <p className="memo-empty">녹음을 시작하면 메모를 남길 수 있어요.</p>
-          ) : bookmarks.length === 0 ? (
-            <p className="memo-empty">아직 메모가 없어요. Enter로 빠르게 추가해보세요.</p>
-          ) : (
-            <>
-              {timedBookmarks.length > 0 && (
-                <ul className="memo-list">{timedBookmarks.map(renderBookmarkItem)}</ul>
-              )}
-              {noteBookmarks.length > 0 && (
-                <div className="memo-note-group">
-                  <h3 className="memo-group-title">일반 메모</h3>
-                  <ul className="memo-list">{noteBookmarks.map(renderBookmarkItem)}</ul>
                 </div>
-              )}
-            </>
-          )}
-        </section>
-      </div>
+              </div>
 
-      {/* ---- 우측 최근 회의 패널 ---- */}
-      <aside className="record-side">
-        <RecentMeetingsPanel refreshKey={refreshKey} />
-      </aside>
+              {!canMemo && bookmarks.length === 0 ? (
+                <p className="memo-empty">녹음을 시작하면 메모를 남길 수 있어요.</p>
+              ) : bookmarks.length === 0 ? (
+                <p className="memo-empty">아직 메모가 없어요. Enter로 빠르게 추가해보세요.</p>
+              ) : (
+                <>
+                  {timedBookmarks.length > 0 && (
+                    <ul className="memo-list">{timedBookmarks.map(renderBookmarkItem)}</ul>
+                  )}
+                  {noteBookmarks.length > 0 && (
+                    <div className="memo-note-group">
+                      <h3 className="memo-group-title">일반 메모</h3>
+                      <ul className="memo-list">{noteBookmarks.map(renderBookmarkItem)}</ul>
+                    </div>
+                  )}
+                </>
+              )}
+            </section>
+          </div>
+
+          {/* ---- 우측 최근 회의 패널 ---- */}
+          <aside className="record-side">
+            <RecentMeetingsPanel refreshKey={refreshKey} recordingActive={isLive || uploading} />
+          </aside>
+        </div>
+      </div>
 
       <ParticipantPicker
         open={pickerOpen}

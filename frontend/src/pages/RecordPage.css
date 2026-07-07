@@ -1,13 +1,24 @@
 /* ===== RecordPage 레이아웃 (메인 flex-1 + 우측 320px 패널) ===== */
 .record-page {
-  display: flex;
-  align-items: flex-start;
-  gap: 24px;
   padding: 32px 40px;
   max-width: 1400px;
 }
 
 .record-main {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.record-content-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 24px;
+}
+
+.record-content-main {
   flex: 1;
   min-width: 0;
   display: flex;
@@ -512,4 +523,217 @@
   font-size: 15px;
   font-weight: 700;
   color: var(--text-2);
+}
+
+@media (max-width: 1380px) {
+  .record-page {
+    width: 100%;
+    max-width: 840px;
+    margin: 0 auto;
+    padding: 28px 32px;
+  }
+
+  .record-main {
+    width: 100%;
+  }
+
+  .record-content-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .record-content-main {
+    width: 100%;
+  }
+
+  .record-side {
+    width: 100%;
+  }
+}
+
+@media (max-width: 768px) {
+  .record-page {
+    gap: 20px;
+    width: 100%;
+    max-width: 760px;
+    padding: 28px 20px 112px;
+  }
+
+  .record-side {
+    display: none;
+  }
+
+  .record-main {
+    gap: 18px;
+  }
+
+  .record-content-main {
+    gap: 18px;
+  }
+
+  .record-header {
+    padding-top: 2px;
+  }
+
+  .record-title-row {
+    align-items: flex-start;
+    min-height: 42px;
+  }
+
+  .record-title {
+    max-width: calc(100vw - 84px);
+    font-size: 30px;
+    line-height: 1.2;
+    white-space: normal;
+  }
+
+  .record-title-row .btn-icon {
+    margin-top: 4px;
+  }
+
+  .record-title-input {
+    max-width: 100%;
+    font-size: 22px;
+  }
+
+  .record-meta {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 7px;
+    margin-top: 12px;
+    font-size: 17px;
+  }
+
+  .record-meta-item {
+    gap: 8px;
+  }
+
+  .record-participants {
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 22px;
+  }
+
+  .record-participants-count {
+    font-size: 16px;
+  }
+
+  .record-add-btn {
+    min-height: 42px;
+    padding: 7px 18px;
+    font-size: 16px;
+  }
+
+  .recorder-card {
+    padding: 26px 20px;
+    gap: 18px;
+  }
+
+  .recorder-idle {
+    gap: 16px;
+    padding: 14px 0 18px;
+  }
+
+  .recorder-idle-emoji {
+    font-size: 42px;
+  }
+
+  .recorder-idle-hint {
+    max-width: 280px;
+    font-size: 16px;
+    line-height: 1.55;
+  }
+
+  .record-start-btn {
+    width: min(100%, 300px);
+    padding: 16px 24px;
+    font-size: 18px;
+  }
+
+  .upload-entry-link {
+    font-size: 16px;
+  }
+
+  .recorder-timer {
+    font-size: clamp(38px, 12vw, 48px);
+  }
+
+  .recorder-controls {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .recorder-controls .btn {
+    flex: 1 1 120px;
+  }
+
+  .waveform,
+  .waveform-canvas {
+    height: 104px;
+  }
+
+  .memo-card {
+    padding: 22px 20px;
+  }
+
+  .memo-header {
+    margin-bottom: 16px;
+  }
+
+  .memo-title {
+    font-size: 19px;
+  }
+
+  .memo-count {
+    font-size: 16px;
+  }
+
+  .memo-textarea {
+    min-height: 104px;
+    font-size: 16px;
+    line-height: 1.55;
+  }
+
+  .memo-input-footer {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .memo-time-toggle {
+    min-height: 42px;
+    font-size: 16px;
+  }
+
+  .memo-input-footer .btn {
+    margin-left: auto;
+    padding-inline: 18px;
+  }
+
+  .memo-empty {
+    padding: 22px 0 4px;
+    font-size: 16px;
+  }
+
+  .memo-item {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 9px;
+    padding: 13px 0;
+  }
+
+  .memo-item-title {
+    flex-basis: calc(100% - 44px);
+    font-size: 16px;
+  }
+
+  .memo-item-menu-wrap {
+    margin-left: auto;
+  }
+}
+
+@media (max-width: 380px) {
+  .memo-input-footer .btn {
+    width: 100%;
+    margin-left: 0;
+  }
 }

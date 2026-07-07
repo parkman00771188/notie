@@ -19,6 +19,8 @@ const FLOW_CHIPS: { icon: string; label: string }[] = [
   { icon: '📌', label: '할 일 추출' },
 ]
 
+const isMobileViewport = () => typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches
+
 export default function AuthPage() {
   const { setUser } = useAuth()
   const navigate = useNavigate()
@@ -32,6 +34,7 @@ export default function AuthPage() {
   const [remember, setRemember] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [showIntro, setShowIntro] = useState(() => isMobileViewport())
 
   const notSupported = () => {
     alert('로컬 버전에서는 지원되지 않아요')
@@ -41,6 +44,19 @@ export default function AuthPage() {
     if (next === mode) return
     setMode(next)
     setError(null)
+  }
+
+  const enterForm = (next: Mode) => {
+    setMode(next)
+    setError(null)
+    setShowIntro(false)
+  }
+
+  const returnToIntro = () => {
+    if (!isMobileViewport()) return
+    setMode('login')
+    setError(null)
+    setShowIntro(true)
   }
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
@@ -67,12 +83,81 @@ export default function AuthPage() {
     }
   }
 
+  if (showIntro) {
+    return (
+      <div className="auth-page auth-intro-page">
+        <section className="mobile-auth-intro">
+          <div className="mobile-intro-top">
+            <div className="mobile-intro-brand">
+              <img className="mobile-auth-logo" src="/logo.png" alt="Notie 로고" />
+            </div>
+            <button type="button" className="mobile-intro-login" onClick={() => enterForm('login')}>
+              로그인
+            </button>
+          </div>
+
+          <h1 className="mobile-intro-title">
+            녹음하면,
+            <br />
+            <span>요약과 회의록</span>이
+            <br />
+            자동으로 완성됩니다
+          </h1>
+          <p className="mobile-intro-sub">
+            회의의 모든 순간을 놓치지 않고,
+            <br />
+            Notie가 깔끔하게 정리해드려요.
+          </p>
+
+          <div className="mobile-record-demo" aria-hidden="true">
+            <div className="rec-head">
+              <span className="rec-dot" />
+              <span>회의 녹음 중...</span>
+              <span className="rec-time">00:14:32</span>
+            </div>
+            <div className="rec-wave mobile-rec-wave">
+              {WAVE_HEIGHTS.map((h, i) => (
+                <span key={i} style={{ height: `${h + 10}px` }} />
+              ))}
+            </div>
+            <div className="rec-controls">
+              <span className="rec-btn rec-btn-pause">
+                <span />
+                <span />
+              </span>
+              <span className="rec-btn rec-btn-stop">
+                <span />
+              </span>
+            </div>
+          </div>
+
+          <div className="mobile-feature-grid" aria-hidden="true">
+            {FLOW_CHIPS.map((chip) => (
+              <div className="mobile-feature-card" key={chip.label}>
+                <span>{chip.icon}</span>
+                <strong>{chip.label}</strong>
+                <p>
+                  {chip.label === '요약 완료'
+                    ? '핵심 내용을 자동으로 요약'
+                    : chip.label === '회의록 생성'
+                      ? '정리된 회의록을 즉시 생성'
+                      : '주요 할 일을 자동으로 추출'}
+                </p>
+              </div>
+            ))}
+          </div>
+
+        </section>
+      </div>
+    )
+  }
+
   return (
     <div className="auth-page">
       <header className="auth-topbar">
-        <div className="auth-logo">
+        <button type="button" className="auth-logo auth-logo-button" onClick={returnToIntro}>
           <img src="/logo.png" alt="Notie 로고" />
-        </div>
+        </button>
       </header>
 
       <div className="auth-container">
@@ -144,6 +229,9 @@ export default function AuthPage() {
         {/* ---------- 우측 로그인 카드 ---------- */}
         <section className="auth-card-col">
           <div className="auth-card card">
+            <p className="auth-mobile-subtitle">
+              {mode === 'login' ? 'Notie 계정으로 로그인하세요.' : 'Notie 계정을 만들어보세요.'}
+            </p>
             <div className="auth-tabs" role="tablist">
               <button
                 type="button"

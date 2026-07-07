@@ -11,15 +11,14 @@ import { usePrompt } from './prompt'
 import { ParticipantPicker } from './ParticipantPicker'
 import { StatusBadge } from './StatusBadge'
 import { TagPicker } from './TagPicker'
-import type { Bookmark, MeetingDetail, MeetingStatus, Participant, Tag } from '../types'
+import type { Bookmark, MeetingDetail, MeetingStatus, Participant, Tag, TranscriptSegment } from '../types'
 import { formatClock, formatKoreanDateTime } from '../utils'
 import './MeetingDetailView.css'
 
-type TabKey = 'summary' | 'minutes' | 'transcript' | 'notes'
+type TabKey = 'minutes' | 'transcript' | 'notes'
 
 const TABS: { key: TabKey; label: string }[] = [
-  { key: 'summary', label: 'AI 요약' },
-  { key: 'minutes', label: '회의록' },
+  { key: 'minutes', label: 'AI 회의록' },
   { key: 'transcript', label: '전체 스크립트' },
   { key: 'notes', label: '메모' },
 ]
@@ -27,7 +26,7 @@ const TABS: { key: TabKey; label: string }[] = [
 const PROGRESS_MESSAGE: Partial<Record<MeetingStatus, string>> = {
   queued: '대기 중이에요...',
   transcribing: '음성을 텍스트로 변환하고 있어요...',
-  summarizing: 'AI가 요약을 만들고 있어요...',
+  summarizing: 'AI가 회의록을 만들고 있어요...',
 }
 
 export interface MeetingDetailViewProps {
@@ -38,13 +37,21 @@ export interface MeetingDetailViewProps {
   onDeleted?: () => void
   /** 제목/태그/참석자/상태가 바뀌었을 때 호출 (바깥 목록 갱신용) */
   onChanged?: () => void
+  /** 녹음 화면 안 팝업처럼 음원 재생을 강제로 막아야 하는 컨텍스트 */
+  audioPlaybackDisabled?: boolean
 }
 
 /**
  * 회의 상세 본문 — 헤더/메타/참석자/오디오 플레이어/탭/폴링/편집/재요약/삭제.
  * MeetingDetailPage(라우트)와 최근 회의 "전체 보기" 팝업에서 공용으로 사용한다.
  */
-export function MeetingDetailView({ meetingId, onBack, onDeleted, onChanged }: MeetingDetailViewProps) {
+export function MeetingDetailView({
+  meetingId,
+  onBack,
+  onDeleted,
+  onChanged,
+  audioPlaybackDisabled = false,
+}: MeetingDetailViewProps) {
   const navigate = useNavigate()
   const confirm = useConfirm()
   const promptInput = usePrompt()
@@ -52,11 +59,10 @@ export function MeetingDetailView({ meetingId, onBack, onDeleted, onChanged }: M
   const [meeting, setMeeting] = useState<MeetingDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
-  const [tab, setTab] = useState<TabKey>('summary')
+  const [tab, setTab] = useState<TabKey>('minutes')
   const [editingTitle, setEditingTitle] = useState(false)
   const [titleDraft, setTitleDraft] = useState('')
   const [pickerOpen, setPickerOpen] = useState(false)
-  const [copied, setCopied] = useState(false)
   const [addingMark, setAddingMark] = useState(false)
   const [noteDraft, setNoteDraft] = useState('')
   const [addingNote, setAddingNote] = useState(false)
@@ -65,8 +71,11 @@ export function MeetingDetailView({ meetingId, onBack, onDeleted, onChanged }: M
   const [dateDraft, setDateDraft] = useState('') // YYYY-MM-DD
   const [hourDraft, setHourDraft] = useState(9)
   const [minuteDraft, setMinuteDraft] = useState(0)
+  const [editingSegmentId, setEditingSegmentId] = useState<number | null>(null)
+  const [segmentDraft, setSegmentDraft] = useState('')
+  const [savingSegmentId, setSavingSegmentId] = useState<number | null>(null)
 
-  // AI 요약 내용 직접 편집 (리스트는 "한 줄에 하나" 텍스트로 편집)
+  // AI 회의록 내용 직접 편집 (리스트는 "한 줄에 하나" 텍스트로 편집)
   const [editingSummary, setEditingSummary] = useState(false)
   const [savingSummary, setSavingSummary] = useState(false)
   const [sumDraft, setSumDraft] = useState({
@@ -87,7 +96,6 @@ export function MeetingDetailView({ meetingId, onBack, onDeleted, onChanged }: M
 
   const playerRef = useRef<AudioPlayerCardHandle | null>(null)
   const skipTitleSaveRef = useRef(false)
-  const copyTimerRef = useRef<number | null>(null)
 
   // 콜백은 ref로 들고 있어 폴링 effect 재구독 없이 최신 것을 호출
   const onChangedRef = useRef(onChanged)
@@ -97,9 +105,11 @@ export function MeetingDetailView({ meetingId, onBack, onDeleted, onChanged }: M
   // 최초 로드 (meetingId가 바뀌면 상태 초기화 후 재로드 — 모달 안 재사용 대비)
   useEffect(() => {
     setMeeting(null)
-    setTab('summary')
+    setTab('minutes')
     setEditingTitle(false)
-    setCopied(false)
+    setEditingSegmentId(null)
+    setSegmentDraft('')
+    setSavingSegmentId(null)
     setNoteDraft('')
     if (!Number.isFinite(meetingId)) {
       setLoadError('잘못된 회의 주소예요.')
@@ -125,10 +135,10 @@ export function MeetingDetailView({ meetingId, onBack, onDeleted, onChanged }: M
     }
   }, [meetingId])
 
-  // done/failed가 아니면 3초 폴링
+  // 처리 중인 상태만 3초 폴링
   const status = meeting?.status
   useEffect(() => {
-    if (!status || status === 'done' || status === 'failed') return
+    if (!status || status === 'scheduled' || status === 'done' || status === 'failed') return
     const timer = window.setInterval(() => {
       api
         .getMeeting(meetingId)
@@ -144,35 +154,7 @@ export function MeetingDetailView({ meetingId, onBack, onDeleted, onChanged }: M
     return () => window.clearInterval(timer)
   }, [status, meetingId])
 
-  // 복사 토스트 타이머 정리
-  useEffect(() => {
-    return () => {
-      if (copyTimerRef.current) window.clearTimeout(copyTimerRef.current)
-    }
-  }, [])
-
-  // 회의록 본문 — 저장된 md의 제목(#)/일시 메타 줄(구버전 소요 시간 포함)과
-  // '## 참석자' 섹션은 떼고, 화면에서 헤더·참석자(소속별 그룹)를 직접 그린다
-  const minutesBody = useMemo(() => {
-    const md = meeting?.summary?.minutes_md
-    if (!md) return ''
-    const lines = md.split('\n')
-    let i = 0
-    while (i < lines.length && lines[i].trim() === '') i++
-    if (i < lines.length && lines[i].startsWith('# ')) i++
-    while (i < lines.length && lines[i].trim() === '') i++
-    if (i < lines.length && lines[i].includes('**일시**')) i++
-    const rest = lines.slice(i)
-    const peopleStart = rest.findIndex((l) => l.trim() === '## 참석자')
-    if (peopleStart >= 0) {
-      let peopleEnd = peopleStart + 1
-      while (peopleEnd < rest.length && !rest[peopleEnd].startsWith('## ')) peopleEnd++
-      rest.splice(peopleStart, peopleEnd - peopleStart)
-    }
-    return rest.join('\n').trim()
-  }, [meeting?.summary?.minutes_md])
-
-  // 참석자 소속별 그룹 (회의록 탭 표시 + 복사용) — 라이브 데이터라 참석자 편집 즉시 반영.
+  // 참석자 소속별 그룹 (회의록 탭 표시용) — 라이브 데이터라 참석자 편집 즉시 반영.
   // 소속·이름 모두 가나다순 정렬, 소속 미지정은 마지막.
   const peopleGroups = useMemo(() => {
     const grouped = new Map<string, Participant[]>()
@@ -202,11 +184,6 @@ export function MeetingDetailView({ meetingId, onBack, onDeleted, onChanged }: M
     return extras.length > 0 ? `${p.name} (${extras.join(' · ')})` : p.name
   }
 
-  const minutesHtml = useMemo(() => {
-    if (!minutesBody) return ''
-    return marked.parse(minutesBody, { async: false }) as string
-  }, [minutesBody])
-
   // 회의내용(주제별 정리) — 레거시 요약에는 discussion이 없을 수 있음
   const discussionHtml = useMemo(() => {
     const md = meeting?.summary?.discussion
@@ -217,6 +194,62 @@ export function MeetingDetailView({ meetingId, onBack, onDeleted, onChanged }: M
   /** 스크립트 세그먼트/메모 시간 칩 클릭 → 플레이어 점프 + 재생 */
   const seekTo = (sec: number) => {
     playerRef.current?.seekTo(sec, true)
+  }
+
+  const beginEditSegment = (seg: TranscriptSegment) => {
+    setEditingSegmentId(seg.id)
+    setSegmentDraft(seg.text)
+  }
+
+  const cancelSegmentEdit = () => {
+    setEditingSegmentId(null)
+    setSegmentDraft('')
+  }
+
+  const commitSegment = async (seg: TranscriptSegment) => {
+    if (!meeting || savingSegmentId) return
+    const text = segmentDraft.trim()
+    if (!text) {
+      alert('스크립트 내용을 입력해주세요')
+      return
+    }
+    if (text === seg.text) {
+      cancelSegmentEdit()
+      return
+    }
+
+    setSavingSegmentId(seg.id)
+    try {
+      const updated = await api.updateTranscriptSegment(meeting.id, seg.id, { text })
+      setMeeting((prev) =>
+        prev
+          ? {
+              ...prev,
+              segments: prev.segments.map((item) => (item.id === seg.id ? updated : item)),
+            }
+          : prev,
+      )
+      cancelSegmentEdit()
+    } catch (e) {
+      alert(e instanceof Error ? e.message : '스크립트 수정에 실패했어요')
+    } finally {
+      setSavingSegmentId(null)
+    }
+  }
+
+  const onSegmentEditorKeyDown = (
+    e: KeyboardEvent<HTMLTextAreaElement>,
+    seg: TranscriptSegment,
+  ) => {
+    if (e.nativeEvent.isComposing) return
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      cancelSegmentEdit()
+    }
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      void commitSegment(seg)
+    }
   }
 
   /** 날짜 편집 시작 — 기존 일시를 날짜/시(24h)/분으로 분해 */
@@ -249,6 +282,10 @@ export function MeetingDetailView({ meetingId, onBack, onDeleted, onChanged }: M
   const beginEditSummary = () => {
     const s = meeting?.summary
     if (!s) return
+    if (meeting.locked) {
+      alert('잠긴 회의는 AI 회의록을 수정할 수 없어요. 잠금을 해제한 뒤 다시 시도해주세요.')
+      return
+    }
     setSumDraft({
       discussion: s.discussion ?? '',
       key_points: (s.key_points ?? []).join('\n'),
@@ -261,6 +298,11 @@ export function MeetingDetailView({ meetingId, onBack, onDeleted, onChanged }: M
 
   const commitSummary = async () => {
     if (!meeting || savingSummary) return
+    if (meeting.locked) {
+      alert('잠긴 회의는 AI 회의록을 수정할 수 없어요. 잠금을 해제한 뒤 다시 시도해주세요.')
+      setEditingSummary(false)
+      return
+    }
     setSavingSummary(true)
     const toLines = (v: string) =>
       v.split('\n').map((x) => x.trim()).filter(Boolean)
@@ -276,21 +318,99 @@ export function MeetingDetailView({ meetingId, onBack, onDeleted, onChanged }: M
       setEditingSummary(false)
       notifyChanged()
     } catch (e) {
-      alert(e instanceof Error ? e.message : '요약 수정에 실패했어요')
+      alert(e instanceof Error ? e.message : 'AI 회의록 수정에 실패했어요')
     } finally {
       setSavingSummary(false)
     }
   }
 
-  /** 회의록 문서 다운로드 (브라우저 다운로드 폴더) */
-  const downloadExport = (format: 'docx' | 'pdf') => {
+  const filenameFromDisposition = (header: string | null, fallback: string): string => {
+    if (!header) return fallback
+    const utf8 = header.match(/filename\*=UTF-8''([^;]+)/i)
+    if (utf8?.[1]) {
+      try {
+        return decodeURIComponent(utf8[1])
+      } catch {
+        return fallback
+      }
+    }
+    const plain = header.match(/filename="?([^";]+)"?/i)
+    return plain?.[1] || fallback
+  }
+
+  const fetchExportBlob = async (format: 'docx' | 'pdf') => {
     if (!meeting) return
+    const res = await fetch(api.exportUrl(meeting.id, format))
+    if (!res.ok) {
+      let message = `내보내기에 실패했어요 (${res.status})`
+      try {
+        const data = await res.json()
+        if (typeof data.detail === 'string') message = data.detail
+      } catch {
+        const text = await res.text().catch(() => '')
+        if (text.trim()) message = text.trim()
+      }
+      throw new Error(message)
+    }
+
+    const blob = await res.blob()
+    const filename = filenameFromDisposition(
+      res.headers.get('Content-Disposition'),
+      `[회의록] ${meeting.title}.${format}`,
+    )
+    return { blob, filename }
+  }
+
+  const saveBlob = (blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
-    a.href = api.exportUrl(meeting.id, format)
-    a.download = ''
+    a.href = url
+    a.download = filename
     document.body.appendChild(a)
     a.click()
     a.remove()
+    URL.revokeObjectURL(url)
+  }
+
+  /** 회의록 문서 다운로드 (브라우저 다운로드 폴더) */
+  const downloadExport = async (format: 'docx' | 'pdf') => {
+    if (!meeting) return
+    try {
+      const result = await fetchExportBlob(format)
+      if (!result) return
+      saveBlob(result.blob, result.filename)
+    } catch (e) {
+      alert(e instanceof Error ? e.message : '내보내기에 실패했어요')
+    }
+  }
+
+  /** PDF 파일 공유 — Slack/카카오/메일 등은 브라우저·OS 공유 시트가 제공하는 대상으로 전달된다. */
+  const sharePdf = async () => {
+    if (!meeting) return
+    try {
+      const result = await fetchExportBlob('pdf')
+      if (!result) return
+      const filename = result.filename.toLowerCase().endsWith('.pdf')
+        ? result.filename
+        : `${result.filename}.pdf`
+      const file = new File([result.blob], filename, { type: 'application/pdf' })
+      const shareData: ShareData = {
+        title: `[회의록] ${meeting.title}`,
+        text: `${meeting.title} 회의록 PDF`,
+        files: [file],
+      }
+
+      if (navigator.share && navigator.canShare?.(shareData)) {
+        await navigator.share(shareData)
+        return
+      }
+
+      saveBlob(result.blob, filename)
+      alert('이 브라우저에서는 PDF 파일 공유가 지원되지 않아 다운로드로 대신 처리했어요.')
+    } catch (e) {
+      if (e instanceof DOMException && e.name === 'AbortError') return
+      alert(e instanceof Error ? e.message : '공유에 실패했어요')
+    }
   }
 
   const goBackToList = () => {
@@ -345,25 +465,56 @@ export function MeetingDetailView({ meetingId, onBack, onDeleted, onChanged }: M
       })
   }
 
-  // ----- 요약 다시 생성 / 재시도 -----
+  // ----- AI 회의록 다시 생성 / 재시도 -----
   const handleResummarize = async () => {
     if (!meeting) return
+    if (meeting.locked) {
+      alert('잠긴 회의는 AI 회의록을 다시 생성할 수 없어요. 잠금을 해제한 뒤 다시 시도해주세요.')
+      return
+    }
     try {
       await api.resummarize(meeting.id)
       // 상태를 즉시 summarizing으로 바꿔 폴링 재개
       setMeeting((prev) =>
         prev ? { ...prev, status: 'summarizing', error_message: null } : prev,
       )
-      setTab('summary')
+      setTab('minutes')
       notifyChanged()
     } catch (e) {
-      alert(e instanceof Error ? e.message : '요약 재생성에 실패했어요')
+      alert(e instanceof Error ? e.message : 'AI 회의록 재생성에 실패했어요')
+    }
+  }
+
+  // ----- 회의 잠금 -----
+  const handleToggleLock = async () => {
+    if (!meeting) return
+    const next = !meeting.locked
+    if (!next) {
+      const ok = await confirm({
+        title: '잠금을 해제하시겠습니까?',
+        message: '잠금을 해제하면 AI 회의록 수정/재생성과 삭제를 다시 사용할 수 있어요.',
+        confirmLabel: '잠금 해제',
+      })
+      if (!ok) return
+    }
+    setMeeting((prev) => (prev ? { ...prev, locked: next } : prev))
+    if (next) setEditingSummary(false)
+    try {
+      await api.updateMeeting(meeting.id, { locked: next })
+      notifyChanged()
+    } catch (e) {
+      setMeeting((prev) => (prev ? { ...prev, locked: !next } : prev))
+      alert(e instanceof Error ? e.message : '잠금 상태 변경에 실패했어요')
     }
   }
 
   // ----- 삭제 (휴지통 이동) -----
   const handleDelete = async () => {
     if (!meeting) return
+    if (meeting.locked) {
+      alert('잠긴 회의는 삭제할 수 없어요. 잠금을 해제한 뒤 다시 시도해주세요.')
+      return
+    }
     const ok = await confirm({
       title: '휴지통으로 이동할까요?',
       message: '휴지통에서 복원하거나 완전 삭제할 수 있어요.',
@@ -377,29 +528,6 @@ export function MeetingDetailView({ meetingId, onBack, onDeleted, onChanged }: M
       else navigate('/meetings')
     } catch (e) {
       alert(e instanceof Error ? e.message : '삭제에 실패했어요')
-    }
-  }
-
-  // ----- 회의록 복사 (화면과 동일한 헤더/참석자 구성으로 재구성) -----
-  const handleCopy = async () => {
-    if (!meeting || !minutesBody) return
-    const meta = `**일시**: ${formatKoreanDateTime(meeting.started_at)}${meeting.tag ? ` · **태그**: #${meeting.tag}` : ''}`
-    const peopleMd = peopleGroups
-      .map((g) =>
-        [g.org ? `**${g.org}**` : null, ...g.people.map((p) => `- ${personLine(p)}`)]
-          .filter(Boolean)
-          .join('\n'),
-      )
-      .join('\n')
-    const peopleSection = peopleMd ? `## 참석자\n${peopleMd}\n\n` : ''
-    const md = `# ${meeting.title}\n\n${meta}\n\n${peopleSection}${minutesBody}`
-    try {
-      await navigator.clipboard.writeText(md)
-      setCopied(true)
-      if (copyTimerRef.current) window.clearTimeout(copyTimerRef.current)
-      copyTimerRef.current = window.setTimeout(() => setCopied(false), 2000)
-    } catch {
-      alert('클립보드 복사에 실패했어요')
     }
   }
 
@@ -524,6 +652,12 @@ export function MeetingDetailView({ meetingId, onBack, onDeleted, onChanged }: M
   const timedBookmarks = meeting.bookmarks.filter((b) => b.kind !== 'note')
   const noteBookmarks = meeting.bookmarks.filter((b) => b.kind === 'note')
   const progressMessage = PROGRESS_MESSAGE[meeting.status]
+  const isRecordingMeeting = meeting.status === 'recording'
+  const isScheduledMeeting = meeting.status === 'scheduled'
+  const shouldBlockAudioPlayback = audioPlaybackDisabled || isRecordingMeeting
+  const isLocked = meeting.locked
+  const lockedActionMessage = '잠금 상태에서는 AI 회의록 수정/재생성과 삭제를 할 수 없어요.'
+  const resummarizeHint = '메모와 전체 스크립트를 기준으로 다시 요약합니다'
   const canResummarize =
     meeting.segments.length > 0 && (meeting.status === 'done' || meeting.status === 'failed')
 
@@ -538,6 +672,9 @@ export function MeetingDetailView({ meetingId, onBack, onDeleted, onChanged }: M
       {/* 헤더 */}
       <div className="detail-header">
         <div className="detail-title-row">
+          <span className="detail-title-tag">
+            <TagPicker compact value={meeting.tag} onChange={handleTagChange} />
+          </span>
           {editingTitle ? (
             <input
               className="input detail-title-input"
@@ -560,30 +697,51 @@ export function MeetingDetailView({ meetingId, onBack, onDeleted, onChanged }: M
               }}
             />
           ) : (
-            <>
+            <span className="detail-title-edit-wrap">
               <h1 className="page-title detail-title">{meeting.title}</h1>
               <button className="btn-icon" aria-label="제목 수정" title="제목 수정" onClick={startEditTitle}>
                 ✏️
               </button>
-            </>
+            </span>
           )}
           <StatusBadge status={meeting.status} />
           <div className="detail-actions">
+            <button
+              type="button"
+              className={`btn detail-lock-btn${isLocked ? ' locked' : ' btn-ghost'}`}
+              aria-pressed={isLocked}
+              title={isLocked ? '잠금을 해제합니다' : `회의 삭제와 AI 수정을 잠급니다. ${resummarizeHint}`}
+              onClick={() => void handleToggleLock()}
+            >
+              {isLocked ? '🔒 잠금됨' : '🔓 잠금'}
+            </button>
             {canResummarize && (
               <>
-                <span className="muted resummarize-hint">
-                  메모와 전체 스크립트를 기준으로 다시 요약합니다
-                </span>
-                <button className="btn btn-soft" onClick={handleResummarize}>
-                  ✨ AI 요약
+                <button
+                  className="btn btn-soft"
+                  onClick={handleResummarize}
+                  disabled={isLocked}
+                  title={isLocked ? lockedActionMessage : resummarizeHint}
+                >
+                  ✨ AI 회의록
                 </button>
               </>
             )}
-            <button className="btn btn-danger" onClick={handleDelete}>
+            <button
+              className="btn btn-danger"
+              onClick={handleDelete}
+              disabled={isLocked}
+              title={isLocked ? lockedActionMessage : undefined}
+            >
               삭제
             </button>
           </div>
         </div>
+        {isLocked && (
+          <div className="detail-lock-banner">
+            🔒 잠금 상태입니다. AI 회의록 수정/재생성과 삭제가 비활성화돼요.
+          </div>
+        )}
 
         <div className="detail-meta">
           {editingDate ? (
@@ -650,7 +808,6 @@ export function MeetingDetailView({ meetingId, onBack, onDeleted, onChanged }: M
               <span>{formatClock(meeting.duration_sec)}</span>
             </>
           )}
-          <TagPicker compact value={meeting.tag} onChange={handleTagChange} />
         </div>
 
         <div className="detail-people">
@@ -680,14 +837,22 @@ export function MeetingDetailView({ meetingId, onBack, onDeleted, onChanged }: M
             <strong>처리에 실패했어요</strong>
             {meeting.error_message && <p className="failed-message">{meeting.error_message}</p>}
           </div>
-          <button className="btn btn-danger" onClick={handleResummarize}>
+          <button className="btn btn-danger" onClick={handleResummarize} disabled={isLocked}>
             다시 시도
           </button>
         </div>
       )}
 
       {/* 오디오 플레이어 (파형 클릭 시크 + 북마크 핀 + 마크 추가) */}
-      {meeting.audio_filename && (
+      {shouldBlockAudioPlayback ? (
+        <div className="card audio-unavailable-card" role="status" aria-live="polite">
+          <div className="audio-unavailable-icon">🎙️</div>
+          <div className="audio-unavailable-copy">
+            <strong>지금 회의 기록 중이라 음원 재생은 사용할 수 없어요.</strong>
+            <p>녹음을 종료한 뒤 다시 열면 음원을 재생할 수 있습니다.</p>
+          </div>
+        </div>
+      ) : meeting.audio_filename ? (
         <AudioPlayerCard
           ref={playerRef}
           src={api.audioUrl(meeting.id)}
@@ -696,7 +861,7 @@ export function MeetingDetailView({ meetingId, onBack, onDeleted, onChanged }: M
           bookmarks={timedBookmarks}
           onAddMark={(timeSec) => void handleAddMark(timeSec)}
         />
-      )}
+      ) : null}
 
       {/* 탭 */}
       <div className="detail-tabs" role="tablist">
@@ -717,14 +882,15 @@ export function MeetingDetailView({ meetingId, onBack, onDeleted, onChanged }: M
       </div>
 
       <div className="card tab-panel">
-        {/* AI 요약 — K1 구조: 회의내용 / 핵심내용 / 결정사항(+추가 확인 필요) / 할 일 */}
-        {tab === 'summary' &&
+        {/* AI 회의록 — K1 구조: 회의내용 / 핵심내용 / 결정사항(+추가 확인 필요) / 할 일 */}
+        {tab === 'minutes' &&
           (summary ? (
             editingSummary ? (
-              <div className="summary-panel summary-edit">
+              <div className="minutes-panel summary-edit">
                 <p className="muted summary-edit-hint">
-                  각 항목을 직접 수정할 수 있어요. 핵심내용·결정사항·추가 확인·할 일은 한 줄에
-                  하나씩 적어주세요. 저장하면 회의록과 문서 출력에도 반영됩니다.
+                  AI 회의록의 항목과 내용을 직접 수정할 수 있어요. 핵심내용·결정사항·추가
+                  확인·할 일은 한 줄에 하나씩 적어주세요. 저장하면 Word/PDF 출력과 공유에도
+                  반영됩니다.
                 </p>
                 <label className="field-label">회의내용 (마크다운)</label>
                 <textarea
@@ -774,7 +940,39 @@ export function MeetingDetailView({ meetingId, onBack, onDeleted, onChanged }: M
                 </div>
               </div>
             ) : (
-            <div className="summary-panel">
+            <div className="minutes-panel ai-minutes-panel">
+              <div className="minutes-toolbar">
+                <button
+                  className="btn btn-ghost"
+                  onClick={beginEditSummary}
+                  disabled={isLocked}
+                  title={isLocked ? lockedActionMessage : undefined}
+                >
+                  {isLocked ? '🔒 수정 잠김' : '✏️ 수정'}
+                </button>
+                <button
+                  className="btn btn-soft"
+                  title="회의록 양식(Word .docx)으로 다운로드합니다"
+                  onClick={() => downloadExport('docx')}
+                >
+                  📄 Word로 출력
+                </button>
+                <button
+                  className="btn btn-soft"
+                  title="회의록 양식(PDF)으로 다운로드합니다"
+                  onClick={() => downloadExport('pdf')}
+                >
+                  🖨 PDF로 출력
+                </button>
+                <button
+                  className="btn btn-ghost"
+                  title="회의록 PDF를 Slack, 카카오톡, 메일 등으로 공유합니다"
+                  onClick={() => void sharePdf()}
+                >
+                  📤 공유
+                </button>
+              </div>
+
               {summary.engine_note && (
                 <div className="engine-warn-banner">
                   <span>⚠ {summary.engine_note}</span>
@@ -788,11 +986,42 @@ export function MeetingDetailView({ meetingId, onBack, onDeleted, onChanged }: M
                 </div>
               )}
 
-              <div className="summary-toolbar">
-                <button className="btn btn-ghost" onClick={beginEditSummary}>
-                  ✏️ 요약 수정
-                </button>
+              <div className="minutes-header">
+                {meeting.tag &&
+                  (() => {
+                    const c = tags.find((t) => t.name === meeting.tag)?.color ?? '#16a34a'
+                    return (
+                      <span
+                        className="tag-pill minutes-tag"
+                        style={{
+                          color: c,
+                          borderColor: c,
+                          background: `color-mix(in srgb, ${c} 10%, transparent)`,
+                        }}
+                      >
+                        #{meeting.tag}
+                      </span>
+                    )
+                  })()}
+                <h2 className="minutes-title">{meeting.title}</h2>
               </div>
+              <p className="minutes-meta muted">일시: {formatKoreanDateTime(meeting.started_at)}</p>
+
+              {peopleGroups.length > 0 && (
+                <div className="minutes-people">
+                  <h3 className="minutes-people-heading">참석자</h3>
+                  {peopleGroups.map((g) => (
+                    <div key={g.org || '__none__'} className="minutes-people-group">
+                      {g.org && <div className="minutes-people-org">{g.org}</div>}
+                      <ul className="minutes-people-list">
+                        {g.people.map((p) => (
+                          <li key={p.id}>{personLine(p)}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+              )}
 
               {discussionHtml && (
                 <section className="summary-section">
@@ -869,82 +1098,23 @@ export function MeetingDetailView({ meetingId, onBack, onDeleted, onChanged }: M
 
               {summary.engine.startsWith('extractive') && (
                 <div className="gemini-hint">
-                  💡 설정에서 Gemini API 키를 등록하면 더 정확한 AI 요약을 받을 수 있어요.
+                  💡 설정에서 Gemini API 키를 등록하면 더 정확한 AI 회의록을 받을 수 있어요.
                 </div>
               )}
             </div>
             )
           ) : (
             <div className="empty-state">
-              <div className="emoji">✨</div>
-              <p>{progressMessage ?? 'AI 요약이 아직 준비되지 않았어요.'}</p>
-            </div>
-          ))}
-
-        {/* 회의록 */}
-        {tab === 'minutes' &&
-          (summary?.minutes_md ? (
-            <div className="minutes-panel">
-              <div className="minutes-toolbar">
-                <button
-                  className="btn btn-soft"
-                  title="회의록 양식(Word .docx)으로 다운로드합니다"
-                  onClick={() => downloadExport('docx')}
-                >
-                  📄 Word로 출력
-                </button>
-                <button
-                  className="btn btn-soft"
-                  title="회의록 양식(PDF)으로 다운로드합니다"
-                  onClick={() => downloadExport('pdf')}
-                >
-                  🖨 PDF로 출력
-                </button>
-                <button className="btn btn-ghost" onClick={handleCopy}>
-                  {copied ? '복사됨 ✓' : '복사'}
-                </button>
+              <div className="emoji">
+                {isScheduledMeeting ? '📅' : isRecordingMeeting ? '🎙️' : '✨'}
               </div>
-              <div className="minutes-header">
-                {meeting.tag &&
-                  (() => {
-                    const c = tags.find((t) => t.name === meeting.tag)?.color ?? '#16a34a'
-                    return (
-                      <span
-                        className="tag-pill minutes-tag"
-                        style={{
-                          color: c,
-                          borderColor: c,
-                          background: `color-mix(in srgb, ${c} 10%, transparent)`,
-                        }}
-                      >
-                        #{meeting.tag}
-                      </span>
-                    )
-                  })()}
-                <h2 className="minutes-title">{meeting.title}</h2>
-              </div>
-              <p className="minutes-meta muted">일시: {formatKoreanDateTime(meeting.started_at)}</p>
-              {peopleGroups.length > 0 && (
-                <div className="minutes-people">
-                  <h3 className="minutes-people-heading">참석자</h3>
-                  {peopleGroups.map((g) => (
-                    <div key={g.org || '__none__'} className="minutes-people-group">
-                      {g.org && <div className="minutes-people-org">{g.org}</div>}
-                      <ul className="minutes-people-list">
-                        {g.people.map((p) => (
-                          <li key={p.id}>{personLine(p)}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  ))}
-                </div>
-              )}
-              <div className="markdown-body" dangerouslySetInnerHTML={{ __html: minutesHtml }} />
-            </div>
-          ) : (
-            <div className="empty-state">
-              <div className="emoji">📄</div>
-              <p>{progressMessage ?? '회의록이 아직 준비되지 않았어요.'}</p>
+              <p>
+                {isScheduledMeeting
+                  ? '예정된 회의입니다. 회의가 진행되면 AI 회의록이 준비됩니다.'
+                  : isRecordingMeeting
+                  ? '녹음 중이에요. 녹음을 종료하면 AI 회의록이 생성됩니다.'
+                  : (progressMessage ?? 'AI 회의록이 아직 준비되지 않았어요.')}
+              </p>
             </div>
           ))}
 
@@ -952,19 +1122,78 @@ export function MeetingDetailView({ meetingId, onBack, onDeleted, onChanged }: M
         {tab === 'transcript' &&
           (meeting.segments.length > 0 ? (
             <div className="transcript-list">
-              {meeting.segments.map((seg) => (
-                <div key={seg.id} className="segment-row">
-                  <button className="time-chip" onClick={() => seekTo(seg.start_sec)}>
-                    {formatClock(seg.start_sec)}
-                  </button>
-                  <p className="segment-text">{seg.text}</p>
-                </div>
-              ))}
+              {meeting.segments.map((seg) => {
+                const isEditingSegment = editingSegmentId === seg.id
+                const isSavingSegment = savingSegmentId === seg.id
+                const canSaveSegment =
+                  segmentDraft.trim().length > 0 && segmentDraft.trim() !== seg.text
+                return (
+                  <div
+                    key={seg.id}
+                    className={`segment-row${isEditingSegment ? ' editing' : ''}`}
+                  >
+                    <button className="time-chip" onClick={() => seekTo(seg.start_sec)}>
+                      {formatClock(seg.start_sec)}
+                    </button>
+                    <div className="segment-body">
+                      {isEditingSegment ? (
+                        <div className="segment-editor">
+                          <textarea
+                            className="input segment-edit-textarea"
+                            value={segmentDraft}
+                            autoFocus
+                            rows={3}
+                            onChange={(e) => setSegmentDraft(e.target.value)}
+                            onKeyDown={(e) => onSegmentEditorKeyDown(e, seg)}
+                          />
+                          <div className="segment-edit-actions">
+                            <button
+                              type="button"
+                              className="btn btn-ghost"
+                              onClick={cancelSegmentEdit}
+                              disabled={isSavingSegment}
+                            >
+                              취소
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-primary"
+                              onClick={() => void commitSegment(seg)}
+                              disabled={isSavingSegment || !canSaveSegment}
+                            >
+                              {isSavingSegment ? '저장 중...' : '저장'}
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <p className="segment-text">{seg.text}</p>
+                          <button
+                            type="button"
+                            className="btn-icon segment-edit-btn"
+                            aria-label="스크립트 수정"
+                            title="스크립트 수정"
+                            onClick={() => beginEditSegment(seg)}
+                          >
+                            ✎
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           ) : (
             <div className="empty-state">
               <div className="emoji">🗣️</div>
-              <p>{progressMessage ?? '인식된 음성이 없어요.'}</p>
+              <p>
+                {isScheduledMeeting
+                  ? '회의가 진행되면 전체 스크립트가 준비됩니다.'
+                  : isRecordingMeeting
+                  ? '녹음 종료 후 전체 스크립트가 준비됩니다.'
+                  : (progressMessage ?? '인식된 음성이 없어요.')}
+              </p>
             </div>
           ))}
 

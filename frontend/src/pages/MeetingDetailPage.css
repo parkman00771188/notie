@@ -5,3 +5,9 @@
   width: 100%;
   max-width: 1000px;
 }
+
+@media (max-width: 768px) {
+  .detail-page {
+    max-width: none;
+  }
+}

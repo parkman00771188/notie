@@ -49,6 +49,7 @@ export function formatRelativeDate(iso: string | null | undefined): string {
 }
 
 export const STATUS_LABEL: Record<MeetingStatus, string> = {
+  scheduled: '예정',
   recording: '녹음 중',
   queued: '대기 중',
   transcribing: '변환 중',
@@ -59,6 +60,7 @@ export const STATUS_LABEL: Record<MeetingStatus, string> = {
 
 /** 배지 톤: green | gray | blue | red */
 export const STATUS_TONE: Record<MeetingStatus, 'green' | 'gray' | 'blue' | 'red'> = {
+  scheduled: 'gray',
   recording: 'red',
   queued: 'gray',
   transcribing: 'blue',

@@ -64,11 +64,19 @@ class MeetingCreate(BaseModel):
     participant_ids: Optional[List[int]] = None
 
 
+class MeetingScheduleCreate(BaseModel):
+    title: str
+    tag: Optional[str] = None
+    started_at: str
+    participant_ids: Optional[List[int]] = None
+
+
 class MeetingUpdate(BaseModel):
     title: Optional[str] = None
     tag: Optional[str] = None
     started_at: Optional[str] = None
     participant_ids: Optional[List[int]] = None
+    locked: Optional[bool] = None
 
 
 class SummaryUpdate(BaseModel):
@@ -77,6 +85,10 @@ class SummaryUpdate(BaseModel):
     decisions: Optional[List[str]] = None
     followups: Optional[List[str]] = None
     action_items: Optional[list] = None  # [str] 또는 [{text, owner?, due?}]
+
+
+class TranscriptSegmentUpdate(BaseModel):
+    text: str
 
 
 def payload_fields(model: BaseModel) -> dict:
@@ -102,6 +114,12 @@ def get_owned_meeting(
     return row
 
 
+def ensure_unlocked(row: sqlite3.Row, detail: str) -> None:
+    """잠긴 회의에서 막아야 하는 파괴적/AI 변경 작업을 공통으로 차단."""
+    if row["locked"]:
+        raise HTTPException(status_code=423, detail=detail)
+
+
 def serialize_meeting(conn: sqlite3.Connection, row: sqlite3.Row) -> dict:
     """meetings row → Meeting 응답 dict (participants 조인 포함)."""
     participants = conn.execute(
@@ -122,6 +140,7 @@ def serialize_meeting(conn: sqlite3.Connection, row: sqlite3.Row) -> dict:
         "started_at": row["started_at"],
         "duration_sec": row["duration_sec"],
         "audio_filename": row["audio_filename"],
+        "locked": bool(row["locked"]),
         "created_at": row["created_at"],
         "participants": [dict(p) for p in participants],
     }
@@ -152,6 +171,30 @@ def create_meeting(payload: MeetingCreate, user: dict = Depends(get_current_user
             cur = conn.execute(
                 "INSERT INTO meetings (user_id, title, tag, status, started_at) VALUES (?, ?, ?, 'recording', ?)",
                 (user["id"], payload.title, payload.tag, started_at),
+            )
+            meeting_id = cur.lastrowid
+            if payload.participant_ids:
+                _replace_participants(conn, meeting_id, user["id"], payload.participant_ids)
+        row = get_owned_meeting(conn, meeting_id, user["id"])
+        return serialize_meeting(conn, row)
+
+
+@router.post("/schedule")
+def create_schedule(payload: MeetingScheduleCreate, user: dict = Depends(get_current_user)) -> dict:
+    title = payload.title.strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="일정 제목을 입력해주세요")
+    try:
+        started_at = datetime.fromisoformat(payload.started_at).isoformat(timespec="seconds")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="날짜 형식이 올바르지 않습니다")
+
+    tag = payload.tag.strip() if payload.tag and payload.tag.strip() else None
+    with closing(db.get_conn()) as conn:
+        with conn:
+            cur = conn.execute(
+                "INSERT INTO meetings (user_id, title, tag, status, started_at) VALUES (?, ?, ?, 'scheduled', ?)",
+                (user["id"], title, tag, started_at),
             )
             meeting_id = cur.lastrowid
             if payload.participant_ids:
@@ -263,6 +306,9 @@ def update_meeting(
                     raise HTTPException(status_code=400, detail="날짜 형식이 올바르지 않습니다")
                 sets.append("started_at = ?")
                 values.append(parsed.isoformat(timespec="seconds"))
+            if "locked" in data and data["locked"] is not None:
+                sets.append("locked = ?")
+                values.append(1 if data["locked"] else 0)
             if sets:
                 values.append(meeting_id)
                 conn.execute(f"UPDATE meetings SET {', '.join(sets)} WHERE id = ?", values)
@@ -272,12 +318,54 @@ def update_meeting(
         return serialize_meeting(conn, row)
 
 
+@router.patch("/{meeting_id}/segments/{segment_id}")
+def update_transcript_segment(
+    meeting_id: int,
+    segment_id: int,
+    payload: TranscriptSegmentUpdate,
+    user: dict = Depends(get_current_user),
+) -> dict:
+    text = payload.text.strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="스크립트 내용을 입력해주세요")
+    if len(text) > 10000:
+        raise HTTPException(status_code=400, detail="스크립트 내용이 너무 깁니다")
+
+    with closing(db.get_conn()) as conn:
+        get_owned_meeting(conn, meeting_id, user["id"])
+        row = conn.execute(
+            """
+            SELECT id, meeting_id, start_sec, end_sec, text
+            FROM transcript_segments
+            WHERE id = ? AND meeting_id = ?
+            """,
+            (segment_id, meeting_id),
+        ).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="스크립트 행을 찾을 수 없습니다")
+        with conn:
+            conn.execute(
+                "UPDATE transcript_segments SET text = ? WHERE id = ? AND meeting_id = ?",
+                (text, segment_id, meeting_id),
+            )
+        updated = conn.execute(
+            """
+            SELECT id, start_sec, end_sec, text
+            FROM transcript_segments
+            WHERE id = ? AND meeting_id = ?
+            """,
+            (segment_id, meeting_id),
+        ).fetchone()
+        return dict(updated)
+
+
 @router.delete("/{meeting_id}")
 def delete_meeting(meeting_id: int, user: dict = Depends(get_current_user)) -> dict:
     """소프트 삭제 — 휴지통으로 이동 (오디오 파일 유지, 복원 가능)."""
     deleted_at = datetime.now().isoformat(timespec="seconds")
     with closing(db.get_conn()) as conn:
-        get_owned_meeting(conn, meeting_id, user["id"])
+        row = get_owned_meeting(conn, meeting_id, user["id"])
+        ensure_unlocked(row, "잠긴 회의는 삭제할 수 없어요. 잠금을 해제한 뒤 다시 시도해주세요.")
         with conn:
             conn.execute(
                 "UPDATE meetings SET deleted_at = ? WHERE id = ?", (deleted_at, meeting_id)
@@ -303,6 +391,7 @@ def purge_meeting(meeting_id: int, user: dict = Depends(get_current_user)) -> di
     """완전 삭제 — 복구 불가 (오디오 파일 포함, FK cascade로 관련 기록 전부 삭제)."""
     with closing(db.get_conn()) as conn:
         row = get_owned_meeting(conn, meeting_id, user["id"], include_deleted=True)
+        ensure_unlocked(row, "잠긴 회의는 완전 삭제할 수 없어요. 잠금을 해제한 뒤 다시 시도해주세요.")
         audio_filename = row["audio_filename"]
         with conn:
             conn.execute("DELETE FROM meetings WHERE id = ?", (meeting_id,))
@@ -433,7 +522,7 @@ def export_minutes(
 
         try:
             data = export_pdf.build_minutes_pdf(meeting, participants, bookmarks, summary)
-        except RuntimeError as exc:  # 한글 폰트 없음 등
+        except (ImportError, RuntimeError) as exc:  # fpdf2 미설치, 한글 폰트 없음 등
             raise HTTPException(status_code=500, detail=str(exc))
         ext, media_type = "pdf", "application/pdf"
     else:
@@ -475,7 +564,7 @@ def get_status(meeting_id: int, user: dict = Depends(get_current_user)) -> dict:
 def update_summary(
     meeting_id: int, body: SummaryUpdate, user: dict = Depends(get_current_user)
 ) -> dict:
-    """요약 내용을 사용자가 직접 수정 — 회의록(minutes_md)도 함께 재생성한다."""
+    """AI 회의록 내용을 사용자가 직접 수정 — 회의록(minutes_md)도 함께 재생성한다."""
     from ..services import summarizer
 
     data = payload_fields(body)
@@ -485,11 +574,12 @@ def update_summary(
 
     with closing(db.get_conn()) as conn:
         row = get_owned_meeting(conn, meeting_id, user["id"])
+        ensure_unlocked(row, "잠긴 회의는 AI 회의록을 수정할 수 없어요. 잠금을 해제한 뒤 다시 시도해주세요.")
         srow = conn.execute(
             "SELECT * FROM summaries WHERE meeting_id = ?", (meeting_id,)
         ).fetchone()
         if srow is None:
-            raise HTTPException(status_code=400, detail="아직 요약이 없어요. 먼저 AI 요약을 실행해주세요")
+            raise HTTPException(status_code=400, detail="아직 AI 회의록이 없어요. 먼저 AI 회의록을 실행해주세요")
 
         # 기존 값 로드 후 요청 필드만 병합
         cur = {
@@ -586,7 +676,8 @@ def update_summary(
 @router.post("/{meeting_id}/summarize")
 def resummarize(meeting_id: int, user: dict = Depends(get_current_user)) -> dict:
     with closing(db.get_conn()) as conn:
-        get_owned_meeting(conn, meeting_id, user["id"])
+        row = get_owned_meeting(conn, meeting_id, user["id"])
+        ensure_unlocked(row, "잠긴 회의는 AI 회의록을 다시 생성할 수 없어요. 잠금을 해제한 뒤 다시 시도해주세요.")
         count_row = conn.execute(
             "SELECT COUNT(*) AS cnt FROM transcript_segments WHERE meeting_id = ?",
             (meeting_id,),

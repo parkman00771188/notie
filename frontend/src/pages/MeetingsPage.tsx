@@ -4,9 +4,10 @@ import { useNavigate } from 'react-router-dom'
 import { api } from '../api'
 import { AvatarStack } from '../components/Avatar'
 import { useConfirm } from '../components/confirm'
+import { MeetingDetailView } from '../components/MeetingDetailView'
+import Modal from '../components/Modal'
 import { StatusBadge } from '../components/StatusBadge'
 import { TrashModal } from '../components/TrashModal'
-import { UploadModal } from '../components/UploadModal'
 import type { Meeting, Tag } from '../types'
 import { formatClock, formatKoreanDateTime } from '../utils'
 import './MeetingsPage.css'
@@ -26,13 +27,14 @@ export default function MeetingsPage() {
   const confirm = useConfirm()
   const [q, setQ] = useState('')
   const [meetings, setMeetings] = useState<Meeting[] | null>(null)
-  const [uploadOpen, setUploadOpen] = useState(false)
   const [trashOpen, setTrashOpen] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
   const [tags, setTags] = useState<Tag[]>([])
   const [tagFilter, setTagFilter] = useState<TagFilter>('all')
+  const [tagFilterOpen, setTagFilterOpen] = useState(false)
   const [view, setView] = useState<'list' | 'folder'>('folder')
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
+  const [detailId, setDetailId] = useState<number | null>(null)
 
   // 태그 사전 로드 (필터 칩 + 폴더 색)
   useEffect(() => {
@@ -86,10 +88,20 @@ export default function MeetingsPage() {
   }
 
   const loading = meetings === null
-  const list = meetings ?? []
+  const list = (meetings ?? []).filter((m) => m.status !== 'scheduled')
   // '태그 없음'은 클라이언트에서 tag가 비어 있는 회의만 필터
   const visible = tagFilter === 'none' ? list.filter((m) => !m.tag) : list
   const filtered = q.trim().length > 0 || tagFilter !== 'all'
+  const selectedTag = typeof tagFilter === 'object' ? tags.find((t) => t.name === tagFilter.tag) : null
+  const selectedFilterLabel =
+    tagFilter === 'all' ? '전체' : tagFilter === 'none' ? '태그 없음' : tagFilter.tag
+  const selectedFilterColor =
+    typeof tagFilter === 'object' ? (selectedTag?.color ?? '#2563eb') : undefined
+
+  const applyTagFilter = (next: TagFilter) => {
+    setTagFilter(next)
+    setTagFilterOpen(false)
+  }
 
   /** 폴더(그룹) 보기: 등록 태그(name ASC) → 미등록 태그 → 미분류 순 */
   const buildGroups = (): MeetingGroup[] => {
@@ -120,9 +132,9 @@ export default function MeetingsPage() {
       className="meeting-row"
       role="button"
       tabIndex={0}
-      onClick={() => navigate(`/meetings/${m.id}`)}
+      onClick={() => setDetailId(m.id)}
       onKeyDown={(e) => {
-        if (e.key === 'Enter') navigate(`/meetings/${m.id}`)
+        if (e.key === 'Enter') setDetailId(m.id)
       }}
     >
       <span className="row-title" title={m.title}>
@@ -142,13 +154,18 @@ export default function MeetingsPage() {
               </span>
             )
           })()}
-        {m.title}
+        <span className="row-title-text">{m.title}</span>
+        {m.locked && (
+          <span className="lock-pill lock-pill-icon" title="잠금됨" aria-label="잠금됨">
+            🔒
+          </span>
+        )}
       </span>
       <span className="row-badge">
         <StatusBadge status={m.status} />
       </span>
       <span className="row-date">{formatKoreanDateTime(m.started_at)}</span>
-      <span className="row-dur">{formatClock(m.duration_sec)}</span>
+      <span className="row-dur">{m.status === 'scheduled' ? '예정' : formatClock(m.duration_sec)}</span>
       <span className="row-people">
         {m.participants.length > 0 ? (
           <AvatarStack participants={m.participants} max={3} />
@@ -159,7 +176,8 @@ export default function MeetingsPage() {
       <button
         className="btn-icon row-delete"
         aria-label="회의 삭제"
-        title="삭제"
+        title={m.locked ? '잠긴 회의는 삭제할 수 없어요' : '삭제'}
+        disabled={m.locked}
         onClick={(e) => handleDelete(e, m)}
       >
         🗑️
@@ -170,8 +188,39 @@ export default function MeetingsPage() {
   return (
     <div className="page meetings-page">
       <div className="meetings-header">
-        <h1 className="page-title">회의 목록</h1>
+        <div className="meetings-title-row">
+          <h1 className="page-title">회의 목록</h1>
+          <button
+            type="button"
+            className="btn btn-ghost meetings-title-trash"
+            onClick={() => setTrashOpen(true)}
+          >
+            🗑 휴지통
+          </button>
+        </div>
         <div className="upload-entry-actions">
+          <button
+            type="button"
+            className="tag-filter-mobile"
+            onClick={() => setTagFilterOpen(true)}
+            aria-haspopup="dialog"
+          >
+            <span className="tag-filter-mobile-copy">
+              <span className="tag-filter-mobile-label">태그 필터</span>
+              <span className="tag-filter-mobile-value">
+                {typeof tagFilter === 'object' && (
+                  <span
+                    className="tag-filter-dot"
+                    style={{ background: selectedFilterColor ?? '#2563eb' }}
+                  />
+                )}
+                {selectedFilterLabel}
+              </span>
+            </span>
+            <span className="tag-filter-mobile-chevron" aria-hidden="true">
+              ▾
+            </span>
+          </button>
           <input
             className="input meetings-search"
             type="search"
@@ -179,12 +228,6 @@ export default function MeetingsPage() {
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
-          <button type="button" className="btn btn-ghost" onClick={() => setUploadOpen(true)}>
-            ⬆ 파일 업로드
-          </button>
-          <button type="button" className="btn btn-ghost" onClick={() => setTrashOpen(true)}>
-            🗑 휴지통
-          </button>
         </div>
       </div>
 
@@ -300,7 +343,62 @@ export default function MeetingsPage() {
         </div>
       )}
 
-      <UploadModal open={uploadOpen} onClose={() => setUploadOpen(false)} />
+      <Modal open={tagFilterOpen} title="태그 필터" width={520} onClose={() => setTagFilterOpen(false)}>
+        <div className="tag-filter-sheet">
+          <button
+            type="button"
+            className={`tag-filter-option${tagFilter === 'all' ? ' selected' : ''}`}
+            onClick={() => applyTagFilter('all')}
+          >
+              <span className="tag-filter-option-main">
+                <span className="tag-filter-option-icon all">전체</span>
+              <span className="tag-filter-option-name">전체</span>
+              </span>
+            {tagFilter === 'all' && <span className="tag-filter-option-check">✓</span>}
+          </button>
+          {tags.map((t) => {
+            const active = typeof tagFilter === 'object' && tagFilter.tag === t.name
+            return (
+              <button
+                key={t.id}
+                type="button"
+                className={`tag-filter-option${active ? ' selected' : ''}`}
+                onClick={() => applyTagFilter({ tag: t.name })}
+              >
+                <span className="tag-filter-option-main">
+                  <span className="tag-filter-option-dot" style={{ background: t.color }} />
+                  <span className="tag-filter-option-name">{t.name}</span>
+                </span>
+                {active && <span className="tag-filter-option-check">✓</span>}
+              </button>
+            )
+          })}
+          <button
+            type="button"
+            className={`tag-filter-option${tagFilter === 'none' ? ' selected' : ''}`}
+            onClick={() => applyTagFilter('none')}
+          >
+            <span className="tag-filter-option-main">
+              <span className="tag-filter-option-icon none">없음</span>
+              <span className="tag-filter-option-name">태그 없음</span>
+            </span>
+            {tagFilter === 'none' && <span className="tag-filter-option-check">✓</span>}
+          </button>
+        </div>
+      </Modal>
+      <Modal open={detailId !== null} title="회의 내용" width={960} onClose={() => setDetailId(null)}>
+        {detailId !== null && (
+          <MeetingDetailView
+            meetingId={detailId}
+            onBack={() => setDetailId(null)}
+            onDeleted={() => {
+              setDetailId(null)
+              setReloadKey((k) => k + 1)
+            }}
+            onChanged={() => setReloadKey((k) => k + 1)}
+          />
+        )}
+      </Modal>
       <TrashModal
         open={trashOpen}
         onClose={() => setTrashOpen(false)}

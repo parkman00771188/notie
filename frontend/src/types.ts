@@ -33,6 +33,7 @@ export interface OrgOption {
 }
 
 export type MeetingStatus =
+  | 'scheduled'
   | 'recording'
   | 'queued'
   | 'transcribing'
@@ -48,6 +49,7 @@ export interface Meeting {
   started_at: string
   duration_sec: number | null
   audio_filename: string | null
+  locked: boolean
   created_at: string
   participants: Participant[]
 }

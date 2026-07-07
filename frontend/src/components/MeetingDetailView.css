@@ -54,6 +54,18 @@
   min-width: 0;
 }
 
+.detail-title-tag {
+  flex-shrink: 0;
+}
+
+.detail-title-edit-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+}
+
 .detail-title {
   min-width: 0;
   white-space: nowrap;
@@ -76,9 +88,28 @@
   flex-shrink: 0;
 }
 
-.resummarize-hint {
-  font-size: 12.5px;
-  white-space: nowrap;
+.detail-lock-btn {
+  flex-shrink: 0;
+}
+
+.detail-lock-btn.locked {
+  background: var(--gray-soft);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+}
+
+.detail-lock-banner {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  max-width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--gray-soft);
+  color: var(--text-2);
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .detail-meta {
@@ -163,6 +194,46 @@
   margin-bottom: 20px;
 }
 
+.audio-unavailable-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 20px;
+  padding: 18px 20px;
+  background: var(--primary-soft);
+  border-color: var(--primary-soft-2);
+}
+
+.audio-unavailable-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  border-radius: 12px;
+  background: var(--surface);
+  font-size: 22px;
+  box-shadow: var(--shadow-card);
+}
+
+.audio-unavailable-copy {
+  min-width: 0;
+}
+
+.audio-unavailable-copy strong {
+  display: block;
+  font-size: 14.5px;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.audio-unavailable-copy p {
+  margin-top: 3px;
+  font-size: 13.5px;
+  color: var(--text-2);
+}
+
 /* 탭 */
 .detail-tabs {
   display: flex;
@@ -222,7 +293,7 @@
   padding: 24px 28px;
 }
 
-/* AI 요약 탭 */
+/* AI 회의록 탭 */
 .summary-section {
   margin-bottom: 26px;
 }
@@ -562,6 +633,10 @@
   border-bottom: 1px solid var(--border);
 }
 
+.segment-row.editing {
+  padding: 14px 0;
+}
+
 .segment-row:last-child {
   border-bottom: none;
 }
@@ -571,10 +646,66 @@
   margin-top: 1px;
 }
 
+.segment-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
 .segment-text {
+  flex: 1;
   min-width: 0;
   font-size: 14.5px;
   line-height: 1.65;
+  white-space: pre-wrap;
+}
+
+.segment-edit-btn {
+  width: 42px;
+  height: 42px;
+  flex-shrink: 0;
+  border-radius: 12px;
+  font-size: 20px;
+  font-weight: 800;
+  opacity: 0;
+  transform: translateY(-2px);
+  transition:
+    opacity 0.15s,
+    background 0.15s,
+    color 0.15s,
+    transform 0.15s;
+}
+
+.segment-row:hover .segment-edit-btn,
+.segment-row:focus-within .segment-edit-btn {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.segment-editor {
+  flex: 1;
+  min-width: 0;
+}
+
+.segment-edit-textarea {
+  min-height: 96px;
+  resize: vertical;
+  font-size: 14.5px;
+  line-height: 1.65;
+}
+
+.segment-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.segment-edit-actions .btn {
+  padding: 8px 13px;
+  font-size: 13.5px;
 }
 
 /* 메모 탭 */
@@ -685,13 +816,7 @@
   white-space: nowrap;
 }
 
-/* ---------- AI 요약 수정 ---------- */
-.summary-toolbar {
-  display: flex;
-  justify-content: flex-end;
-  margin-bottom: 4px;
-}
-
+/* ---------- AI 회의록 수정 ---------- */
 .summary-edit-hint {
   font-size: 13px;
   line-height: 1.5;
@@ -699,20 +824,20 @@
 }
 
 .summary-edit .field-label {
-  margin-top: 14px;
+  margin-top: 18px;
 }
 
 .summary-edit-area {
   width: 100%;
   resize: vertical;
-  min-height: 64px;
-  font-size: 14px;
-  line-height: 1.6;
+  min-height: 120px;
+  font-size: 14.5px;
+  line-height: 1.65;
   font-family: inherit;
 }
 
 .summary-edit-discussion {
-  min-height: 150px;
+  min-height: 240px;
 }
 
 .summary-edit-actions {
@@ -720,4 +845,173 @@
   justify-content: flex-end;
   gap: 8px;
   margin-top: 16px;
+}
+
+@media (max-width: 768px) {
+  .detail-back {
+    margin-bottom: 18px;
+    font-size: 16px;
+  }
+
+  .detail-header {
+    gap: 14px;
+    margin-bottom: 22px;
+  }
+
+  .detail-title-row {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .detail-title {
+    font-size: 28px;
+    line-height: 1.25;
+    white-space: normal;
+  }
+
+  .detail-title-edit-wrap {
+    flex: 1 1 100%;
+    align-items: flex-start;
+  }
+
+  .detail-title-input {
+    max-width: 100%;
+    font-size: 22px;
+  }
+
+  .detail-actions {
+    width: 100%;
+    margin-left: 0;
+    flex-wrap: wrap;
+  }
+
+  .detail-actions .btn {
+    flex: 1 1 auto;
+  }
+
+  .detail-lock-banner {
+    width: 100%;
+    font-size: 14px;
+  }
+
+  .detail-meta,
+  .detail-people {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    font-size: 16px;
+  }
+
+  .progress-banner,
+  .failed-banner,
+  .engine-warn-banner {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .detail-tabs {
+    gap: 6px;
+    margin: 0 -20px;
+    padding: 0 20px 2px;
+    overflow-x: auto;
+    border-bottom: none;
+    scrollbar-width: none;
+  }
+
+  .detail-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .detail-tab {
+    flex: 0 0 auto;
+    min-height: 46px;
+    padding: 10px 16px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-full);
+    background: var(--surface);
+    font-size: 15px;
+    margin-bottom: 0;
+  }
+
+  .detail-tab.active {
+    border-color: var(--primary);
+    background: var(--primary-soft);
+  }
+
+  .tab-panel {
+    margin-top: 14px;
+    padding: 22px 20px;
+  }
+
+  .minutes-toolbar,
+  .summary-edit-actions {
+    flex-wrap: wrap;
+  }
+
+  .minutes-toolbar .btn,
+  .summary-edit-actions .btn {
+    flex: 1 1 auto;
+  }
+
+  .minutes-header {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .minutes-title {
+    flex-basis: 100%;
+    font-size: 22px;
+  }
+
+  .segment-row,
+  .note-row,
+  .note-add {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .segment-body {
+    width: 100%;
+  }
+
+  .segment-edit-btn {
+    opacity: 1;
+    transform: none;
+  }
+
+  .segment-edit-actions {
+    flex-wrap: wrap;
+  }
+
+  .segment-edit-actions .btn {
+    flex: 1 1 auto;
+  }
+
+  .note-actions,
+  .note-add-btn {
+    align-self: flex-end;
+  }
+
+  .note-title {
+    white-space: normal;
+  }
+
+  .note-add-textarea {
+    width: 100%;
+  }
+}
+
+@media (hover: none) {
+  .segment-edit-btn {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (max-width: 420px) {
+  .detail-actions .btn,
+  .minutes-toolbar .btn,
+  .summary-edit-actions .btn,
+  .note-add-btn {
+    width: 100%;
+  }
 }

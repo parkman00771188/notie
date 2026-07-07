@@ -5,7 +5,7 @@ import './components.css'
 
 export interface ModalProps {
   open: boolean
-  title?: string
+  title?: ReactNode
   width?: number
   onClose: () => void
   children: ReactNode
@@ -27,6 +27,7 @@ export function Modal({ open, title, width, onClose, children }: ModalProps) {
   }, [open, onClose])
 
   if (!open) return null
+  const dialogLabel = typeof title === 'string' ? title : undefined
 
   const handleOverlayMouseDown = (e: MouseEvent<HTMLDivElement>) => {
     if (e.target === e.currentTarget) onClose()
@@ -38,7 +39,7 @@ export function Modal({ open, title, width, onClose, children }: ModalProps) {
         className="modal-card"
         role="dialog"
         aria-modal="true"
-        aria-label={title}
+        aria-label={dialogLabel}
         style={width ? { width } : undefined}
       >
         <div className="modal-header">

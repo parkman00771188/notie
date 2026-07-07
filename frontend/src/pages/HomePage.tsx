@@ -3,9 +3,11 @@ import { useNavigate } from 'react-router-dom'
 import { api } from '../api'
 import { useAuth } from '../App'
 import { AvatarStack } from '../components/Avatar'
+import { MeetingDetailView } from '../components/MeetingDetailView'
+import Modal from '../components/Modal'
 import { StatusBadge } from '../components/StatusBadge'
 import type { Meeting, Tag } from '../types'
-import { formatClock, formatDuration, formatRelativeDate } from '../utils'
+import { formatClock, formatDuration, formatKoreanDateTime } from '../utils'
 import './HomePage.css'
 
 export default function HomePage() {
@@ -13,6 +15,8 @@ export default function HomePage() {
   const navigate = useNavigate()
   const [meetings, setMeetings] = useState<Meeting[] | null>(null)
   const [tags, setTags] = useState<Tag[]>([])
+  const [detailId, setDetailId] = useState<number | null>(null)
+  const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
     let alive = true
@@ -34,26 +38,47 @@ export default function HomePage() {
     return () => {
       alive = false
     }
-  }, [])
+  }, [reloadKey])
 
   const loading = meetings === null
   const list = meetings ?? []
-  const totalCount = list.length
-  const doneCount = list.filter((m) => m.status === 'done').length
-  const totalSec = list.reduce((acc, m) => acc + (m.duration_sec ?? 0), 0)
-  const recent = list.slice(0, 6)
+  const recordedList = list.filter((m) => m.status !== 'scheduled')
+  const totalCount = recordedList.length
+  const doneCount = recordedList.filter((m) => m.status === 'done').length
+  const totalSec = recordedList.reduce((acc, m) => acc + (m.duration_sec ?? 0), 0)
+  const recent = recordedList.slice(0, 6)
 
   return (
     <div className="page home-page">
       <div className="home-hero">
         <div>
-          <h1 className="home-greeting">안녕하세요, {user?.name}님 👋</h1>
-          <p className="home-sub">오늘의 회의를 기록하고, AI 요약으로 빠르게 정리해보세요.</p>
+          <h1 className="home-greeting">
+            <span className="home-greeting-desktop">안녕하세요, {user?.name}님 👋</span>
+            <span className="home-greeting-mobile">환영합니다!, 👋</span>
+          </h1>
+          <p className="home-sub">
+            <span className="home-sub-desktop">오늘의 회의를 기록하고, AI 요약으로 빠르게 정리해보세요.</span>
+            <span className="home-sub-mobile">오늘도 생산적인 회의를 만들어보세요.</span>
+          </p>
         </div>
-        <button className="btn btn-primary btn-lg" onClick={() => navigate('/record')}>
+        <button className="btn btn-primary btn-lg home-hero-button" onClick={() => navigate('/record')}>
           🎙️ 새 회의 기록
         </button>
       </div>
+
+      <button type="button" className="mobile-record-cta" onClick={() => navigate('/record')}>
+        <span className="mobile-record-icon">🎙️</span>
+        <span className="mobile-record-copy">
+          <strong>새 회의 시작</strong>
+          <span>회의를 녹음하고 자동 요약과 회의록을 생성하세요.</span>
+        </span>
+        <span className="mobile-record-arrow">→</span>
+        <span className="mobile-record-wave" aria-hidden="true">
+          {Array.from({ length: 18 }, (_, i) => (
+            <span key={i} />
+          ))}
+        </span>
+      </button>
 
       <div className="stat-grid">
         <div className="card stat-card">
@@ -111,9 +136,9 @@ export default function HomePage() {
               className="card meeting-card"
               role="button"
               tabIndex={0}
-              onClick={() => navigate(`/meetings/${m.id}`)}
+              onClick={() => setDetailId(m.id)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') navigate(`/meetings/${m.id}`)
+                if (e.key === 'Enter') setDetailId(m.id)
               }}
             >
               <div className="meeting-card-top">
@@ -136,10 +161,15 @@ export default function HomePage() {
                 <span className="meeting-card-title" title={m.title}>
                   {m.title}
                 </span>
+                {m.locked && (
+                  <span className="lock-pill lock-pill-icon" title="잠금됨" aria-label="잠금됨">
+                    🔒
+                  </span>
+                )}
                 <StatusBadge status={m.status} />
               </div>
               <div className="meeting-card-meta">
-                <span>{formatRelativeDate(m.started_at)}</span>
+                <span>{formatKoreanDateTime(m.started_at)}</span>
                 <span className="meta-dot">·</span>
                 <span>{formatClock(m.duration_sec)}</span>
               </div>
@@ -149,12 +179,25 @@ export default function HomePage() {
                 ) : (
                   <span className="muted">참석자 없음</span>
                 )}
-                <span className="meeting-card-open">열기 →</span>
               </div>
             </div>
           ))}
         </div>
       )}
+
+      <Modal open={detailId !== null} title="회의 내용" width={960} onClose={() => setDetailId(null)}>
+        {detailId !== null && (
+          <MeetingDetailView
+            meetingId={detailId}
+            onBack={() => setDetailId(null)}
+            onDeleted={() => {
+              setDetailId(null)
+              setReloadKey((k) => k + 1)
+            }}
+            onChanged={() => setReloadKey((k) => k + 1)}
+          />
+        )}
+      </Modal>
     </div>
   )
 }

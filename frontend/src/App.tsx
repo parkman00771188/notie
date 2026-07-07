@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { api, getToken, setToken } from './api'
 import Layout from './components/Layout'
 import AuthPage from './pages/AuthPage'
+import CalendarPage from './pages/CalendarPage'
 import HomePage from './pages/HomePage'
 import MeetingDetailPage from './pages/MeetingDetailPage'
 import MeetingsPage from './pages/MeetingsPage'
@@ -67,6 +68,7 @@ export default function App() {
               <Route path="/meetings" element={<MeetingsPage />} />
               <Route path="/meetings/:id" element={<MeetingDetailPage />} />
               <Route path="/record" element={<RecordPage />} />
+              <Route path="/calendar" element={<CalendarPage />} />
               <Route path="/settings" element={<SettingsPage />} />
             </Route>
           ) : (

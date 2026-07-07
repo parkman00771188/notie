@@ -207,7 +207,7 @@ export function ParticipantPicker({ open, onClose, selected, onChange }: Partici
   }
 
   return (
-    <Modal open={open} title="참석자 선택" width={520} onClose={onClose}>
+    <Modal open={open} title="참석자 선택" width={640} onClose={onClose}>
       {error && <div className="pp-error">{error}</div>}
 
       {/* ---- 선택된 참석자 칩 (검색 인풋 위) ---- */}

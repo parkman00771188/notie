@@ -158,11 +158,10 @@
   text-overflow: ellipsis;
 }
 
+/* 제목 앞 태그 칩 — 색상은 인라인 style(태그색) */
 .row-tag {
-  margin-left: 8px;
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--primary);
+  margin-right: 8px;
+  vertical-align: 1px;
 }
 
 .row-badge {

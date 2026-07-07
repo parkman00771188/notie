@@ -126,7 +126,6 @@ export function RecentMeetingsPanel({ refreshKey = 0 }: RecentMeetingsPanelProps
     return (
       <button key={m.id} type="button" className="rmm-row" onClick={() => setDetailId(m.id)}>
         <span className="rmm-row-title" title={m.title}>
-          {m.title}
           {m.tag && (
             <span
               className="tag-pill rmm-row-tag"
@@ -139,6 +138,7 @@ export function RecentMeetingsPanel({ refreshKey = 0 }: RecentMeetingsPanelProps
               #{m.tag}
             </span>
           )}
+          {m.title}
         </span>
         <StatusBadge status={m.status} />
         <span className="rmm-row-meta">

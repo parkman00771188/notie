@@ -126,7 +126,6 @@ export default function MeetingsPage() {
       }}
     >
       <span className="row-title" title={m.title}>
-        {m.title}
         {m.tag &&
           (() => {
             const c = tags.find((t) => t.name === m.tag)?.color ?? '#16a34a'
@@ -143,6 +142,7 @@ export default function MeetingsPage() {
               </span>
             )
           })()}
+        {m.title}
       </span>
       <span className="row-badge">
         <StatusBadge status={m.status} />

@@ -4,7 +4,7 @@ import { api } from '../api'
 import { useAuth } from '../App'
 import { AvatarStack } from '../components/Avatar'
 import { StatusBadge } from '../components/StatusBadge'
-import type { Meeting } from '../types'
+import type { Meeting, Tag } from '../types'
 import { formatClock, formatDuration, formatRelativeDate } from '../utils'
 import './HomePage.css'
 
@@ -12,6 +12,7 @@ export default function HomePage() {
   const { user } = useAuth()
   const navigate = useNavigate()
   const [meetings, setMeetings] = useState<Meeting[] | null>(null)
+  const [tags, setTags] = useState<Tag[]>([])
 
   useEffect(() => {
     let alive = true
@@ -23,6 +24,13 @@ export default function HomePage() {
       .catch(() => {
         if (alive) setMeetings([])
       })
+    // 태그 칩 색 매칭용 (실패해도 기본색으로 표시)
+    api
+      .listTags()
+      .then((list) => {
+        if (alive) setTags(list)
+      })
+      .catch(() => {})
     return () => {
       alive = false
     }
@@ -109,6 +117,22 @@ export default function HomePage() {
               }}
             >
               <div className="meeting-card-top">
+                {m.tag &&
+                  (() => {
+                    const c = tags.find((t) => t.name === m.tag)?.color ?? '#16a34a'
+                    return (
+                      <span
+                        className="tag-pill meeting-card-tagpill"
+                        style={{
+                          color: c,
+                          borderColor: c,
+                          background: `color-mix(in srgb, ${c} 10%, transparent)`,
+                        }}
+                      >
+                        #{m.tag}
+                      </span>
+                    )
+                  })()}
                 <span className="meeting-card-title" title={m.title}>
                   {m.title}
                 </span>
@@ -118,7 +142,6 @@ export default function HomePage() {
                 <span>{formatRelativeDate(m.started_at)}</span>
                 <span className="meta-dot">·</span>
                 <span>{formatClock(m.duration_sec)}</span>
-                {m.tag && <span className="meeting-card-tag">#{m.tag}</span>}
               </div>
               <div className="meeting-card-foot">
                 {m.participants.length > 0 ? (

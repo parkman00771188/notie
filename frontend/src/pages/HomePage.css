@@ -147,12 +147,18 @@
 }
 
 .meeting-card-title {
+  flex: 1;
   font-size: 15px;
   font-weight: 700;
   min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* 제목 왼쪽 태그 칩 — 색상은 인라인 style(태그색) */
+.meeting-card-tagpill {
+  flex-shrink: 0;
 }
 
 .meeting-card-meta {

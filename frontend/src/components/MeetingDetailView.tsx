@@ -7,6 +7,7 @@ import { AudioPlayerCard } from './AudioPlayerCard'
 import type { AudioPlayerCardHandle } from './AudioPlayerCard'
 import { AvatarStack } from './Avatar'
 import { useConfirm } from './confirm'
+import { usePrompt } from './prompt'
 import { ParticipantPicker } from './ParticipantPicker'
 import { StatusBadge } from './StatusBadge'
 import { TagPicker } from './TagPicker'
@@ -46,6 +47,7 @@ export interface MeetingDetailViewProps {
 export function MeetingDetailView({ meetingId, onBack, onDeleted, onChanged }: MeetingDetailViewProps) {
   const navigate = useNavigate()
   const confirm = useConfirm()
+  const promptInput = usePrompt()
 
   const [meeting, setMeeting] = useState<MeetingDetail | null>(null)
   const [loading, setLoading] = useState(true)
@@ -272,7 +274,11 @@ export function MeetingDetailView({ meetingId, onBack, onDeleted, onChanged }: M
 
   // ----- 북마크(메모) 수정/삭제 -----
   const handleEditBookmark = async (b: Bookmark) => {
-    const next = window.prompt('메모 내용을 수정하세요', b.title)
+    const next = await promptInput({
+      title: b.kind === 'mark' ? '마크 이름 수정' : '메모 수정',
+      initialValue: b.title,
+      placeholder: '내용을 입력하세요',
+    })
     if (next === null) return
     const title = next.trim()
     if (!title || title === b.title) return

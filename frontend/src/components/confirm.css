@@ -44,3 +44,14 @@
   gap: 8px;
   margin-top: 12px;
 }
+
+/* 입력 팝업 (window.prompt 대체, prompt.tsx) — 같은 카드 안의 textarea */
+.prompt-input {
+  resize: none;
+  margin-top: 4px;
+  font-size: 14.5px;
+  line-height: 22px;
+  min-height: 68px;
+  max-height: 160px;
+  overflow-y: auto;
+}

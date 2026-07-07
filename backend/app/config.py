@@ -17,7 +17,8 @@ WHISPER_COMPUTE = os.environ.get("GIMNOTE_WHISPER_COMPUTE", "")  # 빈 값이면
 # 요약 엔진 우선순위: Gemini(키 등록 시) → Ollama → 내장 추출 요약
 # Gemini API 키는 앱 설정(UI)에서 등록해 DB(app_settings)에 저장하거나 환경변수로 지정
 GEMINI_API_KEY_ENV = os.environ.get("GIMNOTE_GEMINI_API_KEY", "")
-GEMINI_MODEL = os.environ.get("GIMNOTE_GEMINI_MODEL", "gemini-2.0-flash")
+# gemini-2.0-flash는 2026-06 은퇴 → 2.5-flash가 안전한 기본값 (설정 UI에서 변경 가능)
+GEMINI_MODEL = os.environ.get("GIMNOTE_GEMINI_MODEL", "gemini-2.5-flash")
 GEMINI_BASE_URL = os.environ.get(
     "GIMNOTE_GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta"
 )

@@ -1,0 +1,193 @@
+/* ==========================================================================
+   ComboBox — 커스텀 드롭다운 콤보박스 (components/ComboBox.tsx)
+   .input 기반 인풋 + ▾ 버튼 + shadow-pop 드롭다운 카드.
+   색상은 global.css의 CSS 변수만 사용한다.
+   ========================================================================== */
+
+.combobox {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+}
+
+/* ▾ 버튼 자리 확보 (사용처의 padding 오버라이드보다 우선하도록 3클래스 지정) */
+.combobox .input.combobox-input {
+  padding-right: 34px;
+}
+
+/* ---------- ▾ 토글 버튼 ---------- */
+.combobox-caret {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  color: var(--text-3);
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+
+.combobox-caret:hover {
+  background: var(--gray-soft);
+  color: var(--text-2);
+}
+
+.combobox-caret-icon {
+  display: inline-block;
+  transition: transform 0.15s;
+}
+
+.combobox-caret-icon.open {
+  transform: rotate(180deg);
+}
+
+/* ---------- 드롭다운 카드 ---------- */
+.combobox-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  min-width: 180px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-pop);
+  padding: 6px;
+  max-height: 232px;
+  overflow-y: auto;
+  z-index: 120;
+  animation: combobox-drop 0.14s ease-out;
+}
+
+@keyframes combobox-drop {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ---------- 옵션 행 ---------- */
+.combobox-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 13.5px;
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.combobox-option.active {
+  background: var(--primary-soft);
+}
+
+.combobox-option.selected .combobox-option-name {
+  font-weight: 600;
+}
+
+.combobox-option-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.combobox-check {
+  flex-shrink: 0;
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+/* 옵션 삭제 × (hover/키보드 하이라이트 시에만 표시) */
+.combobox-option-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: 50%;
+  font-size: 15px;
+  line-height: 1;
+  color: var(--text-3);
+  cursor: pointer;
+  opacity: 0;
+  flex-shrink: 0;
+  transition:
+    opacity 0.15s,
+    background 0.15s,
+    color 0.15s;
+}
+
+.combobox-option:hover .combobox-option-x,
+.combobox-option.active .combobox-option-x,
+.combobox-option-x:focus-visible {
+  opacity: 1;
+}
+
+.combobox-option-x:hover {
+  background: var(--red-soft);
+  color: var(--red);
+}
+
+/* ---------- 빈 상태 ---------- */
+.combobox-empty {
+  margin: 0;
+  padding: 9px 10px;
+  font-size: 13px;
+  color: var(--text-3);
+}
+
+/* ---------- "+ '<입력값>' 추가" 행 ---------- */
+.combobox-create {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  margin-top: 4px;
+  padding: 9px 10px;
+  border: none;
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 8px 8px;
+  background: transparent;
+  color: var(--primary);
+  font-size: 13.5px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s;
+}
+
+.combobox-create.active {
+  background: var(--primary-soft);
+}
+
+.combobox-create-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

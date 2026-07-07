@@ -25,6 +25,8 @@
   config.GEMINI_ATTACH_THRESHOLD 초과이면 프롬프트에 인라인하지 않고
   parts=[{text: 지시문+메모목록+transcript.txt 참고 안내}, {inline_data: base64 텍스트 파일}]로 첨부.
   임계값 이하는 기존 인라인 유지. Ollama는 항상 인라인.
+- SPEC J5(Gemini 모델 선택): get_gemini_model() — app_settings 'gemini_model' 우선,
+  없으면 config.GEMINI_MODEL. _try_gemini/test_gemini_key가 사용(URL·engine 문자열 모두).
 """
 
 import base64
@@ -49,6 +51,7 @@ _MAX_ITEMS_LLM = 8           # LLM(Gemini/Ollama) 응답 방어적 상한
 _MAX_TRANSCRIPT_CHARS = 12000  # 프롬프트에 넣을 녹취록 길이 제한
 
 GEMINI_KEY_SETTING = "gemini_api_key"
+GEMINI_MODEL_SETTING = "gemini_model"
 SUMMARY_PROMPT_SETTING = "summary_prompt"
 
 
@@ -282,6 +285,26 @@ def get_gemini_key() -> str | None:
     return env_key or None
 
 
+def get_gemini_model() -> str:
+    """Gemini 모델명 조회 — app_settings(DB) 우선, 없으면 config.GEMINI_MODEL (SPEC J5)."""
+    try:
+        conn = db.get_conn()
+        try:
+            row = conn.execute(
+                "SELECT value FROM app_settings WHERE key = ?",
+                (GEMINI_MODEL_SETTING,),
+            ).fetchone()
+        finally:
+            conn.close()
+        if row is not None:
+            value = str(row["value"] or "").strip()
+            if value:
+                return value
+    except Exception as exc:
+        logger.warning("summarizer: gemini_model 조회 실패 — 기본 모델 사용: %s", exc)
+    return config.GEMINI_MODEL
+
+
 def _try_gemini(
     meeting: dict,
     transcript: str,
@@ -296,7 +319,7 @@ def _try_gemini(
     """
     import httpx  # 미설치 시 ImportError → 폴백
 
-    model_name = config.GEMINI_MODEL
+    model_name = get_gemini_model()
     attach_transcript = len(transcript) > config.GEMINI_ATTACH_THRESHOLD
     prompt = _LLM_SYSTEM_PROMPT + "\n\n" + _build_llm_user_prompt(
         meeting,
@@ -320,7 +343,7 @@ def _try_gemini(
 
     resp = httpx.post(
         f"{config.GEMINI_BASE_URL.rstrip('/')}/models/{model_name}:generateContent",
-        params={"key": api_key},
+        headers={"x-goog-api-key": api_key},
         json={
             "contents": [{"parts": parts}],
             "generationConfig": {"response_mime_type": "application/json"},
@@ -371,7 +394,7 @@ def test_gemini_key(key: str) -> tuple[bool, str]:
     if not key:
         return False, "테스트할 Gemini API 키가 없어요"
 
-    model_name = config.GEMINI_MODEL
+    model_name = get_gemini_model()
     try:
         import httpx
     except ImportError:
@@ -380,7 +403,7 @@ def test_gemini_key(key: str) -> tuple[bool, str]:
     try:
         resp = httpx.post(
             f"{config.GEMINI_BASE_URL.rstrip('/')}/models/{model_name}:generateContent",
-            params={"key": key},
+            headers={"x-goog-api-key": key},
             json={"contents": [{"parts": [{"text": "안녕이라고만 답해주세요."}]}]},
             timeout=15.0,
         )

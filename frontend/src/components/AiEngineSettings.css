@@ -123,6 +123,55 @@
   color: var(--red);
 }
 
+/* ---------- Gemini 모델 선택 ---------- */
+.settings-model-form {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.settings-model-loading {
+  margin-left: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-3);
+}
+
+.settings-model-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.settings-model-row .combobox {
+  flex: 1;
+  min-width: 0;
+}
+
+.settings-model-row .btn {
+  flex-shrink: 0;
+}
+
+.settings-model-current {
+  margin-top: 10px;
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+
+.settings-model-code {
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.settings-model-hint {
+  margin-top: 6px;
+  line-height: 1.6;
+}
+
 /* 요약 지시사항 (프롬프트) textarea */
 .settings-prompt-textarea {
   display: block;

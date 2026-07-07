@@ -1,0 +1,289 @@
+/* ==========================================================================
+   RecentMeetingsPanel — "전체 보기" 팝업 (rmm-*)
+   width 960 / 최대 높이 82vh, 내부 스크롤. 색상은 global.css 변수만 사용.
+   ========================================================================== */
+
+/* 모달 카드 자체를 82vh로 제한하고, 스크롤은 목록/상세 영역이 담당 */
+.modal-card:has(.rmm-root) {
+  max-height: 82vh;
+}
+
+.modal-card:has(.rmm-root) .modal-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding-bottom: 0;
+}
+
+.rmm-root {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---------- 툴바: 태그 필터 칩 행 + 보기 토글 ---------- */
+.rmm-toolbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 2px 0 12px;
+  flex-shrink: 0;
+}
+
+.rmm-chips {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.rmm-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 13px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  color: var(--text-2);
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background 0.15s,
+    color 0.15s,
+    border-color 0.15s;
+}
+
+.rmm-chip:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+/* [전체] 활성 기본색 — 태그 칩은 인라인 스타일로 태그 색 반영 */
+.rmm-chip.active {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.rmm-chip-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.rmm-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  flex-shrink: 0;
+}
+
+.rmm-toggle-btn {
+  border: none;
+  background: transparent;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  color: var(--text-3);
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+
+.rmm-toggle-btn:hover {
+  color: var(--text-2);
+}
+
+.rmm-toggle-btn.active {
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+/* ---------- 스크롤 영역 (목록/폴더/상세 공용) ---------- */
+.rmm-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-bottom: 8px;
+}
+
+/* ---------- 회의 행 ---------- */
+.rmm-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 14px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s;
+}
+
+.rmm-row:last-child {
+  border-bottom: none;
+}
+
+.rmm-row:hover {
+  background: var(--primary-soft);
+}
+
+.rmm-row-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rmm-row-tag {
+  margin-left: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--primary); /* 미등록 태그 기본색 — 등록 태그는 인라인 스타일 */
+}
+
+.rmm-row-meta {
+  flex-shrink: 0;
+  color: var(--text-3);
+  font-size: 12.5px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 목록 보기 */
+.rmm-list {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+/* ---------- 폴더(태그 그룹) 보기 ---------- */
+.rmm-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.rmm-group {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.rmm-group-head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 14px;
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s;
+}
+
+.rmm-group-head:hover {
+  background: #f8fafd;
+}
+
+.rmm-caret {
+  color: var(--text-3);
+  font-size: 12px;
+  line-height: 1;
+  flex-shrink: 0;
+  transition: transform 0.15s;
+}
+
+.rmm-caret.open {
+  transform: rotate(90deg);
+}
+
+.rmm-folder-icon {
+  flex-shrink: 0;
+}
+
+.rmm-group-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.rmm-group-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rmm-group-name.untagged {
+  color: var(--text-3);
+}
+
+.rmm-group-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: var(--radius-full);
+  background: var(--gray-soft);
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.rmm-group-body {
+  border-top: 1px solid var(--border);
+}
+
+/* ---------- 팝업 내 상세 (MeetingDetailView) ---------- */
+.rmm-detail {
+  padding-right: 4px; /* 스크롤바와 카드 그림자 간격 */
+}
+
+/* ---------- 푸터 ---------- */
+.rmm-footer {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid var(--border);
+  padding: 12px 0 16px;
+}
+
+.rmm-footer-hint {
+  font-size: 13px;
+}

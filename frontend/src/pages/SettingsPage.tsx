@@ -3,6 +3,7 @@ import type { FormEvent, KeyboardEvent, MouseEvent } from 'react'
 import { api } from '../api'
 import AiEngineSettings from '../components/AiEngineSettings'
 import { Avatar } from '../components/Avatar'
+import ComboBox from '../components/ComboBox'
 import type { OrgKind, OrgOption, Participant, Tag } from '../types'
 import './SettingsPage.css'
 
@@ -19,10 +20,9 @@ const TAG_PALETTE = [
 ]
 
 const SECTIONS = [
-  { id: 'ai', label: 'AI 요약 엔진', icon: '✨' },
   { id: 'tags', label: '태그 · 프로젝트', icon: '🏷️' },
-  { id: 'org', label: '소속 · 직책', icon: '🏢' },
   { id: 'people', label: '참석자', icon: '👥' },
+  { id: 'ai', label: 'AI 요약 엔진', icon: '✨' },
 ] as const
 
 type SectionId = (typeof SECTIONS)[number]['id']
@@ -101,84 +101,13 @@ function ColorPalettePicker({ value, onChange, allowClear = false }: ColorPalett
   )
 }
 
-/* ---------- 소속/부서/직책 컬럼 ---------- */
-
-interface OrgColumnProps {
-  kind: OrgKind
-  title: string
-  placeholder: string
-  options: OrgOption[]
-  loading: boolean
-  onCreate: (kind: OrgKind, name: string) => Promise<boolean>
-  onDelete: (option: OrgOption) => void
-}
-
-function OrgColumn({ kind, title, placeholder, options, loading, onCreate, onDelete }: OrgColumnProps) {
-  const [value, setValue] = useState('')
-  const [adding, setAdding] = useState(false)
-
-  const handleSubmit = async (e: FormEvent) => {
-    e.preventDefault()
-    const name = value.trim()
-    if (!name || adding) return
-    setAdding(true)
-    try {
-      const ok = await onCreate(kind, name)
-      if (ok) setValue('')
-    } finally {
-      setAdding(false)
-    }
-  }
-
-  return (
-    <div className="sp-org-col">
-      <h3 className="sp-org-title">{title}</h3>
-      <form className="sp-org-add" onSubmit={handleSubmit}>
-        <input
-          className="input"
-          placeholder={placeholder}
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-        />
-        <button type="submit" className="btn btn-soft" disabled={!value.trim() || adding}>
-          {adding ? '추가 중...' : '추가'}
-        </button>
-      </form>
-      {loading ? (
-        <div className="sp-loading">
-          <span className="spinner" />
-        </div>
-      ) : options.length === 0 ? (
-        <p className="sp-empty">아직 등록된 항목이 없어요.</p>
-      ) : (
-        <ul className="sp-org-list">
-          {options.map((o) => (
-            <li key={o.id} className="sp-org-item">
-              <span className="sp-org-name">{o.name}</span>
-              <button
-                type="button"
-                className="sp-org-x"
-                aria-label={`${o.name} 삭제`}
-                title="삭제"
-                onClick={() => onDelete(o)}
-              >
-                ×
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  )
-}
-
 /* ---------- 설정 페이지 ---------- */
 
 export default function SettingsPage() {
-  // 탭 — URL 해시(#ai/#tags/#org/#people)와 동기화
+  // 탭 — URL 해시(#tags/#people/#ai)와 동기화
   const [activeSection, setActiveSection] = useState<SectionId>(() => {
     const id = window.location.hash.slice(1)
-    return isSectionId(id) ? id : 'ai'
+    return isSectionId(id) ? id : 'tags'
   })
 
   // 태그 · 프로젝트
@@ -192,9 +121,8 @@ export default function SettingsPage() {
   const [editTagColor, setEditTagColor] = useState<string | null>(null)
   const [tagSaving, setTagSaving] = useState(false)
 
-  // 소속 · 직책 (org-options 사전)
+  // 소속/부서/직책 사전 (참석자 콤보박스 제안 목록)
   const [orgOptions, setOrgOptions] = useState<OrgOption[] | null>(null)
-  const [orgError, setOrgError] = useState('')
 
   // 참석자 디렉터리
   const [participants, setParticipants] = useState<Participant[] | null>(null)
@@ -225,11 +153,9 @@ export default function SettingsPage() {
       .then((list) => {
         if (alive) setOrgOptions(sortOrgOptions(list))
       })
-      .catch((e: unknown) => {
-        if (alive) {
-          setOrgOptions([])
-          setOrgError(errMsg(e, '소속/직책 목록을 불러오지 못했어요'))
-        }
+      .catch(() => {
+        // 제안 목록을 못 불러와도 자유 입력은 계속 가능하므로 조용히 무시
+        if (alive) setOrgOptions([])
       })
     api
       .listParticipants()
@@ -329,49 +255,48 @@ export default function SettingsPage() {
     }
   }
 
-  /* ----- 소속/부서/직책 사전 CRUD ----- */
+  /* ----- 소속/부서/직책 사전 (ComboBox 연동) ----- */
 
-  const handleCreateOrgOption = async (kind: OrgKind, name: string) => {
-    setOrgError('')
-    try {
-      const created = await api.createOrgOption({ kind, name })
-      setOrgOptions((prev) => sortOrgOptions([...(prev ?? []), created]))
-      return true
-    } catch (err: unknown) {
-      setOrgError(errMsg(err, '항목을 추가하지 못했어요'))
-      return false
-    }
-  }
-
-  const handleDeleteOrgOption = async (option: OrgOption) => {
-    setOrgError('')
-    try {
-      await api.deleteOrgOption(option.id)
-      setOrgOptions((prev) => (prev ?? []).filter((o) => o.id !== option.id))
-    } catch (err: unknown) {
-      setOrgError(errMsg(err, '항목을 삭제하지 못했어요'))
-    }
-  }
-
-  /** 콤보박스 자유 입력값을 org-options 사전에 자동 등록 (중복 400은 무시) */
-  const ensureOrgOption = async (kind: OrgKind, rawName: string) => {
+  /** ComboBox "+ 추가" — org-options 사전에 등록. 중복(400) 등 실패는 조용히 무시 */
+  const registerOrgOption = (kind: OrgKind) => (rawName: string) => {
     const name = rawName.trim()
     if (!name) return
     if ((orgOptions ?? []).some((o) => o.kind === kind && o.name === name)) return
-    try {
-      const created = await api.createOrgOption({ kind, name })
-      setOrgOptions((prev) => {
-        if ((prev ?? []).some((o) => o.kind === kind && o.name === name)) return prev
-        return sortOrgOptions([...(prev ?? []), created])
+    api
+      .createOrgOption({ kind, name })
+      .then((created) => {
+        setOrgOptions((prev) => {
+          if ((prev ?? []).some((o) => o.kind === kind && o.name === name)) return prev
+          return sortOrgOptions([...(prev ?? []), created])
+        })
       })
-    } catch {
-      /* 이미 등록돼 있어요(400) 등은 조용히 무시 */
-    }
+      .catch(() => {
+        /* 이미 등록돼 있어요(400) 등은 조용히 무시 */
+      })
   }
 
-  const organizationOptions = (orgOptions ?? []).filter((o) => o.kind === 'organization')
-  const departmentOptions = (orgOptions ?? []).filter((o) => o.kind === 'department')
-  const roleOptions = (orgOptions ?? []).filter((o) => o.kind === 'role')
+  /** ComboBox 옵션 × — 이름→id 매핑해 org-options에서 삭제, 목록 로컬 갱신 */
+  const removeOrgOption = (kind: OrgKind) => (name: string) => {
+    const target = (orgOptions ?? []).find((o) => o.kind === kind && o.name === name)
+    if (!target) return
+    setPeopleError('')
+    api
+      .deleteOrgOption(target.id)
+      .then(() => {
+        setOrgOptions((prev) => (prev ?? []).filter((o) => o.id !== target.id))
+      })
+      .catch((err: unknown) => {
+        setPeopleError(errMsg(err, '항목을 삭제하지 못했어요'))
+      })
+  }
+
+  const organizationNames = (orgOptions ?? [])
+    .filter((o) => o.kind === 'organization')
+    .map((o) => o.name)
+  const departmentNames = (orgOptions ?? [])
+    .filter((o) => o.kind === 'department')
+    .map((o) => o.name)
+  const roleNames = (orgOptions ?? []).filter((o) => o.kind === 'role').map((o) => o.name)
 
   /* ----- 참석자 CRUD ----- */
 
@@ -428,11 +353,6 @@ export default function SettingsPage() {
       if (draft.email.trim()) data.email = draft.email.trim()
       if (draft.phone.trim()) data.phone = draft.phone.trim()
       const created = await api.createParticipant(data)
-      await Promise.all([
-        ensureOrgOption('organization', draft.organization),
-        ensureOrgOption('department', draft.department),
-        ensureOrgOption('role', draft.role),
-      ])
       setParticipants((prev) => [...(prev ?? []), created])
       setDraft(EMPTY_DRAFT)
     } catch (err: unknown) {
@@ -474,11 +394,6 @@ export default function SettingsPage() {
         email: edit.email.trim(),
         phone: edit.phone.trim(),
       })
-      await Promise.all([
-        ensureOrgOption('organization', edit.organization),
-        ensureOrgOption('department', edit.department),
-        ensureOrgOption('role', edit.role),
-      ])
       setParticipants((prev) => (prev ?? []).map((x) => (x.id === updated.id ? updated : x)))
       setEditingId(null)
     } catch (err: unknown) {
@@ -611,52 +526,6 @@ export default function SettingsPage() {
     </section>
   )
 
-  const renderOrgSection = () => (
-    <section className="card settings-card">
-      <div className="settings-card-head">
-        <h2 className="settings-card-title">
-          <span aria-hidden="true">🏢</span> 소속 · 직책
-        </h2>
-        <p className="settings-card-desc">
-          참석자에게 지정할 소속(회사/기관), 부서, 직책 목록을 관리합니다. 참석자 입력 시 제안
-          목록으로 사용돼요.
-        </p>
-      </div>
-
-      {orgError && <div className="sp-error">{orgError}</div>}
-
-      <div className="sp-org-grid">
-        <OrgColumn
-          kind="organization"
-          title="소속 (회사/기관)"
-          placeholder="예: 마인즈에이아이"
-          options={organizationOptions}
-          loading={orgOptions === null}
-          onCreate={handleCreateOrgOption}
-          onDelete={handleDeleteOrgOption}
-        />
-        <OrgColumn
-          kind="department"
-          title="부서"
-          placeholder="예: AI사업부"
-          options={departmentOptions}
-          loading={orgOptions === null}
-          onCreate={handleCreateOrgOption}
-          onDelete={handleDeleteOrgOption}
-        />
-        <OrgColumn
-          kind="role"
-          title="직책"
-          placeholder="예: 팀장"
-          options={roleOptions}
-          loading={orgOptions === null}
-          onCreate={handleCreateOrgOption}
-          onDelete={handleDeleteOrgOption}
-        />
-      </div>
-    </section>
-  )
-
   const renderPersonRow = (p: Participant) =>
     editingId === p.id ? (
       <tr key={p.id} className="sp-row-editing">
@@ -677,39 +546,39 @@ export default function SettingsPage() {
                   />
                 </div>
               </label>
-              <label className="sp-edit-field">
+              <div className="sp-edit-field">
                 <span className="sp-edit-label">소속 (회사/기관)</span>
-                <input
-                  className="input sp-inline-input"
-                  list="sp-organization-options"
+                <ComboBox
                   value={edit.organization}
-                  onChange={(e) => setEditField('organization', e.target.value)}
-                  onKeyDown={handleEditKeyDown}
+                  onChange={(v) => setEditField('organization', v)}
+                  options={organizationNames}
                   placeholder="소속"
+                  onCreateOption={registerOrgOption('organization')}
+                  onDeleteOption={removeOrgOption('organization')}
                 />
-              </label>
-              <label className="sp-edit-field">
+              </div>
+              <div className="sp-edit-field">
                 <span className="sp-edit-label">부서</span>
-                <input
-                  className="input sp-inline-input"
-                  list="sp-dept-options"
+                <ComboBox
                   value={edit.department}
-                  onChange={(e) => setEditField('department', e.target.value)}
-                  onKeyDown={handleEditKeyDown}
+                  onChange={(v) => setEditField('department', v)}
+                  options={departmentNames}
                   placeholder="부서"
+                  onCreateOption={registerOrgOption('department')}
+                  onDeleteOption={removeOrgOption('department')}
                 />
-              </label>
-              <label className="sp-edit-field">
+              </div>
+              <div className="sp-edit-field">
                 <span className="sp-edit-label">직책</span>
-                <input
-                  className="input sp-inline-input"
-                  list="sp-role-options"
+                <ComboBox
                   value={edit.role}
-                  onChange={(e) => setEditField('role', e.target.value)}
-                  onKeyDown={handleEditKeyDown}
+                  onChange={(v) => setEditField('role', v)}
+                  options={roleNames}
                   placeholder="직책"
+                  onCreateOption={registerOrgOption('role')}
+                  onDeleteOption={removeOrgOption('role')}
                 />
-              </label>
+              </div>
               <label className="sp-edit-field">
                 <span className="sp-edit-label">이메일</span>
                 <input
@@ -800,22 +669,6 @@ export default function SettingsPage() {
 
       {peopleError && <div className="sp-error">{peopleError}</div>}
 
-      <datalist id="sp-organization-options">
-        {organizationOptions.map((o) => (
-          <option key={o.id} value={o.name} />
-        ))}
-      </datalist>
-      <datalist id="sp-dept-options">
-        {departmentOptions.map((o) => (
-          <option key={o.id} value={o.name} />
-        ))}
-      </datalist>
-      <datalist id="sp-role-options">
-        {roleOptions.map((o) => (
-          <option key={o.id} value={o.name} />
-        ))}
-      </datalist>
-
       <form className="sp-people-add" onSubmit={handleAddParticipant}>
         <input
           className="input"
@@ -823,26 +676,29 @@ export default function SettingsPage() {
           value={draft.name}
           onChange={(e) => setDraftField('name', e.target.value)}
         />
-        <input
-          className="input"
-          placeholder="소속 (회사/기관)"
-          list="sp-organization-options"
+        <ComboBox
           value={draft.organization}
-          onChange={(e) => setDraftField('organization', e.target.value)}
+          onChange={(v) => setDraftField('organization', v)}
+          options={organizationNames}
+          placeholder="소속 (회사/기관)"
+          onCreateOption={registerOrgOption('organization')}
+          onDeleteOption={removeOrgOption('organization')}
         />
-        <input
-          className="input"
-          placeholder="부서"
-          list="sp-dept-options"
+        <ComboBox
           value={draft.department}
-          onChange={(e) => setDraftField('department', e.target.value)}
+          onChange={(v) => setDraftField('department', v)}
+          options={departmentNames}
+          placeholder="부서"
+          onCreateOption={registerOrgOption('department')}
+          onDeleteOption={removeOrgOption('department')}
         />
-        <input
-          className="input"
-          placeholder="직책"
-          list="sp-role-options"
+        <ComboBox
           value={draft.role}
-          onChange={(e) => setDraftField('role', e.target.value)}
+          onChange={(v) => setDraftField('role', v)}
+          options={roleNames}
+          placeholder="직책"
+          onCreateOption={registerOrgOption('role')}
+          onDeleteOption={removeOrgOption('role')}
         />
         <input
           className="input sp-add-email"
@@ -861,7 +717,10 @@ export default function SettingsPage() {
           {pAdding ? '추가 중...' : '+ 추가'}
         </button>
       </form>
-      <p className="sp-hint">소속/부서/직책에 새 이름을 입력하면 제안 목록에 자동으로 등록돼요.</p>
+      <p className="sp-hint">
+        소속/부서/직책은 목록에서 고르거나 직접 입력할 수 있어요. 드롭다운의 ‘+ 추가’로 제안
+        목록에 등록하고, × 로 목록에서 뺄 수 있어요.
+      </p>
 
       {participants === null ? (
         <div className="sp-loading">
@@ -873,8 +732,10 @@ export default function SettingsPage() {
         <div className="sp-groups">
           {participantGroups.map((g) => {
             const isCollapsed = !!collapsedGroups[g.key]
+            // 인라인 수정 중에는 콤보박스 드롭다운이 잘리지 않도록 overflow 클립 해제
+            const editingHere = editingId !== null && g.list.some((p) => p.id === editingId)
             return (
-              <div key={g.key} className="sp-group">
+              <div key={g.key} className={`sp-group${editingHere ? ' sp-group-editing' : ''}`}>
                 <button
                   type="button"
                   className="sp-group-head"
@@ -890,7 +751,7 @@ export default function SettingsPage() {
                   <span className="sp-group-count">{g.list.length}명</span>
                 </button>
                 {!isCollapsed && (
-                  <div className="sp-table-wrap">
+                  <div className={`sp-table-wrap${editingHere ? ' sp-table-wrap-editing' : ''}`}>
                     <table className="sp-table">
                       <thead>
                         <tr>
@@ -919,7 +780,7 @@ export default function SettingsPage() {
   return (
     <div className="page settings-page">
       <h1 className="page-title">설정</h1>
-      <p className="sp-subtitle">AI 요약 엔진과 태그, 소속·직책, 참석자 디렉터리를 관리합니다.</p>
+      <p className="sp-subtitle">태그 · 프로젝트와 참석자 디렉터리, AI 요약 엔진을 관리합니다.</p>
 
       <div className="sp-layout">
         {/* 좌측 탭 네비 */}
@@ -942,10 +803,9 @@ export default function SettingsPage() {
 
         {/* 우측 — 선택된 섹션만 렌더 */}
         <div className="sp-sections">
-          {activeSection === 'ai' && <AiEngineSettings />}
           {activeSection === 'tags' && renderTagsSection()}
-          {activeSection === 'org' && renderOrgSection()}
           {activeSection === 'people' && renderPeopleSection()}
+          {activeSection === 'ai' && <AiEngineSettings />}
         </div>
       </div>
     </div>

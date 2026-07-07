@@ -1,8 +1,9 @@
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { FormEvent, KeyboardEvent } from 'react'
 import { api } from '../api'
 import type { OrgKind, OrgOption, Participant } from '../types'
 import Avatar from './Avatar'
+import ComboBox from './ComboBox'
 import Modal from './Modal'
 import './components.css'
 import './ParticipantPicker.css'
@@ -40,9 +41,6 @@ export function ParticipantPicker({ open, onClose, selected, onChange }: Partici
   const [fEmail, setFEmail] = useState('')
   const [fPhone, setFPhone] = useState('')
   const [adding, setAdding] = useState(false)
-  const orgListId = useId()
-  const deptListId = useId()
-  const roleListId = useId()
 
   const resetForm = () => {
     setFName('')
@@ -157,20 +155,27 @@ export function ParticipantPicker({ open, onClose, selected, onChange }: Partici
     }
   }
 
-  const organizations = orgOptions.filter((o) => o.kind === 'organization')
-  const departments = orgOptions.filter((o) => o.kind === 'department')
-  const roles = orgOptions.filter((o) => o.kind === 'role')
+  const sortNames = (list: OrgOption[]) =>
+    list.map((o) => o.name).sort((a, b) => a.localeCompare(b, 'ko'))
+  const organizationNames = sortNames(orgOptions.filter((o) => o.kind === 'organization'))
+  const departmentNames = sortNames(orgOptions.filter((o) => o.kind === 'department'))
+  const roleNames = sortNames(orgOptions.filter((o) => o.kind === 'role'))
 
-  /** 자유 입력한 소속/부서/직책을 org-options 사전에 자동 등록 (중복 400은 조용히 무시) */
-  const registerOrgOption = async (kind: OrgKind, value: string) => {
-    if (!value) return
-    if (orgOptions.some((o) => o.kind === kind && o.name === value)) return
-    try {
-      const created = await api.createOrgOption({ kind, name: value })
-      setOrgOptions((prev) => [...prev, created])
-    } catch {
-      /* 이미 등록돼 있어요(400) 등은 조용히 무시 */
-    }
+  /** 콤보박스 "+ 추가" — org-options 사전에 등록 (중복 400은 조용히 무시) */
+  const registerOrgOption = (kind: OrgKind) => (rawName: string) => {
+    const name = rawName.trim()
+    if (!name) return
+    if (orgOptions.some((o) => o.kind === kind && o.name === name)) return
+    api
+      .createOrgOption({ kind, name })
+      .then((created) => {
+        setOrgOptions((prev) =>
+          prev.some((o) => o.kind === kind && o.name === name) ? prev : [...prev, created],
+        )
+      })
+      .catch(() => {
+        /* 이미 등록돼 있어요(400) 등은 조용히 무시 */
+      })
   }
 
   const handleAdd = async (e: FormEvent) => {
@@ -195,11 +200,6 @@ export function ParticipantPicker({ open, onClose, selected, onChange }: Partici
       })
       setAll((prev) => [...prev, created])
       onChange([...selected, created])
-      await Promise.all([
-        registerOrgOption('organization', organization),
-        registerOrgOption('department', department),
-        registerOrgOption('role', role),
-      ])
       closeForm()
       setSearch('')
     } catch (err: unknown) {
@@ -334,45 +334,27 @@ export function ParticipantPicker({ open, onClose, selected, onChange }: Partici
               onChange={(e) => setFName(e.target.value)}
             />
             <div className="pp-form-row">
-              <input
-                className="input"
-                placeholder="소속 (선택)"
-                aria-label="소속"
-                list={orgListId}
+              <ComboBox
                 value={fOrganization}
-                onChange={(e) => setFOrganization(e.target.value)}
+                onChange={setFOrganization}
+                options={organizationNames}
+                placeholder="소속 (선택)"
+                onCreateOption={registerOrgOption('organization')}
               />
-              <datalist id={orgListId}>
-                {organizations.map((o) => (
-                  <option key={o.id} value={o.name} />
-                ))}
-              </datalist>
-              <input
-                className="input"
-                placeholder="부서 (선택)"
-                aria-label="부서"
-                list={deptListId}
+              <ComboBox
                 value={fDepartment}
-                onChange={(e) => setFDepartment(e.target.value)}
+                onChange={setFDepartment}
+                options={departmentNames}
+                placeholder="부서 (선택)"
+                onCreateOption={registerOrgOption('department')}
               />
-              <datalist id={deptListId}>
-                {departments.map((o) => (
-                  <option key={o.id} value={o.name} />
-                ))}
-              </datalist>
-              <input
-                className="input"
-                placeholder="직책 (선택)"
-                aria-label="직책"
-                list={roleListId}
+              <ComboBox
                 value={fRole}
-                onChange={(e) => setFRole(e.target.value)}
+                onChange={setFRole}
+                options={roleNames}
+                placeholder="직책 (선택)"
+                onCreateOption={registerOrgOption('role')}
               />
-              <datalist id={roleListId}>
-                {roles.map((o) => (
-                  <option key={o.id} value={o.name} />
-                ))}
-              </datalist>
             </div>
             <div className="pp-form-row">
               <input

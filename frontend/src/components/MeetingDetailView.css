@@ -1,0 +1,533 @@
+/* ==========================================================================
+   MeetingDetailView — 회의 상세 본문 (페이지/전체 보기 팝업 공용)
+   ========================================================================== */
+
+.detail-view {
+  width: 100%;
+}
+
+.detail-loading {
+  display: flex;
+  justify-content: center;
+  padding: 80px 0;
+}
+
+.detail-view .empty-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+.detail-view .empty-cta {
+  margin-top: 18px;
+}
+
+.detail-back {
+  appearance: none;
+  border: none;
+  background: transparent;
+  padding: 0;
+  margin-bottom: 14px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-3);
+  cursor: pointer;
+}
+
+.detail-back:hover {
+  color: var(--primary);
+}
+
+/* 헤더 */
+.detail-header {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.detail-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.detail-title {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.detail-title-input {
+  max-width: 420px;
+  font-size: 18px;
+  font-weight: 700;
+  padding: 8px 12px;
+}
+
+.detail-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.resummarize-hint {
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+
+.detail-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.detail-meta .meta-dot {
+  color: var(--border-strong);
+}
+
+.detail-tag {
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.detail-people {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.detail-people-edit {
+  padding: 6px 12px;
+  font-size: 13px;
+}
+
+/* 진행 배너 */
+.progress-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  border-radius: var(--radius);
+  background: var(--primary-soft);
+  border: 1px solid var(--primary-soft-2);
+  margin-bottom: 16px;
+}
+
+.progress-text {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--primary);
+}
+
+/* 실패 배너 */
+.failed-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  border-radius: var(--radius);
+  background: var(--red-soft);
+  border: 1px solid #f6c6c6;
+  margin-bottom: 16px;
+}
+
+.failed-emoji {
+  font-size: 18px;
+}
+
+.failed-body {
+  flex: 1;
+  min-width: 0;
+  color: var(--red);
+  font-size: 14px;
+}
+
+.failed-message {
+  margin-top: 2px;
+  font-size: 13px;
+  color: #b91c1c;
+  word-break: break-all;
+}
+
+/* 오디오 플레이어 (AudioPlayerCard) */
+.detail-view .audio-player-card {
+  margin-bottom: 20px;
+}
+
+/* 탭 */
+.detail-tabs {
+  display: flex;
+  gap: 2px;
+  border-bottom: 1px solid var(--border-strong);
+}
+
+.detail-tab {
+  appearance: none;
+  background: transparent;
+  border: none;
+  padding: 10px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-3);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition:
+    color 0.15s,
+    border-color 0.15s;
+}
+
+.detail-tab:hover {
+  color: var(--text-2);
+}
+
+.detail-tab.active {
+  color: var(--primary);
+  border-bottom-color: var(--primary);
+}
+
+.tab-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: var(--radius-full);
+  background: var(--gray-soft);
+  color: var(--text-2);
+  font-size: 11.5px;
+  font-weight: 700;
+}
+
+.detail-tab.active .tab-count {
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.tab-panel {
+  margin-top: 16px;
+  padding: 24px 28px;
+}
+
+/* AI 요약 탭 */
+.summary-section {
+  margin-bottom: 26px;
+}
+
+.section-title {
+  font-size: 15px;
+  font-weight: 700;
+  margin-bottom: 10px;
+  letter-spacing: -0.2px;
+}
+
+.kp-list {
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.kp-list li::marker {
+  color: var(--primary);
+}
+
+.decision-list,
+.todo-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.decision-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.decision-check {
+  flex-shrink: 0;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.todo-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.todo-box {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 4px;
+  background: var(--surface);
+}
+
+.todo-text {
+  min-width: 0;
+}
+
+.engine-note {
+  margin-top: 6px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+/* 추출 요약일 때 Gemini 안내 힌트 */
+.gemini-hint {
+  margin-top: 12px;
+  padding: 12px 16px;
+  border-radius: var(--radius);
+  background: var(--primary-soft);
+  border: 1px solid var(--primary-soft-2);
+  color: var(--primary);
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+/* 회의록 탭 */
+.minutes-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 12px;
+}
+
+.markdown-body {
+  font-size: 14.5px;
+  line-height: 1.75;
+  color: var(--text);
+  overflow-x: auto;
+}
+
+.markdown-body h1 {
+  font-size: 20px;
+  font-weight: 800;
+  margin: 0 0 14px;
+  letter-spacing: -0.3px;
+}
+
+.markdown-body h2 {
+  font-size: 16px;
+  font-weight: 700;
+  margin: 22px 0 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.markdown-body h3 {
+  font-size: 15px;
+  font-weight: 700;
+  margin: 16px 0 6px;
+}
+
+.markdown-body p {
+  margin: 8px 0;
+}
+
+.markdown-body ul,
+.markdown-body ol {
+  margin: 8px 0;
+  padding-left: 22px;
+}
+
+.markdown-body li {
+  margin: 4px 0;
+}
+
+.markdown-body li input[type='checkbox'] {
+  margin-right: 6px;
+  accent-color: var(--primary);
+}
+
+.markdown-body strong {
+  font-weight: 700;
+}
+
+.markdown-body code {
+  background: var(--gray-soft);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 13px;
+}
+
+.markdown-body blockquote {
+  margin: 10px 0;
+  padding: 4px 14px;
+  border-left: 3px solid var(--primary-soft-2);
+  color: var(--text-2);
+}
+
+.markdown-body hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 16px 0;
+}
+
+.markdown-body table {
+  border-collapse: collapse;
+  margin: 10px 0;
+}
+
+.markdown-body th,
+.markdown-body td {
+  border: 1px solid var(--border);
+  padding: 6px 12px;
+  font-size: 13.5px;
+}
+
+/* 전체 스크립트 탭 */
+.transcript-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.segment-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.segment-row:last-child {
+  border-bottom: none;
+}
+
+.segment-row .time-chip {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.segment-text {
+  min-width: 0;
+  font-size: 14.5px;
+  line-height: 1.65;
+}
+
+/* 메모 탭 */
+.note-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.note-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.note-row:last-child {
+  border-bottom: none;
+}
+
+.note-row .time-chip {
+  flex-shrink: 0;
+}
+
+.note-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.note-title {
+  font-size: 14.5px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.note-title .note-kind-badge {
+  margin-right: 8px;
+  padding: 2px 8px;
+  font-size: 11.5px;
+}
+
+.note-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.note-delete:hover {
+  background: var(--red-soft);
+  color: var(--red);
+}
+
+/* 일반 메모(note) 그룹 — 시간 기록 없음 */
+.note-group {
+  margin-top: 20px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.note-group-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-3);
+  margin-bottom: 4px;
+}
+
+.note-row.note-plain {
+  align-items: flex-start;
+}
+
+.note-plain-badge {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  font-size: 11.5px;
+  margin-top: 2px;
+}
+
+/* note 제목은 여러 줄 입력 가능 → 말줄임 대신 줄바꿈 */
+.note-row.note-plain .note-title {
+  white-space: pre-wrap;
+  overflow: visible;
+  text-overflow: clip;
+  word-break: break-word;
+}
+
+/* 일반 메모 추가 폼 */
+.note-add {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.note-add-textarea {
+  flex: 1;
+  min-width: 0;
+  resize: none;
+  line-height: 1.5;
+}
+
+.note-add-btn {
+  flex-shrink: 0;
+  white-space: nowrap;
+}

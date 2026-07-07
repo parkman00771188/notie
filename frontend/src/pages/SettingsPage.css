@@ -279,99 +279,6 @@
   opacity: 1;
 }
 
-/* ---------- 소속 · 직책 (3컬럼: 소속/부서/직책) ---------- */
-.sp-org-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
-  gap: 20px;
-}
-
-.sp-org-title {
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--text);
-  margin-bottom: 10px;
-}
-
-.sp-org-add {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-
-.sp-org-add .input {
-  flex: 1;
-  min-width: 0;
-  padding: 9px 12px;
-}
-
-.sp-org-add .btn {
-  flex-shrink: 0;
-}
-
-.sp-org-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.sp-org-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 8px 10px;
-  border-radius: 8px;
-  font-size: 14px;
-  color: var(--text-2);
-  transition: background 0.15s;
-}
-
-.sp-org-item:hover {
-  background: var(--bg);
-}
-
-.sp-org-name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.sp-org-x {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  padding: 0;
-  background: none;
-  border: none;
-  border-radius: 50%;
-  font-size: 15px;
-  line-height: 1;
-  color: var(--text-3);
-  cursor: pointer;
-  opacity: 0;
-  flex-shrink: 0;
-  transition:
-    opacity 0.15s,
-    background 0.15s,
-    color 0.15s;
-}
-
-.sp-org-item:hover .sp-org-x,
-.sp-org-x:focus-visible {
-  opacity: 1;
-}
-
-.sp-org-x:hover {
-  background: var(--red-soft);
-  color: var(--red);
-}
-
 /* ---------- 참석자 디렉터리 ---------- */
 .sp-people-add {
   display: grid;
@@ -382,6 +289,11 @@
 .sp-people-add .input {
   min-width: 0;
   padding: 9px 12px;
+}
+
+/* 소속/부서/직책 콤보박스 — 그리드 칸에 맞춤 */
+.sp-people-add .combobox {
+  min-width: 0;
 }
 
 .sp-add-email {
@@ -399,6 +311,15 @@
   border: 1px solid var(--border);
   border-radius: 12px;
   overflow: hidden;
+}
+
+/* 인라인 수정 중 — 콤보박스 드롭다운이 잘리지 않도록 클립 해제 */
+.sp-group-editing {
+  overflow: visible;
+}
+
+.sp-group-editing .sp-group-head {
+  border-radius: 11px 11px 0 0;
 }
 
 .sp-group-head {
@@ -448,6 +369,11 @@
 
 .sp-table-wrap {
   overflow-x: auto;
+}
+
+/* 인라인 수정 중 — 콤보박스 드롭다운이 잘리지 않도록 클립 해제 */
+.sp-table-wrap-editing {
+  overflow-x: visible;
 }
 
 .sp-table {
@@ -548,6 +474,12 @@
   min-width: 0;
 }
 
+/* 인라인 수정의 소속/부서/직책 콤보박스 — 인라인 인풋과 같은 크기감 */
+.sp-edit-grid .combobox .input {
+  padding: 7px 34px 7px 10px;
+  font-size: 13.5px;
+}
+
 .sp-edit-label {
   font-size: 12px;
   font-weight: 600;
@@ -576,9 +508,5 @@
     width: 100%;
     flex-direction: row;
     flex-wrap: wrap;
-  }
-
-  .sp-org-grid {
-    grid-template-columns: 1fr;
   }
 }

@@ -177,9 +177,10 @@
   padding: 9px 12px;
 }
 
-/* datalist 콤보박스 인풋 — 브라우저 기본 화살표 영역 확보 */
-.pp-form-row .input[list] {
-  padding-right: 8px;
+/* 소속/부서/직책 ComboBox — 행 안에서 균등 분배 */
+.pp-form-row .combobox {
+  flex: 1;
+  min-width: 0;
 }
 
 .pp-form-actions {

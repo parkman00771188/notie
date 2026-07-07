@@ -225,12 +225,21 @@ export const api = {
     return request<AppSettings>('/api/settings')
   },
 
-  /** gemini_api_key/summary_prompt에 빈 문자열을 주면 해당 값 삭제 */
-  updateSettings(data: { gemini_api_key?: string; summary_prompt?: string }): Promise<AppSettings> {
+  /** gemini_api_key/summary_prompt/gemini_model에 빈 문자열을 주면 해당 값 삭제(기본값 복귀) */
+  updateSettings(data: {
+    gemini_api_key?: string
+    summary_prompt?: string
+    gemini_model?: string
+  }): Promise<AppSettings> {
     return request<AppSettings>('/api/settings', {
       method: 'PUT',
       body: JSON.stringify(data),
     })
+  },
+
+  /** 등록된 키로 사용 가능한 Gemini 모델 목록 조회 */
+  listGeminiModels(): Promise<{ models: { name: string; display_name: string }[]; error: string | null }> {
+    return request('/api/settings/gemini-models')
   },
 
   testGemini(): Promise<{ ok: boolean; message: string }> {

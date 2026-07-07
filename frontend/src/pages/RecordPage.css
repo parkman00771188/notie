@@ -317,14 +317,14 @@
   gap: 10px;
 }
 
-/* 기본 2줄 ~ 최대 5줄 자동 확장 (height는 JS, 상한은 max-height) */
+/* 기본 3줄 ~ 최대 8줄 자동 확장 (height는 JS, 상한은 max-height) */
 .memo-textarea {
   resize: none;
   font-size: 15px;
   line-height: 23px;
   padding: 12px 14px;
-  min-height: 72px; /* 2줄 + 패딩/보더 */
-  max-height: 141px; /* 5줄 + 패딩/보더 */
+  min-height: 95px; /* 3줄 + 패딩/보더 */
+  max-height: 210px; /* 8줄 + 패딩/보더 */
   overflow-y: auto;
 }
 

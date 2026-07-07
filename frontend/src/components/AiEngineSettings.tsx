@@ -2,11 +2,21 @@ import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { api } from '../api'
 import type { AppSettings } from '../api'
+import ComboBox from './ComboBox'
 import './AiEngineSettings.css'
+
+/** 모델 목록 로드 실패/키 미등록 시 보여줄 추천 모델 폴백 목록 (최신순) */
+const FALLBACK_GEMINI_MODELS = [
+  'gemini-flash-latest',
+  'gemini-3.5-flash',
+  'gemini-3-flash-preview',
+  'gemini-2.5-flash',
+  'gemini-2.5-pro',
+]
 
 /**
  * AI 요약 엔진 설정 카드 섹션 (설정 페이지에서 사용).
- * 현재 엔진 상태 배지 + Gemini API 키 등록/테스트/삭제 + 요약 지시사항(프롬프트) 카드.
+ * 현재 엔진 상태 배지 + Gemini API 키 등록/테스트/삭제 + 모델 선택 + 요약 지시사항(프롬프트) 카드.
  */
 export function AiEngineSettings() {
   const [settings, setSettings] = useState<AppSettings | null>(null)
@@ -20,6 +30,16 @@ export function AiEngineSettings() {
   const [deleting, setDeleting] = useState(false)
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null)
   const savedTimerRef = useRef<number | null>(null)
+
+  // Gemini 모델 선택
+  const [modelInput, setModelInput] = useState('')
+  const [modelOptions, setModelOptions] = useState<string[]>(FALLBACK_GEMINI_MODELS)
+  const [modelsLoading, setModelsLoading] = useState(false)
+  const [modelsHint, setModelsHint] = useState('') // 목록 로드 실패 사유 (폴백 목록 사용 안내)
+  const [modelError, setModelError] = useState('')
+  const [modelSaving, setModelSaving] = useState(false)
+  const [modelSaved, setModelSaved] = useState(false)
+  const modelTimerRef = useRef<number | null>(null)
 
   // 요약 지시사항 (프롬프트)
   const [promptInput, setPromptInput] = useState('')
@@ -37,6 +57,7 @@ export function AiEngineSettings() {
         if (!cancelled) {
           setSettings(s)
           setPromptInput(s.summary_prompt)
+          setModelInput(s.gemini_model)
         }
       })
       .catch((e: unknown) => {
@@ -50,11 +71,49 @@ export function AiEngineSettings() {
     }
   }, [])
 
+  // 키가 등록돼 있으면 사용 가능한 모델 목록 로드 (키가 바뀌면 다시 로드)
+  // keyStamp: 키 미등록이면 null, 등록이면 preview 문자열 — 값이 바뀔 때만 재요청
+  const keyStamp = settings?.gemini_api_key_set ? (settings.gemini_key_preview ?? '') : null
+  useEffect(() => {
+    if (keyStamp === null) {
+      setModelOptions(FALLBACK_GEMINI_MODELS)
+      setModelsHint('')
+      return
+    }
+    let cancelled = false
+    setModelsLoading(true)
+    api
+      .listGeminiModels()
+      .then((res) => {
+        if (cancelled) return
+        if (res.error || res.models.length === 0) {
+          setModelOptions(FALLBACK_GEMINI_MODELS)
+          setModelsHint(res.error ?? '사용 가능한 모델을 찾지 못했어요')
+        } else {
+          setModelOptions(res.models.map((m) => m.name))
+          setModelsHint('')
+        }
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) {
+          setModelOptions(FALLBACK_GEMINI_MODELS)
+          setModelsHint(e instanceof Error ? e.message : '모델 목록을 불러오지 못했어요')
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setModelsLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [keyStamp])
+
   // "저장됨 ✓" 타이머 정리
   useEffect(() => {
     return () => {
       if (savedTimerRef.current) window.clearTimeout(savedTimerRef.current)
       if (promptTimerRef.current) window.clearTimeout(promptTimerRef.current)
+      if (modelTimerRef.current) window.clearTimeout(modelTimerRef.current)
     }
   }, [])
 
@@ -94,6 +153,28 @@ export function AiEngineSettings() {
       })
     } finally {
       setTesting(false)
+    }
+  }
+
+  const modelUnchanged = settings !== null && modelInput.trim() === settings.gemini_model
+
+  const handleModelSave = async (e: FormEvent) => {
+    e.preventDefault()
+    if (modelSaving || !settings || modelUnchanged) return
+    setModelSaving(true)
+    setModelError('')
+    try {
+      // 빈 문자열로 저장하면 모델 설정 삭제(기본 모델로 복귀)
+      const next = await api.updateSettings({ gemini_model: modelInput.trim() })
+      setSettings(next)
+      setModelInput(next.gemini_model)
+      setModelSaved(true)
+      if (modelTimerRef.current) window.clearTimeout(modelTimerRef.current)
+      modelTimerRef.current = window.setTimeout(() => setModelSaved(false), 2000)
+    } catch (err: unknown) {
+      setModelError(err instanceof Error ? err.message : '모델 저장에 실패했어요')
+    } finally {
+      setModelSaving(false)
     }
   }
 
@@ -237,6 +318,47 @@ export function AiEngineSettings() {
                 {testResult.ok ? '✅' : '❌'} {testResult.message}
               </div>
             )}
+
+            {/* Gemini 모델 선택 */}
+            <form className="settings-model-form" onSubmit={handleModelSave}>
+              <div className="field-label">
+                모델
+                {modelsLoading && (
+                  <span className="settings-model-loading">목록 불러오는 중...</span>
+                )}
+              </div>
+
+              {modelError && <div className="settings-error">{modelError}</div>}
+
+              <div className="settings-model-row">
+                <ComboBox
+                  value={modelInput}
+                  onChange={setModelInput}
+                  options={modelOptions}
+                  placeholder="gemini-2.5-flash"
+                />
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={modelUnchanged || modelSaving}
+                >
+                  {modelSaving ? '저장 중...' : modelSaved ? '저장됨 ✓' : '저장'}
+                </button>
+              </div>
+
+              <p className="settings-model-current">
+                현재 사용 모델:{' '}
+                <code className="settings-model-code">{settings.gemini_model}</code>
+              </p>
+              <p className="muted settings-model-hint">
+                {!settings.gemini_api_key_set
+                  ? 'API 키를 등록하면 사용 가능한 모델 목록을 자동으로 불러와요. 지금은 추천 목록에서 고르거나 직접 입력할 수 있어요.'
+                  : modelsHint
+                    ? `모델 목록을 불러오지 못해 추천 목록을 표시해요 (${modelsHint}). 직접 입력할 수도 있어요.`
+                    : '목록에서 고르거나 직접 입력할 수 있어요.'}{' '}
+                비워두고 저장하면 기본 모델로 돌아가요.
+              </p>
+            </form>
 
             <p className="muted settings-note">
               키는 이 PC의 로컬 데이터베이스에만 저장됩니다.{' '}

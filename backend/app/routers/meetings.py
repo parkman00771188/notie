@@ -6,15 +6,17 @@
 
 import json
 import mimetypes
+import re
 import shutil
 import sqlite3
 from contextlib import closing
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 
 from .. import config, db
@@ -373,6 +375,52 @@ def get_waveform(meeting_id: int, user: dict = Depends(get_current_user)) -> dic
         return waveform.get_peaks(path)
     except Exception:  # 디코드 실패 시 프론트가 균일 점으로 폴백
         return {"peaks": [], "duration_sec": duration_sec}
+
+
+@router.get("/{meeting_id}/export")
+def export_minutes(meeting_id: int, user: dict = Depends(get_current_user)) -> Response:
+    """회의록 .docx 다운로드 — resource/doc의 [회의록] 양식 레이아웃 재현."""
+    from ..services import export_doc
+
+    with closing(db.get_conn()) as conn:
+        row = get_owned_meeting(conn, meeting_id, user["id"])
+        meeting = dict(row)
+        participants = [
+            dict(p)
+            for p in conn.execute(
+                """
+                SELECT p.name, p.role, p.department, p.organization
+                FROM meeting_participants mp JOIN participants p ON p.id = mp.participant_id
+                WHERE mp.meeting_id = ? ORDER BY p.id
+                """,
+                (meeting_id,),
+            ).fetchall()
+        ]
+        bookmarks = [
+            dict(b)
+            for b in conn.execute(
+                "SELECT time_sec, title, kind FROM bookmarks WHERE meeting_id = ? ORDER BY time_sec ASC, id ASC",
+                (meeting_id,),
+            ).fetchall()
+        ]
+        summary_row = conn.execute(
+            "SELECT * FROM summaries WHERE meeting_id = ?", (meeting_id,)
+        ).fetchone()
+
+    data = export_doc.build_minutes_docx(
+        meeting, participants, bookmarks, export_doc.parse_summary_row(summary_row)
+    )
+
+    # 파일명: [회의록] <제목>.docx (윈도우 금지 문자 제거)
+    safe_title = re.sub(r'[\\/:*?"<>|]+', " ", meeting["title"]).strip() or "회의록"
+    filename = f"[회의록] {safe_title}.docx"
+    return Response(
+        content=data,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={
+            "Content-Disposition": f"attachment; filename=\"minutes.docx\"; filename*=UTF-8''{quote(filename)}"
+        },
+    )
 
 
 @router.get("/{meeting_id}/status")

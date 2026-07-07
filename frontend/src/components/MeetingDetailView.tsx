@@ -611,6 +611,20 @@ export function MeetingDetailView({ meetingId, onBack, onDeleted, onChanged }: M
           (summary?.minutes_md ? (
             <div className="minutes-panel">
               <div className="minutes-toolbar">
+                <button
+                  className="btn btn-soft"
+                  title="회의록 양식(.docx)으로 다운로드합니다"
+                  onClick={() => {
+                    const a = document.createElement('a')
+                    a.href = api.exportUrl(meeting.id)
+                    a.download = ''
+                    document.body.appendChild(a)
+                    a.click()
+                    a.remove()
+                  }}
+                >
+                  📄 문서로 출력
+                </button>
                 <button className="btn btn-ghost" onClick={handleCopy}>
                   {copied ? '복사됨 ✓' : '복사'}
                 </button>

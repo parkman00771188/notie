@@ -763,13 +763,17 @@ def _build_minutes_md(
 ) -> str:
     title = str(meeting.get("title") or "").strip() or "회의록"
     started_at = str(meeting.get("started_at") or "").replace("T", " ")[:16] or "-"
-    duration = meeting.get("duration_sec")
-    duration_text = _format_clock(duration) if duration else "-"
+    tag = str(meeting.get("tag") or "").strip()
+
+    # 소요 시간 대신 태그(프로젝트)를 표시한다 (사용자 요청)
+    meta = f"**일시**: {started_at}"
+    if tag:
+        meta += f" · **태그**: #{tag}"
 
     lines: list[str] = [
         f"# {title}",
         "",
-        f"**일시**: {started_at} · **소요 시간**: {duration_text}",
+        meta,
         "",
         "## 참석자",
     ]

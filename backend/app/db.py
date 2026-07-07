@@ -96,6 +96,7 @@ CREATE TABLE IF NOT EXISTS org_options (
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   kind TEXT NOT NULL CHECK (kind IN ('department', 'role', 'organization')),
   name TEXT NOT NULL,
+  color TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
   UNIQUE(user_id, kind, name)
 );
@@ -136,6 +137,10 @@ def _migrate(conn: sqlite3.Connection) -> None:
     bcols = [row[1] for row in conn.execute("PRAGMA table_info(bookmarks)")]
     if "kind" not in bcols:
         conn.execute("ALTER TABLE bookmarks ADD COLUMN kind TEXT NOT NULL DEFAULT 'memo'")
+
+    ocols = [row[1] for row in conn.execute("PRAGMA table_info(org_options)")]
+    if ocols and "color" not in ocols:
+        conn.execute("ALTER TABLE org_options ADD COLUMN color TEXT")
 
     mcols = [row[1] for row in conn.execute("PRAGMA table_info(meetings)")]
     if "deleted_at" not in mcols:

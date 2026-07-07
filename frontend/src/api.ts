@@ -155,7 +155,7 @@ export const api = {
 
   updateMeeting(
     id: number,
-    data: { title?: string; tag?: string; participant_ids?: number[] },
+    data: { title?: string; tag?: string; started_at?: string; participant_ids?: number[] },
   ): Promise<Meeting> {
     return request<Meeting>(`/api/meetings/${id}`, {
       method: 'PATCH',
@@ -243,6 +243,14 @@ export const api = {
 
   createOrgOption(data: { kind: OrgKind; name: string }): Promise<OrgOption> {
     return request<OrgOption>('/api/org-options', { method: 'POST', body: JSON.stringify(data) })
+  },
+
+  /** 소속 색 지정 — 빈 문자열이면 색 해제 */
+  updateOrgOption(id: number, data: { color?: string }): Promise<OrgOption> {
+    return request<OrgOption>(`/api/org-options/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    })
   },
 
   deleteOrgOption(id: number): Promise<{ ok: boolean }> {

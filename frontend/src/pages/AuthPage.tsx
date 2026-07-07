@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+﻿import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api'
 import { useAuth } from '../App'
@@ -71,8 +71,8 @@ export default function AuthPage() {
     <div className="auth-page">
       <header className="auth-topbar">
         <div className="auth-logo">
-          <img src="/logo.png" alt="Gimnote 로고" />
-          <span>Gimnote</span>
+          <img src="/logo.png" alt="Notie 로고" />
+          <span>Notie</span>
         </div>
       </header>
 
@@ -81,7 +81,7 @@ export default function AuthPage() {
         <section className="auth-hero">
           <span className="hero-badge">✦ AI 회의록 도우미</span>
           <h1 className="hero-title">{'녹음하면,\n요약과 회의록이\n자동으로 완성됩니다'}</h1>
-          <p className="hero-sub">{'회의의 모든 순간을 놓치지 않고,\nGimnote가 깔끔하게 정리해드려요.'}</p>
+          <p className="hero-sub">{'회의의 모든 순간을 놓치지 않고,\nNotie가 깔끔하게 정리해드려요.'}</p>
 
           <div className="hero-illust" aria-hidden="true">
             {/* 녹음 중 카드 */}
@@ -306,7 +306,7 @@ export default function AuthPage() {
             </div>
 
             <p className="auth-terms">
-              계속 진행하면 Gimnote의{' '}
+              계속 진행하면 Notie의{' '}
               <button type="button" className="auth-terms-link" onClick={notSupported}>
                 이용약관
               </button>{' '}

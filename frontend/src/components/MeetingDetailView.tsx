@@ -61,6 +61,8 @@ export function MeetingDetailView({ meetingId, onBack, onDeleted, onChanged }: M
   const [noteDraft, setNoteDraft] = useState('')
   const [addingNote, setAddingNote] = useState(false)
   const [tags, setTags] = useState<Tag[]>([])
+  const [editingDate, setEditingDate] = useState(false)
+  const [dateDraft, setDateDraft] = useState('')
 
   // 회의록 헤더의 태그 칩 색 매칭용 (실패해도 기본색으로 표시)
   useEffect(() => {
@@ -196,6 +198,21 @@ export function MeetingDetailView({ meetingId, onBack, onDeleted, onChanged }: M
   /** 스크립트 세그먼트/메모 시간 칩 클릭 → 플레이어 점프 + 재생 */
   const seekTo = (sec: number) => {
     playerRef.current?.seekTo(sec, true)
+  }
+
+  /** 회의 날짜/시간 변경 (datetime-local → ISO) */
+  const commitDate = async () => {
+    if (!meeting) return
+    setEditingDate(false)
+    const value = dateDraft.trim()
+    if (!value || value === (meeting.started_at || '').slice(0, 16)) return
+    try {
+      const updated = await api.updateMeeting(meeting.id, { started_at: value })
+      setMeeting((prev) => (prev ? { ...prev, started_at: updated.started_at } : prev))
+      notifyChanged()
+    } catch (e) {
+      alert(e instanceof Error ? e.message : '날짜 변경에 실패했어요')
+    }
   }
 
   /** 회의록 문서 다운로드 (브라우저 다운로드 폴더) */
@@ -502,7 +519,32 @@ export function MeetingDetailView({ meetingId, onBack, onDeleted, onChanged }: M
         </div>
 
         <div className="detail-meta">
-          <span>{formatKoreanDateTime(meeting.started_at)}</span>
+          {editingDate ? (
+            <input
+              type="datetime-local"
+              className="input detail-date-input"
+              value={dateDraft}
+              autoFocus
+              onChange={(e) => setDateDraft(e.target.value)}
+              onBlur={() => void commitDate()}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void commitDate()
+                else if (e.key === 'Escape') setEditingDate(false)
+              }}
+            />
+          ) : (
+            <button
+              type="button"
+              className="detail-date-btn"
+              title="회의 날짜/시간 변경"
+              onClick={() => {
+                setDateDraft((meeting.started_at || '').slice(0, 16))
+                setEditingDate(true)
+              }}
+            >
+              {formatKoreanDateTime(meeting.started_at)} ✎
+            </button>
+          )}
           {meeting.duration_sec != null && (
             <>
               <span className="meta-dot">·</span>

@@ -322,6 +322,52 @@
   border-radius: 11px 11px 0 0;
 }
 
+/* 그룹 헤더 행 — 접기 버튼(좌) + 소속 색 스와치(우) */
+.sp-group-headrow {
+  display: flex;
+  align-items: center;
+  background: var(--bg);
+}
+
+.sp-group-headrow .sp-group-head {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+}
+
+/* 소속 색 지정 스와치 — 미지정이면 무지개 */
+.sp-org-color {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  margin-right: 12px;
+  border-radius: 50%;
+  border: 2px solid var(--surface);
+  box-shadow: 0 0 0 1px var(--border-strong);
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.sp-org-color.unset {
+  background: conic-gradient(
+    #ef4444,
+    #f08c00,
+    #16a34a,
+    #1098ad,
+    #2563eb,
+    #7048e8,
+    #d6336c,
+    #ef4444
+  );
+  opacity: 0.75;
+}
+
+.sp-org-color:hover {
+  box-shadow: 0 0 0 2px var(--primary);
+}
+
 .sp-group-head {
   display: flex;
   align-items: center;

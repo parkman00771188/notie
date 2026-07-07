@@ -46,12 +46,16 @@ class OrgOptionCreate(BaseModel):
     name: str = Field(min_length=1)
 
 
+class OrgOptionUpdate(BaseModel):
+    color: str | None = None
+
+
 def _to_tag(row: sqlite3.Row) -> dict:
     return {"id": row["id"], "name": row["name"], "color": row["color"]}
 
 
 def _to_org_option(row: sqlite3.Row) -> dict:
-    return {"id": row["id"], "kind": row["kind"], "name": row["name"]}
+    return {"id": row["id"], "kind": row["kind"], "name": row["name"], "color": row["color"]}
 
 
 # ---------------------------------------------------------------- tags
@@ -188,12 +192,12 @@ def list_org_options(
     try:
         if kind:
             rows = conn.execute(
-                "SELECT id, kind, name FROM org_options WHERE user_id = ? AND kind = ? ORDER BY name ASC",
+                "SELECT id, kind, name, color FROM org_options WHERE user_id = ? AND kind = ? ORDER BY name ASC",
                 (user["id"], kind),
             ).fetchall()
         else:
             rows = conn.execute(
-                "SELECT id, kind, name FROM org_options WHERE user_id = ? ORDER BY kind ASC, name ASC",
+                "SELECT id, kind, name, color FROM org_options WHERE user_id = ? ORDER BY kind ASC, name ASC",
                 (user["id"],),
             ).fetchall()
     finally:
@@ -223,7 +227,37 @@ def create_org_option(
     finally:
         conn.close()
 
-    return {"id": option_id, "kind": body.kind, "name": name}
+    return {"id": option_id, "kind": body.kind, "name": name, "color": None}
+
+
+@router.patch("/org-options/{option_id}")
+def update_org_option(
+    option_id: int, body: OrgOptionUpdate, user: dict = Depends(get_current_user)
+) -> dict:
+    """소속(조직) 색 지정 — color에 빈 문자열을 주면 색 해제."""
+    updates = body.model_dump(exclude_unset=True)
+    conn = db.get_conn()
+    try:
+        row = conn.execute(
+            "SELECT id, kind, name, color FROM org_options WHERE id = ? AND user_id = ?",
+            (option_id, user["id"]),
+        ).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="항목을 찾을 수 없습니다")
+
+        if "color" in updates:
+            color = (updates["color"] or "").strip() or None
+            with conn:
+                conn.execute(
+                    "UPDATE org_options SET color = ? WHERE id = ? AND user_id = ?",
+                    (color, option_id, user["id"]),
+                )
+        row = conn.execute(
+            "SELECT id, kind, name, color FROM org_options WHERE id = ?", (option_id,)
+        ).fetchone()
+    finally:
+        conn.close()
+    return _to_org_option(row)
 
 
 @router.delete("/org-options/{option_id}")

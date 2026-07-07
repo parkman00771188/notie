@@ -300,6 +300,21 @@ export default function SettingsPage() {
   const organizationNames = (orgOptions ?? [])
     .filter((o) => o.kind === 'organization')
     .map((o) => o.name)
+
+  /** 소속 색 지정 — 미등록 소속이면 사전에 등록한 뒤 색을 저장 */
+  const setOrgColor = async (name: string, color: string) => {
+    setPeopleError('')
+    try {
+      let opt = (orgOptions ?? []).find((o) => o.kind === 'organization' && o.name === name)
+      if (!opt) opt = await api.createOrgOption({ kind: 'organization', name })
+      const updated = await api.updateOrgOption(opt.id, { color })
+      setOrgOptions((prev) =>
+        sortOrgOptions([...(prev ?? []).filter((o) => o.id !== updated.id), updated]),
+      )
+    } catch (err: unknown) {
+      setPeopleError(errMsg(err, '소속 색을 저장하지 못했어요'))
+    }
+  }
   const departmentNames = (orgOptions ?? [])
     .filter((o) => o.kind === 'department')
     .map((o) => o.name)
@@ -749,20 +764,44 @@ export default function SettingsPage() {
             const editingHere = editingId !== null && g.list.some((p) => p.id === editingId)
             return (
               <div key={g.key} className={`sp-group${editingHere ? ' sp-group-editing' : ''}`}>
-                <button
-                  type="button"
-                  className="sp-group-head"
-                  onClick={() => toggleGroup(g.key)}
-                  aria-expanded={!isCollapsed}
-                >
-                  <span className="sp-group-chevron" aria-hidden="true">
-                    {isCollapsed ? '▸' : '▾'}
-                  </span>
-                  <span className="sp-group-title">
-                    <span aria-hidden="true">🏢</span> {g.name || '소속 미지정'}
-                  </span>
-                  <span className="sp-group-count">{g.list.length}명</span>
-                </button>
+                <div className="sp-group-headrow">
+                  <button
+                    type="button"
+                    className="sp-group-head"
+                    onClick={() => toggleGroup(g.key)}
+                    aria-expanded={!isCollapsed}
+                  >
+                    <span className="sp-group-chevron" aria-hidden="true">
+                      {isCollapsed ? '▸' : '▾'}
+                    </span>
+                    <span className="sp-group-title">
+                      <span aria-hidden="true">🏢</span> {g.name || '소속 미지정'}
+                    </span>
+                    <span className="sp-group-count">{g.list.length}명</span>
+                  </button>
+                  {g.name &&
+                    (() => {
+                      const c =
+                        (orgOptions ?? []).find(
+                          (o) => o.kind === 'organization' && o.name === g.name,
+                        )?.color ?? null
+                      return (
+                        <label
+                          className={`sp-org-color${c ? '' : ' unset'}`}
+                          style={c ? { background: c } : undefined}
+                          title="소속 색 지정 — 같은 소속 참석자가 같은 색으로 표시돼요"
+                        >
+                          <input
+                            type="color"
+                            className="sp-color-input"
+                            value={c ?? '#2563eb'}
+                            onChange={(e) => void setOrgColor(g.name, e.target.value)}
+                            aria-label={`${g.name} 소속 색 지정`}
+                          />
+                        </label>
+                      )
+                    })()}
+                </div>
                 {!isCollapsed && (
                   <div className={`sp-table-wrap${editingHere ? ' sp-table-wrap-editing' : ''}`}>
                     <table className="sp-table">

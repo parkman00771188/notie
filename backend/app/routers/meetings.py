@@ -67,6 +67,7 @@ class MeetingCreate(BaseModel):
 class MeetingUpdate(BaseModel):
     title: Optional[str] = None
     tag: Optional[str] = None
+    started_at: Optional[str] = None
     participant_ids: Optional[List[int]] = None
 
 
@@ -247,6 +248,13 @@ def update_meeting(
             if "tag" in data:
                 sets.append("tag = ?")
                 values.append(data["tag"])
+            if "started_at" in data and data["started_at"]:
+                try:
+                    parsed = datetime.fromisoformat(data["started_at"])
+                except ValueError:
+                    raise HTTPException(status_code=400, detail="날짜 형식이 올바르지 않습니다")
+                sets.append("started_at = ?")
+                values.append(parsed.isoformat(timespec="seconds"))
             if sets:
                 values.append(meeting_id)
                 conn.execute(f"UPDATE meetings SET {', '.join(sets)} WHERE id = ?", values)

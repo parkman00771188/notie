@@ -28,6 +28,8 @@ export interface OrgOption {
   id: number
   kind: OrgKind
   name: string
+  /** 소속(organization)에 지정한 색 — 같은 소속 참석자를 같은 색으로 표시 */
+  color: string | null
 }
 
 export type MeetingStatus =

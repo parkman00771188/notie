@@ -1,10 +1,21 @@
-﻿"""회의록 PDF 내보내기 — export_doc(docx)과 같은 [회의록] 양식 레이아웃.
+"""회의록 PDF 내보내기 — export_doc(docx)과 같은 [회의록] 양식 레이아웃.
 
 fpdf2로 로컬에서 직접 생성한다(외부 프로그램 불필요). 한글은 Windows의
 맑은 고딕(TTF)을 임베드하며, 폰트를 찾지 못하면 한국어 RuntimeError를 낸다.
 
-구성: 회의록 제목 → 회의일시/회의명/참석자 표 → [회의내용] 섹션 바 + 본문
-      (1. 내용/핵심 내용/결정 사항/추가 확인 필요/타임라인) → [특이사항] 빈 박스
+docx와 동일한 표 구조를 재현한다:
+  회의록                                         ← 큰 제목
+  ┌─────────┬───────────────┬────────┬────────────────┐
+  │ 회의일시 │ 2026년 4월 …  │ 회의명 │ <제목> (#태그)  │
+  ├─────────┼───────────────┴────────┴────────────────┤
+  │ 참석자   │ 이름(소속 · 직책) 콤마 목록               │
+  └─────────┴──────────────────────────────────────────┘
+  ┌─────────┬──────────────────────────────────────────┐
+  │ 회의내용 │ 1. 내용 / 핵심 내용 / 결정 사항 / 타임라인… │  ← 좌측 라벨 셀이
+  └─────────┴──────────────────────────────────────────┘     페이지를 넘어도 이어짐
+  ┌─────────┬──────────────────────────────────────────┐
+  │ 특이사항 │ (빈칸 — 출력 후 직접 작성)                │
+  └─────────┴──────────────────────────────────────────┘
 """
 
 from pathlib import Path
@@ -13,6 +24,8 @@ from .export_doc import _fmt_clock, _fmt_datetime, format_participants_grouped
 
 FONT = "Malgun"
 LABEL_BG = (231, 230, 230)
+LABEL_W = 24  # 좌측 라벨 셀 폭 (mm)
+PAD = 2.5     # 내용 셀 안쪽 여백 (mm)
 
 # 맑은 고딕 우선, 없으면 다른 한글 폰트 폴백
 _FONT_CANDIDATES = [
@@ -32,16 +45,9 @@ def _register_fonts(pdf) -> None:
     )
 
 
-def _section_bar(pdf, text: str) -> None:
-    pdf.set_font(FONT, "B", 11)
-    pdf.set_fill_color(*LABEL_BG)
-    pdf.cell(0, 9, text, border=1, fill=True, new_x="LMARGIN", new_y="NEXT")
-    pdf.ln(2.5)
-
-
 def _heading(pdf, text: str) -> None:
     pdf.ln(1.5)
-    pdf.set_font(FONT, "B", 11)
+    pdf.set_font(FONT, "B", 10.5)
     pdf.multi_cell(0, 6.5, text, new_x="LMARGIN", new_y="NEXT")
     pdf.ln(0.5)
 
@@ -74,6 +80,58 @@ def _markdown(pdf, md: str) -> None:
             _line(pdf, text)
 
 
+def _labeled_box(pdf, label: str, render, min_height: float = 0.0) -> None:
+    """docx의 [라벨 셀 | 내용 셀] 표 한 행을 재현한다.
+
+    내용이 여러 페이지로 넘어가면 각 페이지 구간마다 라벨 셀(회색)과
+    내용 셀 테두리를 이어서 그린다. 라벨 텍스트는 첫 구간에만 표시.
+    """
+    left = pdf.l_margin
+    right_edge = pdf.w - pdf.r_margin
+    page_bottom = pdf.h - pdf.b_margin
+    orig_r_margin = pdf.r_margin
+
+    # 시작 위치가 페이지 바닥에 너무 가까우면 다음 페이지에서 시작
+    if pdf.get_y() + 14 > page_bottom:
+        pdf.add_page()
+
+    start_page = pdf.page
+    start_y = pdf.get_y()
+
+    # 내용 렌더 — 좌측 라벨 폭 + 안쪽 여백만큼 마진을 옮겨서 흐르게 한다
+    pdf.set_left_margin(left + LABEL_W + PAD)
+    pdf.set_right_margin(orig_r_margin + PAD)
+    pdf.set_y(start_y + PAD)
+    pdf.set_x(left + LABEL_W + PAD)
+    render()
+    end_y = pdf.get_y() + PAD
+    if pdf.page == start_page:
+        end_y = max(end_y, start_y + max(min_height, 12.0))
+    end_y = min(end_y, page_bottom)
+    end_page = pdf.page
+    pdf.set_left_margin(left)
+    pdf.set_right_margin(orig_r_margin)
+
+    # 페이지 구간별 라벨 셀 + 내용 테두리
+    for pg in range(start_page, end_page + 1):
+        pdf.page = pg
+        y0 = start_y if pg == start_page else pdf.t_margin
+        y1 = end_y if pg == end_page else page_bottom
+        if y1 - y0 <= 0.5:
+            continue
+        pdf.set_fill_color(*LABEL_BG)
+        pdf.rect(left, y0, LABEL_W, y1 - y0, style="DF")
+        pdf.rect(left + LABEL_W, y0, right_edge - left - LABEL_W, y1 - y0, style="D")
+        if pg == start_page:
+            pdf.set_font(FONT, "B", 10.5)
+            pdf.set_xy(left, y0 + (y1 - y0) / 2 - 3)
+            pdf.cell(LABEL_W, 6, label, align="C")
+
+    pdf.page = end_page
+    pdf.set_y(end_y)
+    pdf.set_x(left)
+
+
 def build_minutes_pdf(
     meeting: dict,
     participants: list[dict],
@@ -94,7 +152,7 @@ def build_minutes_pdf(
     pdf.cell(0, 12, "회의록", new_x="LMARGIN", new_y="NEXT")
     pdf.ln(3)
 
-    # ---- 표: 회의일시/회의명 + 참석자 ----
+    # ---- 표 1: 회의일시/회의명 + 참석자 (docx와 동일) ----
     tag = str(meeting.get("tag") or "").strip()
     meeting_name = str(meeting.get("title") or "")
     if tag:
@@ -103,7 +161,7 @@ def build_minutes_pdf(
     label_style = FontFace(emphasis="BOLD", fill_color=LABEL_BG)
     pdf.set_font(FONT, "", 10)
     with pdf.table(
-        col_widths=(24, 62, 20, 68),
+        col_widths=(LABEL_W, 62, 20, 68),
         text_align="LEFT",
         line_height=7,
         padding=1.5,
@@ -117,60 +175,62 @@ def build_minutes_pdf(
         row.cell("참석자", style=label_style, align="CENTER")
         row.cell(format_participants_grouped(participants) or "-", colspan=3)
 
-    pdf.ln(5)
+    pdf.ln(4)
 
-    # ---- 회의내용 ----
-    _section_bar(pdf, "회의내용")
-
+    # ---- 표 2: 회의내용 (좌측 라벨 셀 + 내용, 페이지 넘어가도 이어짐) ----
     summary = summary or {}
-    section_no = 1
 
-    discussion = str(summary.get("discussion") or "").strip()
-    if discussion:
-        _heading(pdf, f"{section_no}. 내용")
+    def render_content() -> None:
+        section_no = 1
+
+        discussion = str(summary.get("discussion") or "").strip()
+        if discussion:
+            _heading(pdf, f"{section_no}. 내용")
+            section_no += 1
+            _markdown(pdf, discussion)
+
+        key_points = summary.get("key_points") or []
+        if key_points:
+            _heading(pdf, f"{section_no}. 핵심 내용")
+            section_no += 1
+            for item in key_points:
+                _line(pdf, f"• {item}", indent=3)
+
+        _heading(pdf, f"{section_no}. 결정 사항")
         section_no += 1
-        _markdown(pdf, discussion)
+        decisions = summary.get("decisions") or []
+        if decisions:
+            for item in decisions:
+                _line(pdf, f"▣ {item}", indent=3)
+        else:
+            _line(pdf, "명확히 확정된 결정사항은 없음", indent=3)
 
-    key_points = summary.get("key_points") or []
-    if key_points:
-        _heading(pdf, f"{section_no}. 핵심 내용")
-        section_no += 1
-        for item in key_points:
-            _line(pdf, f"• {item}", indent=3)
+        followups = summary.get("followups") or []
+        if followups:
+            _heading(pdf, f"{section_no}. 추가 확인 필요 사항")
+            section_no += 1
+            for item in followups:
+                _line(pdf, f"□ {item}", indent=3)
 
-    _heading(pdf, f"{section_no}. 결정 사항")
-    section_no += 1
-    decisions = summary.get("decisions") or []
-    if decisions:
-        for item in decisions:
-            _line(pdf, f"▣ {item}", indent=3)
-    else:
-        _line(pdf, "명확히 확정된 결정사항은 없음", indent=3)
+        timed = [b for b in bookmarks if b.get("kind") != "note"]
+        if timed:
+            _heading(pdf, f"{section_no}. 타임라인")
+            section_no += 1
+            for b in sorted(timed, key=lambda x: float(x.get("time_sec") or 0)):
+                _line(
+                    pdf,
+                    f"**{_fmt_clock(b.get('time_sec'))}** — {str(b.get('title') or '').strip()}",
+                    indent=3,
+                )
 
-    followups = summary.get("followups") or []
-    if followups:
-        _heading(pdf, f"{section_no}. 추가 확인 필요 사항")
-        section_no += 1
-        for item in followups:
-            _line(pdf, f"□ {item}", indent=3)
+        if not discussion and not key_points and not decisions:
+            _line(pdf, "요약이 아직 생성되지 않았습니다.")
 
-    timed = [b for b in bookmarks if b.get("kind") != "note"]
-    if timed:
-        _heading(pdf, f"{section_no}. 타임라인")
-        section_no += 1
-        for b in sorted(timed, key=lambda x: float(x.get("time_sec") or 0)):
-            _line(
-                pdf,
-                f"**{_fmt_clock(b.get('time_sec'))}** — {str(b.get('title') or '').strip()}",
-                indent=3,
-            )
+    _labeled_box(pdf, "회의내용", render_content)
 
-    if not discussion and not key_points and not decisions:
-        _line(pdf, "요약이 아직 생성되지 않았습니다.")
+    pdf.ln(4)
 
-    # ---- 특이사항 (빈 박스 — 출력 후 직접 작성) ----
-    pdf.ln(5)
-    _section_bar(pdf, "특이사항")
-    pdf.cell(0, 24, "", border=1, new_x="LMARGIN", new_y="NEXT")
+    # ---- 표 3: 특이사항 (빈칸 — 출력 후 직접 작성) ----
+    _labeled_box(pdf, "특이사항", lambda: None, min_height=24)
 
     return bytes(pdf.output())

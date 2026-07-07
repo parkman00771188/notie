@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from . import config, db
 from .routers import auth, bookmarks, meetings, org, participants, settings
 
-app = FastAPI(title="Gimnote", version="0.1.0")
+app = FastAPI(title="Notie", version="0.1.0")
 
 app.add_middleware(
     CORSMiddleware,

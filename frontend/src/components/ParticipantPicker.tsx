@@ -25,6 +25,16 @@ function chipSub(p: Participant): string {
   return [p.organization, p.role].filter(Boolean).join(' · ') || (p.department ?? '')
 }
 
+/** 소속에 색이 지정돼 있으면 그 색으로 — 같은 소속은 같은 색 (없으면 참석자 고유색) */
+function effectiveColor(p: Participant, orgOptions: OrgOption[]): string {
+  const org = (p.organization ?? '').trim()
+  if (org) {
+    const opt = orgOptions.find((o) => o.kind === 'organization' && o.name === org)
+    if (opt?.color) return opt.color
+  }
+  return p.color
+}
+
 export function ParticipantPicker({ open, onClose, selected, onChange }: ParticipantPickerProps) {
   const [all, setAll] = useState<Participant[]>([])
   const [orgOptions, setOrgOptions] = useState<OrgOption[]>([])
@@ -217,15 +227,17 @@ export function ParticipantPicker({ open, onClose, selected, onChange }: Partici
             선택된 참석자가 없어요. 아래 목록에서 선택하거나 검색해 보세요.
           </span>
         ) : (
-          selected.map((p) => (
+          selected.map((p) => {
+            const c = effectiveColor(p, orgOptions)
+            return (
             <span
               key={p.id}
               className="pp-sel-chip"
               title={subText(p) || undefined}
               style={{
-                borderColor: p.color,
-                color: p.color,
-                background: `color-mix(in srgb, ${p.color} 12%, transparent)`,
+                borderColor: c,
+                color: c,
+                background: `color-mix(in srgb, ${c} 12%, transparent)`,
               }}
             >
               {p.name}
@@ -239,7 +251,8 @@ export function ParticipantPicker({ open, onClose, selected, onChange }: Partici
                 ×
               </button>
             </span>
-          ))
+            )
+          })
         )}
       </div>
 
@@ -280,7 +293,7 @@ export function ParticipantPicker({ open, onClose, selected, onChange }: Partici
                         onClick={() => addToSelection(p)}
                         onMouseEnter={() => setActiveIndex(i)}
                       >
-                        <Avatar name={p.name} color={p.color} size={30} />
+                        <Avatar name={p.name} color={effectiveColor(p, orgOptions)} size={30} />
                         <span className="pp-suggest-texts">
                           <span className="pp-suggest-name">{p.name}</span>
                           {sub && <span className="pp-suggest-sub">{sub}</span>}

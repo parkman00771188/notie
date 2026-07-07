@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+﻿import { useEffect, useRef, useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
 import { Avatar } from './Avatar'
@@ -105,8 +105,8 @@ export function Sidebar() {
   return (
     <aside className="sidebar">
       <div className="sidebar-logo">
-        <img src="/logo.png" alt="Gimnote 로고" />
-        <span className="sidebar-wordmark">Gimnote</span>
+        <img src="/logo.png" alt="Notie 로고" />
+        <span className="sidebar-wordmark">Notie</span>
       </div>
 
       <div className="sidebar-new">

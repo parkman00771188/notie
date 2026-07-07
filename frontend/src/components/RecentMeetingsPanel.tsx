@@ -175,6 +175,22 @@ export function RecentMeetingsPanel({ refreshKey = 0 }: RecentMeetingsPanelProps
               >
                 <span className="recent-item-title">
                   <span className="recent-item-icon">📄</span>
+                  {m.tag &&
+                    (() => {
+                      const c = tagColor(m.tag) ?? '#16a34a'
+                      return (
+                        <span
+                          className="tag-pill recent-item-tag"
+                          style={{
+                            color: c,
+                            borderColor: c,
+                            background: `color-mix(in srgb, ${c} 10%, transparent)`,
+                          }}
+                        >
+                          #{m.tag}
+                        </span>
+                      )
+                    })()}
                   <span className="recent-item-name">{m.title}</span>
                 </span>
                 <span className="recent-item-meta">

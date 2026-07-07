@@ -420,6 +420,13 @@
   font-size: 13px;
 }
 
+/* 제목 왼쪽 태그 칩 (색상은 인라인 style) — 패널 폭이 좁아 살짝 작게 */
+.recent-item-tag {
+  flex-shrink: 0;
+  font-size: 11px;
+  padding: 0 7px;
+}
+
 .recent-item-name {
   overflow: hidden;
   text-overflow: ellipsis;

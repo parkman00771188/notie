@@ -127,7 +127,22 @@ export default function MeetingsPage() {
     >
       <span className="row-title" title={m.title}>
         {m.title}
-        {m.tag && <span className="row-tag">#{m.tag}</span>}
+        {m.tag &&
+          (() => {
+            const c = tags.find((t) => t.name === m.tag)?.color ?? '#16a34a'
+            return (
+              <span
+                className="tag-pill row-tag"
+                style={{
+                  color: c,
+                  borderColor: c,
+                  background: `color-mix(in srgb, ${c} 10%, transparent)`,
+                }}
+              >
+                #{m.tag}
+              </span>
+            )
+          })()}
       </span>
       <span className="row-badge">
         <StatusBadge status={m.status} />

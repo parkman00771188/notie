@@ -253,6 +253,20 @@ button {
     color 0.15s;
 }
 
+/* 태그 칩 (목록 행의 #태그) — 색상은 태그색 인라인 style로 지정 */
+.tag-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 9px;
+  border-radius: var(--radius-full);
+  border: 1.5px solid currentColor;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.5;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
 /* 시간 칩 (00:03:12 형태) */
 .time-chip {
   display: inline-flex;

@@ -365,6 +365,32 @@
   margin-bottom: 12px;
 }
 
+/* 회의록 헤더 — 태그 칩(제목 왼쪽) + 제목 + 일시 (저장된 md 헤더 대신 직접 렌더) */
+.minutes-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.minutes-header .minutes-tag {
+  flex-shrink: 0;
+  font-size: 13px;
+  padding: 3px 12px;
+}
+
+.minutes-title {
+  font-size: 21px;
+  font-weight: 800;
+  letter-spacing: -0.3px;
+  min-width: 0;
+}
+
+.minutes-meta {
+  margin-bottom: 18px;
+  font-size: 13.5px;
+}
+
 .markdown-body {
   font-size: 14.5px;
   line-height: 1.75;

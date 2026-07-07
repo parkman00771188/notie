@@ -11,7 +11,7 @@ import { usePrompt } from './prompt'
 import { ParticipantPicker } from './ParticipantPicker'
 import { StatusBadge } from './StatusBadge'
 import { TagPicker } from './TagPicker'
-import type { Bookmark, MeetingDetail, MeetingStatus, Participant } from '../types'
+import type { Bookmark, MeetingDetail, MeetingStatus, Participant, Tag } from '../types'
 import { formatClock, formatKoreanDateTime } from '../utils'
 import './MeetingDetailView.css'
 
@@ -60,6 +60,15 @@ export function MeetingDetailView({ meetingId, onBack, onDeleted, onChanged }: M
   const [addingMark, setAddingMark] = useState(false)
   const [noteDraft, setNoteDraft] = useState('')
   const [addingNote, setAddingNote] = useState(false)
+  const [tags, setTags] = useState<Tag[]>([])
+
+  // 회의록 헤더의 태그 칩 색 매칭용 (실패해도 기본색으로 표시)
+  useEffect(() => {
+    api
+      .listTags()
+      .then(setTags)
+      .catch(() => {})
+  }, [])
 
   const playerRef = useRef<AudioPlayerCardHandle | null>(null)
   const skipTitleSaveRef = useRef(false)
@@ -127,11 +136,24 @@ export function MeetingDetailView({ meetingId, onBack, onDeleted, onChanged }: M
     }
   }, [])
 
-  const minutesHtml = useMemo(() => {
+  // 회의록 본문 — 저장된 md의 제목(#)/일시 메타 줄은 떼고(구버전의 소요 시간 포함)
+  // 화면에서 태그 칩 + 제목 + 일시 헤더를 직접 그린다
+  const minutesBody = useMemo(() => {
     const md = meeting?.summary?.minutes_md
     if (!md) return ''
-    return marked.parse(md, { async: false }) as string
+    const lines = md.split('\n')
+    let i = 0
+    while (i < lines.length && lines[i].trim() === '') i++
+    if (i < lines.length && lines[i].startsWith('# ')) i++
+    while (i < lines.length && lines[i].trim() === '') i++
+    if (i < lines.length && lines[i].includes('**일시**')) i++
+    return lines.slice(i).join('\n').trim()
   }, [meeting?.summary?.minutes_md])
+
+  const minutesHtml = useMemo(() => {
+    if (!minutesBody) return ''
+    return marked.parse(minutesBody, { async: false }) as string
+  }, [minutesBody])
 
   // 회의내용(주제별 정리) — 레거시 요약에는 discussion이 없을 수 있음
   const discussionHtml = useMemo(() => {
@@ -232,10 +254,11 @@ export function MeetingDetailView({ meetingId, onBack, onDeleted, onChanged }: M
     }
   }
 
-  // ----- 회의록 복사 -----
+  // ----- 회의록 복사 (화면과 동일한 헤더로 재구성) -----
   const handleCopy = async () => {
-    const md = meeting?.summary?.minutes_md
-    if (!md) return
+    if (!meeting || !minutesBody) return
+    const meta = `**일시**: ${formatKoreanDateTime(meeting.started_at)}${meeting.tag ? ` · **태그**: #${meeting.tag}` : ''}`
+    const md = `# ${meeting.title}\n\n${meta}\n\n${minutesBody}`
     try {
       await navigator.clipboard.writeText(md)
       setCopied(true)
@@ -629,6 +652,26 @@ export function MeetingDetailView({ meetingId, onBack, onDeleted, onChanged }: M
                   {copied ? '복사됨 ✓' : '복사'}
                 </button>
               </div>
+              <div className="minutes-header">
+                {meeting.tag &&
+                  (() => {
+                    const c = tags.find((t) => t.name === meeting.tag)?.color ?? '#16a34a'
+                    return (
+                      <span
+                        className="tag-pill minutes-tag"
+                        style={{
+                          color: c,
+                          borderColor: c,
+                          background: `color-mix(in srgb, ${c} 10%, transparent)`,
+                        }}
+                      >
+                        #{meeting.tag}
+                      </span>
+                    )
+                  })()}
+                <h2 className="minutes-title">{meeting.title}</h2>
+              </div>
+              <p className="minutes-meta muted">일시: {formatKoreanDateTime(meeting.started_at)}</p>
               <div className="markdown-body" dangerouslySetInnerHTML={{ __html: minutesHtml }} />
             </div>
           ) : (

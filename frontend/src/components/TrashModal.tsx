@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '../api'
-import type { Meeting } from '../types'
+import type { Meeting, Tag } from '../types'
 import { formatClock, formatRelativeDate } from '../utils'
 import { useConfirm } from './confirm'
 import Modal from './Modal'
@@ -21,6 +21,16 @@ export function TrashModal({ open, onClose, onChanged }: TrashModalProps) {
   const [items, setItems] = useState<TrashMeeting[] | null>(null)
   const [busyId, setBusyId] = useState<number | null>(null)
   const [error, setError] = useState('')
+  const [tags, setTags] = useState<Tag[]>([])
+
+  // 태그 색 매칭용 (실패해도 기본색으로 표시)
+  useEffect(() => {
+    if (!open) return
+    api
+      .listTags()
+      .then(setTags)
+      .catch(() => {})
+  }, [open])
 
   const load = useCallback(() => {
     setError('')
@@ -103,7 +113,22 @@ export function TrashModal({ open, onClose, onChanged }: TrashModalProps) {
                     <span className="trash-row-title" title={m.title}>
                       {m.title}
                     </span>
-                    {m.tag && <span className="trash-row-tag">#{m.tag}</span>}
+                    {m.tag &&
+                      (() => {
+                        const c = tags.find((t) => t.name === m.tag)?.color ?? '#16a34a'
+                        return (
+                          <span
+                            className="tag-pill trash-row-tag"
+                            style={{
+                              color: c,
+                              borderColor: c,
+                              background: `color-mix(in srgb, ${c} 10%, transparent)`,
+                            }}
+                          >
+                            #{m.tag}
+                          </span>
+                        )
+                      })()}
                   </div>
                   <span className="trash-row-meta">
                     삭제 {formatRelativeDate(m.deleted_at)} · 원래 {formatRelativeDate(m.started_at)} ·{' '}

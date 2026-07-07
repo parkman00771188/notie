@@ -122,13 +122,20 @@ export function RecentMeetingsPanel({ refreshKey = 0 }: RecentMeetingsPanelProps
   }
 
   const renderRow = (m: Meeting) => {
-    const color = m.tag ? tagColor(m.tag) : null
+    const color = (m.tag ? tagColor(m.tag) : null) ?? '#16a34a'
     return (
       <button key={m.id} type="button" className="rmm-row" onClick={() => setDetailId(m.id)}>
         <span className="rmm-row-title" title={m.title}>
           {m.title}
           {m.tag && (
-            <span className="rmm-row-tag" style={color ? { color } : undefined}>
+            <span
+              className="tag-pill rmm-row-tag"
+              style={{
+                color,
+                borderColor: color,
+                background: `color-mix(in srgb, ${color} 10%, transparent)`,
+              }}
+            >
               #{m.tag}
             </span>
           )}

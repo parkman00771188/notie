@@ -196,7 +196,8 @@ export function RecentMeetingsPanel({ refreshKey = 0 }: RecentMeetingsPanelProps
                   <span className="recent-item-name">{m.title}</span>
                 </span>
                 <span className="recent-item-meta">
-                  <StatusBadge status={m.status} />
+                  {/* 요약 완료(정상 상태)는 배지 생략 — 진행 중/실패만 표시 */}
+                  {m.status !== 'done' && <StatusBadge status={m.status} />}
                   <span className="muted">
                     {formatRelativeDate(m.started_at)} · {formatClock(m.duration_sec)}
                   </span>

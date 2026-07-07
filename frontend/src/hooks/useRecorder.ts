@@ -27,11 +27,19 @@ function pickMimeType(): string {
   return ''
 }
 
+/** Wake Lock 타입 (일부 TS lib에 없어 최소 선언) */
+interface WakeLockSentinelLike {
+  released: boolean
+  release: () => Promise<void>
+  addEventListener: (type: 'release', listener: () => void) => void
+}
+
 /**
  * 마이크 녹음 훅.
  * - getUserMedia(audio) + MediaRecorder(audio/webm)
  * - AudioContext + AnalyserNode(fftSize 256) 를 파형 시각화용으로 노출
  * - elapsedSec 는 일시정지 시간을 제외한 실경과(250ms 간격 갱신)
+ * - 녹음/일시정지 동안 화면 절전 방지(Wake Lock) — 탭 복귀 시 자동 재획득
  * - stop() 시 스트림/오디오컨텍스트 정리 후 {blob, durationSec} 반환
  */
 export function useRecorder(): UseRecorderReturn {
@@ -48,6 +56,43 @@ export function useRecorder(): UseRecorderReturn {
   const accumulatedMsRef = useRef(0)
   /** 현재 진행 중인 녹음 구간의 시작 timestamp (일시정지 중엔 null) */
   const segmentStartRef = useRef<number | null>(null)
+  /** 녹음 중 화면 꺼짐 방지 (미지원 브라우저는 조용히 무시) */
+  const wakeLockRef = useRef<WakeLockSentinelLike | null>(null)
+  const wakeLockWantedRef = useRef(false)
+
+  const acquireWakeLock = useCallback(async () => {
+    wakeLockWantedRef.current = true
+    const wl = (navigator as unknown as {
+      wakeLock?: { request: (type: 'screen') => Promise<WakeLockSentinelLike> }
+    }).wakeLock
+    if (!wl) return
+    try {
+      if (wakeLockRef.current && !wakeLockRef.current.released) return
+      wakeLockRef.current = await wl.request('screen')
+    } catch {
+      /* 배터리 세이버 등으로 거부될 수 있음 — 녹음 자체에는 영향 없음 */
+    }
+  }, [])
+
+  const releaseWakeLock = useCallback(() => {
+    wakeLockWantedRef.current = false
+    const sentinel = wakeLockRef.current
+    wakeLockRef.current = null
+    if (sentinel && !sentinel.released) {
+      void sentinel.release().catch(() => {})
+    }
+  }, [])
+
+  // 탭을 벗어나면 브라우저가 Wake Lock을 자동 해제하므로, 복귀 시 다시 획득
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible' && wakeLockWantedRef.current) {
+        void acquireWakeLock()
+      }
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [acquireWakeLock])
 
   const currentElapsedMs = useCallback((): number => {
     const running =
@@ -71,8 +116,9 @@ export function useRecorder(): UseRecorderReturn {
     audioCtxRef.current = null
     recorderRef.current = null
     segmentStartRef.current = null
+    releaseWakeLock()
     setAnalyser(null)
-  }, [])
+  }, [releaseWakeLock])
 
   // 언마운트 시 녹음 중이면 강제 정리
   useEffect(() => {
@@ -122,12 +168,13 @@ export function useRecorder(): UseRecorderReturn {
     segmentStartRef.current = Date.now()
     setElapsedSec(0)
     setStatus('recording')
+    void acquireWakeLock() // 녹음 중 화면 꺼짐 방지
 
     if (intervalRef.current != null) window.clearInterval(intervalRef.current)
     intervalRef.current = window.setInterval(() => {
       setElapsedSec(currentElapsedMs() / 1000)
     }, 250)
-  }, [currentElapsedMs])
+  }, [acquireWakeLock, currentElapsedMs])
 
   const pause = useCallback(() => {
     const rec = recorderRef.current

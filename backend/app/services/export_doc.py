@@ -47,7 +47,8 @@ def _fmt_clock(sec: float | None) -> str:
 def format_participants_grouped(participants: list[dict]) -> str:
     """참석자를 소속별로 묶어 '마인즈에이아이(박대한, 최영준), TTA(김인영)' 형식으로.
 
-    소속이 없는 참석자는 마지막에 이름만 콤마로 덧붙인다. docx/pdf 공용.
+    소속·이름 모두 가나다순. 소속이 없는 참석자는 마지막에 이름만 콤마로 덧붙인다.
+    docx/pdf 공용.
     """
     grouped: dict[str, list[str]] = {}
     loose: list[str] = []
@@ -60,8 +61,8 @@ def format_participants_grouped(participants: list[dict]) -> str:
             grouped.setdefault(org, []).append(name)
         else:
             loose.append(name)
-    parts = [f"{org}({', '.join(names)})" for org, names in grouped.items()]
-    parts += loose
+    parts = [f"{org}({', '.join(sorted(grouped[org]))})" for org in sorted(grouped)]
+    parts += sorted(loose)
     return ", ".join(parts)
 
 

@@ -738,14 +738,14 @@ def _format_clock(seconds) -> str:
 
 
 def _participant_lines_grouped(participants: list[dict]) -> list[str]:
-    """참석자를 소속별로 묶은 마크다운 라인들.
+    """참석자를 소속별로 묶은 마크다운 라인들 (소속·이름 가나다순).
 
     **소속명**
     - 이름 (부서 · 직책)
     소속 없는 참석자는 마지막에 '**소속 미지정**' 그룹으로.
     """
-    grouped: dict[str, list[str]] = {}
-    loose: list[str] = []
+    grouped: dict[str, list[tuple[str, str]]] = {}  # org -> [(이름, 라인)]
+    loose: list[tuple[str, str]] = []
     for p in participants:
         name = str(p.get("name") or "").strip()
         if not name:
@@ -755,17 +755,17 @@ def _participant_lines_grouped(participants: list[dict]) -> list[str]:
         line = f"- {name} ({' · '.join(extras)})" if extras else f"- {name}"
         org = str(p.get("organization") or "").strip()
         if org:
-            grouped.setdefault(org, []).append(line)
+            grouped.setdefault(org, []).append((name, line))
         else:
-            loose.append(line)
+            loose.append((name, line))
     lines: list[str] = []
-    for org, rows in grouped.items():
+    for org in sorted(grouped):
         lines.append(f"**{org}**")
-        lines += rows
+        lines += [line for _, line in sorted(grouped[org])]
     if loose:
         if grouped:
             lines.append("**소속 미지정**")
-        lines += loose
+        lines += [line for _, line in sorted(loose)]
     return lines
 
 

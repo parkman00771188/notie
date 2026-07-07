@@ -161,7 +161,8 @@ export function MeetingDetailView({ meetingId, onBack, onDeleted, onChanged }: M
     return rest.join('\n').trim()
   }, [meeting?.summary?.minutes_md])
 
-  // 참석자 소속별 그룹 (회의록 탭 표시 + 복사용) — 라이브 데이터라 참석자 편집 즉시 반영
+  // 참석자 소속별 그룹 (회의록 탭 표시 + 복사용) — 라이브 데이터라 참석자 편집 즉시 반영.
+  // 소속·이름 모두 가나다순 정렬, 소속 미지정은 마지막.
   const peopleGroups = useMemo(() => {
     const grouped = new Map<string, Participant[]>()
     const loose: Participant[] = []
@@ -175,8 +176,13 @@ export function MeetingDetailView({ meetingId, onBack, onDeleted, onChanged }: M
         loose.push(p)
       }
     }
-    const groups = [...grouped.entries()].map(([org, people]) => ({ org, people }))
-    if (loose.length > 0) groups.push({ org: groups.length > 0 ? '소속 미지정' : '', people: loose })
+    const byName = (a: Participant, b: Participant) => a.name.localeCompare(b.name, 'ko')
+    const groups = [...grouped.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0], 'ko'))
+      .map(([org, people]) => ({ org, people: [...people].sort(byName) }))
+    if (loose.length > 0) {
+      groups.push({ org: groups.length > 0 ? '소속 미지정' : '', people: [...loose].sort(byName) })
+    }
     return groups
   }, [meeting?.participants])
 

@@ -14,7 +14,7 @@
   응답 JSON 파싱은 방어적으로: 키 누락/타입 오류 시 추출 요약 결과를 병합.
 - 폴백: 추출 요약 (engine="extractive"). 각 엔진 실패는 로그 출력 후 다음으로.
 - minutes_md 마크다운 구조는 모든 엔진 공통 (K1: 참석자/회의내용/핵심내용/결정사항/
-  추가 확인 필요/액션 아이템/타임라인/일반 메모).
+  추가 확인 필요/타임라인/일반 메모 — 액션 아이템은 AI 요약 탭에만 노출).
 - discussion(str): 주제별로 묶은 회의내용 마크다운. followups(list[str]): 추가 확인 필요 사항.
   engine_note(str|None): Gemini/Ollama 실패로 폴백했을 때 사람이 읽을 한국어 사유
   (HTTP 상태 포함, API 키는 절대 미포함). 정상이면 None.
@@ -789,18 +789,7 @@ def _build_minutes_md(
         lines += ["", "### 추가 확인 필요 사항"]
         lines += [f"- [ ] {item}" for item in followups]
 
-    lines += ["", "## 액션 아이템"]
-    action_lines: list[str] = []
-    for item in action_items:
-        text = item.get("text", "")
-        extras = []
-        if item.get("owner"):
-            extras.append(f"담당: {item['owner']}")
-        if item.get("due"):
-            extras.append(f"기한: {item['due']}")
-        suffix = f" ({' · '.join(extras)})" if extras else ""
-        action_lines.append(f"- [ ] {text}{suffix}")
-    lines += action_lines or ["_(기록된 액션 아이템이 없습니다)_"]
+    # 액션 아이템은 AI 요약 탭의 "할 일"로만 노출 — 회의록 문서에는 넣지 않는다 (사용자 요청)
 
     lines += ["", "## 타임라인"]
     # 일반 메모(note)는 시간 개념이 없으므로 타임라인에서 제외하고 별도 섹션에 나열

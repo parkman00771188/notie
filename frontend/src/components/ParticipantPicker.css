@@ -31,6 +31,17 @@
   font-weight: 600;
 }
 
+/* 칩 서브텍스트: "소속 · 직책" */
+.pp-sel-chip-sub {
+  font-size: 11.5px;
+  font-weight: 500;
+  opacity: 0.78;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .pp-sel-chip-x {
   display: inline-flex;
   align-items: center;

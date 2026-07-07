@@ -20,15 +20,19 @@ function subText(p: Participant): string {
   return [p.organization, p.department, p.role].filter(Boolean).join(' · ')
 }
 
+/** 선택 칩 서브텍스트: "소속 · 직책" (없으면 부서로 폴백) */
+function chipSub(p: Participant): string {
+  return [p.organization, p.role].filter(Boolean).join(' · ') || (p.department ?? '')
+}
+
 export function ParticipantPicker({ open, onClose, selected, onChange }: ParticipantPickerProps) {
   const [all, setAll] = useState<Participant[]>([])
   const [orgOptions, setOrgOptions] = useState<OrgOption[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-  // 검색 + 제안 드롭다운
+  // 검색 + 제안 리스트 (열면 처음부터 목록 표시)
   const [search, setSearch] = useState('')
-  const [suggestOpen, setSuggestOpen] = useState(false)
   const [activeIndex, setActiveIndex] = useState(-1)
   const suggestRef = useRef<HTMLDivElement>(null)
 
@@ -57,7 +61,6 @@ export function ParticipantPicker({ open, onClose, selected, onChange }: Partici
     setLoading(true)
     setError('')
     setSearch('')
-    setSuggestOpen(false)
     setActiveIndex(-1)
     setMode('search')
     resetForm()
@@ -96,7 +99,7 @@ export function ParticipantPicker({ open, onClose, selected, onChange }: Partici
           v.toLowerCase().includes(query),
         ),
       )
-    : unselected.slice(0, 8) // 포커스만 했을 때는 미선택 전체 최대 8명
+    : unselected // 검색 전에는 미선택 전체 표시 (리스트 자체가 스크롤)
   const addNewIndex = suggestions.length // 마지막 "+ 새 참석자로 추가" 항목
 
   // 검색어/제안 목록이 바뀌면 하이라이트 리셋 (검색 중엔 첫 항목)
@@ -124,7 +127,6 @@ export function ParticipantPicker({ open, onClose, selected, onChange }: Partici
 
   const openForm = () => {
     setMode('form')
-    setSuggestOpen(false)
     setFName(search.trim())
     setError('')
   }
@@ -138,20 +140,15 @@ export function ParticipantPicker({ open, onClose, selected, onChange }: Partici
     if (e.nativeEvent.isComposing) return
     if (e.key === 'ArrowDown') {
       e.preventDefault()
-      setSuggestOpen(true)
       setActiveIndex((i) => (i + 1 > addNewIndex ? 0 : i + 1))
     } else if (e.key === 'ArrowUp') {
       e.preventDefault()
-      setSuggestOpen(true)
       setActiveIndex((i) => (i - 1 < 0 ? addNewIndex : i - 1))
     } else if (e.key === 'Enter') {
       e.preventDefault()
-      if (!suggestOpen || activeIndex < 0) return
+      if (activeIndex < 0) return
       if (activeIndex === addNewIndex) openForm()
       else if (suggestions[activeIndex]) addToSelection(suggestions[activeIndex])
-    } else if (e.key === 'Escape' && suggestOpen) {
-      e.stopPropagation() // 모달까지 닫지 않고 드롭다운만 닫는다
-      setSuggestOpen(false)
     }
   }
 
@@ -217,7 +214,7 @@ export function ParticipantPicker({ open, onClose, selected, onChange }: Partici
       <div className="pp-selected">
         {selected.length === 0 ? (
           <span className="pp-selected-empty">
-            선택된 참석자가 없어요. 아래에서 검색해 추가하세요.
+            선택된 참석자가 없어요. 아래 목록에서 선택하거나 검색해 보세요.
           </span>
         ) : (
           selected.map((p) => (
@@ -232,6 +229,7 @@ export function ParticipantPicker({ open, onClose, selected, onChange }: Partici
               }}
             >
               {p.name}
+              {chipSub(p) && <span className="pp-sel-chip-sub">{chipSub(p)}</span>}
               <button
                 type="button"
                 className="pp-sel-chip-x"
@@ -252,19 +250,13 @@ export function ParticipantPicker({ open, onClose, selected, onChange }: Partici
             type="search"
             placeholder="이름, 소속, 부서, 직책으로 검색"
             aria-label="참석자 검색"
-            aria-expanded={suggestOpen}
             value={search}
             autoFocus
-            onChange={(e) => {
-              setSearch(e.target.value)
-              setSuggestOpen(true)
-            }}
-            onFocus={() => setSuggestOpen(true)}
-            onBlur={() => setSuggestOpen(false)}
+            onChange={(e) => setSearch(e.target.value)}
             onKeyDown={onSearchKeyDown}
           />
 
-          {suggestOpen && (
+          {
             <div
               className="pp-suggest"
               ref={suggestRef}
@@ -319,7 +311,7 @@ export function ParticipantPicker({ open, onClose, selected, onChange }: Partici
                 </>
               )}
             </div>
-          )}
+          }
         </div>
       ) : (
         <form className="pp-form" onSubmit={handleAdd}>

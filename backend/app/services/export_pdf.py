@@ -119,6 +119,10 @@ def _labeled_box(pdf, label: str, render, min_height: float = 0.0) -> None:
         y1 = end_y if pg == end_page else page_bottom
         if y1 - y0 <= 0.5:
             continue
+        # 페이지를 옮겨 그리면 fpdf2의 색 캐시와 실제 페이지 스트림 상태가 어긋나
+        # 회색 채움 명령이 생략될 수 있다(→ 검정 박스). 다른 색을 한 번 거쳐
+        # 캐시를 깨서 이 페이지에 채움색이 반드시 기록되게 한다.
+        pdf.set_fill_color(255, 255, 255)
         pdf.set_fill_color(*LABEL_BG)
         pdf.rect(left, y0, LABEL_W, y1 - y0, style="DF")
         pdf.rect(left + LABEL_W, y0, right_edge - left - LABEL_W, y1 - y0, style="D")

@@ -44,6 +44,27 @@ def _fmt_clock(sec: float | None) -> str:
     return f"{s // 3600:02d}:{s % 3600 // 60:02d}:{s % 60:02d}"
 
 
+def format_participants_grouped(participants: list[dict]) -> str:
+    """참석자를 소속별로 묶어 '마인즈에이아이(박대한, 최영준), TTA(김인영)' 형식으로.
+
+    소속이 없는 참석자는 마지막에 이름만 콤마로 덧붙인다. docx/pdf 공용.
+    """
+    grouped: dict[str, list[str]] = {}
+    loose: list[str] = []
+    for p in participants:
+        name = str(p.get("name") or "").strip()
+        if not name:
+            continue
+        org = str(p.get("organization") or "").strip()
+        if org:
+            grouped.setdefault(org, []).append(name)
+        else:
+            loose.append(name)
+    parts = [f"{org}({', '.join(names)})" for org, names in grouped.items()]
+    parts += loose
+    return ", ".join(parts)
+
+
 def _set_run(run, size=10, bold=False):
     from docx.shared import Pt
 
@@ -179,17 +200,8 @@ def build_minutes_docx(
     _cell_text(t1.cell(0, 3), meeting_name)
 
     _label_cell(t1.cell(1, 0), "참석자")
-    people: list[str] = []
-    for p in participants:
-        name = str(p.get("name") or "").strip()
-        if not name:
-            continue
-        extra = " · ".join(
-            v for v in (str(p.get("organization") or "").strip(), str(p.get("role") or "").strip()) if v
-        )
-        people.append(f"{name}({extra})" if extra else name)
     body = t1.cell(1, 1).merge(t1.cell(1, 2)).merge(t1.cell(1, 3))
-    _cell_text(body, ", ".join(people) or "-")
+    _cell_text(body, format_participants_grouped(participants) or "-")
 
     doc.add_paragraph().paragraph_format.space_after = Pt(2)
 

@@ -391,6 +391,41 @@
   font-size: 13.5px;
 }
 
+/* 회의록 참석자 — 소속별 그룹 (라이브 데이터 렌더) */
+.minutes-people {
+  margin-bottom: 20px;
+}
+
+.minutes-people-heading {
+  font-size: 16.5px;
+  font-weight: 800;
+  letter-spacing: -0.2px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 12px;
+}
+
+.minutes-people-group {
+  margin-bottom: 10px;
+}
+
+.minutes-people-org {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+.minutes-people-list {
+  margin: 0;
+  padding-left: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 14px;
+  color: var(--text-2);
+}
+
 .markdown-body {
   font-size: 14.5px;
   line-height: 1.75;

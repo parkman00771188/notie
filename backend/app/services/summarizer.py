@@ -737,18 +737,36 @@ def _format_clock(seconds) -> str:
     return f"{hours:02d}:{minutes:02d}:{secs:02d}"
 
 
-def _format_participant_line(p: dict) -> str:
-    """참석자 한 줄: '- 이름 (소속 · 부서 · 직책 — 있는 값만 " · " 연결)'."""
-    name = str(p.get("name") or "").strip() or "이름 없음"
-    # 소속(organization) · 부서(department) · 직책(role) 순, 있는 값만
-    extras = [
-        str(p.get(key) or "").strip()
-        for key in ("organization", "department", "role")
-    ]
-    extras = [v for v in extras if v]
-    if extras:
-        return f"- {name} ({' · '.join(extras)})"
-    return f"- {name}"
+def _participant_lines_grouped(participants: list[dict]) -> list[str]:
+    """참석자를 소속별로 묶은 마크다운 라인들.
+
+    **소속명**
+    - 이름 (부서 · 직책)
+    소속 없는 참석자는 마지막에 '**소속 미지정**' 그룹으로.
+    """
+    grouped: dict[str, list[str]] = {}
+    loose: list[str] = []
+    for p in participants:
+        name = str(p.get("name") or "").strip()
+        if not name:
+            continue
+        extras = [str(p.get(k) or "").strip() for k in ("department", "role")]
+        extras = [v for v in extras if v]
+        line = f"- {name} ({' · '.join(extras)})" if extras else f"- {name}"
+        org = str(p.get("organization") or "").strip()
+        if org:
+            grouped.setdefault(org, []).append(line)
+        else:
+            loose.append(line)
+    lines: list[str] = []
+    for org, rows in grouped.items():
+        lines.append(f"**{org}**")
+        lines += rows
+    if loose:
+        if grouped:
+            lines.append("**소속 미지정**")
+        lines += loose
+    return lines
 
 
 def _build_minutes_md(
@@ -777,9 +795,7 @@ def _build_minutes_md(
         "",
         "## 참석자",
     ]
-    lines += [
-        _format_participant_line(p) for p in participants if p.get("name")
-    ] or ["_(기록된 참석자가 없습니다)_"]
+    lines += _participant_lines_grouped(participants) or ["_(기록된 참석자가 없습니다)_"]
 
     lines += ["", "## 회의내용", (discussion or "").strip() or "_(정리된 회의내용이 없습니다)_"]
 

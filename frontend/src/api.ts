@@ -204,10 +204,12 @@ export const api = {
     return request(`/api/meetings/${meetingId}/waveform`)
   },
 
-  /** 회의록 .docx 다운로드 URL — 브라우저가 다운로드 폴더에 저장 */
-  exportUrl(meetingId: number): string {
+  /** 회의록 문서(Word/PDF) 다운로드 URL — 브라우저가 다운로드 폴더에 저장 */
+  exportUrl(meetingId: number, format: 'docx' | 'pdf' = 'docx'): string {
     const token = getToken()
-    return `/api/meetings/${meetingId}/export${token ? `?token=${token}` : ''}`
+    const params = new URLSearchParams({ format })
+    if (token) params.set('token', token)
+    return `/api/meetings/${meetingId}/export?${params.toString()}`
   },
 
   /** <audio src>용 URL — 헤더를 못 붙이므로 토큰을 쿼리로 전달 */

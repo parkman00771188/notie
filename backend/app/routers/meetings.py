@@ -378,8 +378,12 @@ def get_waveform(meeting_id: int, user: dict = Depends(get_current_user)) -> dic
 
 
 @router.get("/{meeting_id}/export")
-def export_minutes(meeting_id: int, user: dict = Depends(get_current_user)) -> Response:
-    """회의록 .docx 다운로드 — resource/doc의 [회의록] 양식 레이아웃 재현."""
+def export_minutes(
+    meeting_id: int,
+    format: str = "docx",
+    user: dict = Depends(get_current_user),
+) -> Response:
+    """회의록 다운로드(?format=docx|pdf) — [회의록] 양식 레이아웃 재현."""
     from ..services import export_doc
 
     with closing(db.get_conn()) as conn:
@@ -407,18 +411,28 @@ def export_minutes(meeting_id: int, user: dict = Depends(get_current_user)) -> R
             "SELECT * FROM summaries WHERE meeting_id = ?", (meeting_id,)
         ).fetchone()
 
-    data = export_doc.build_minutes_docx(
-        meeting, participants, bookmarks, export_doc.parse_summary_row(summary_row)
-    )
+    summary = export_doc.parse_summary_row(summary_row)
+    if format == "pdf":
+        from ..services import export_pdf
 
-    # 파일명: [회의록] <제목>.docx (윈도우 금지 문자 제거)
+        try:
+            data = export_pdf.build_minutes_pdf(meeting, participants, bookmarks, summary)
+        except RuntimeError as exc:  # 한글 폰트 없음 등
+            raise HTTPException(status_code=500, detail=str(exc))
+        ext, media_type = "pdf", "application/pdf"
+    else:
+        data = export_doc.build_minutes_docx(meeting, participants, bookmarks, summary)
+        ext = "docx"
+        media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+    # 파일명: [회의록] <제목>.<ext> (윈도우 금지 문자 제거)
     safe_title = re.sub(r'[\\/:*?"<>|]+', " ", meeting["title"]).strip() or "회의록"
-    filename = f"[회의록] {safe_title}.docx"
+    filename = f"[회의록] {safe_title}.{ext}"
     return Response(
         content=data,
-        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        media_type=media_type,
         headers={
-            "Content-Disposition": f"attachment; filename=\"minutes.docx\"; filename*=UTF-8''{quote(filename)}"
+            "Content-Disposition": f"attachment; filename=\"minutes.{ext}\"; filename*=UTF-8''{quote(filename)}"
         },
     )
 

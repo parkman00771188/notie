@@ -136,8 +136,8 @@ export function MeetingDetailView({ meetingId, onBack, onDeleted, onChanged }: M
     }
   }, [])
 
-  // 회의록 본문 — 저장된 md의 제목(#)/일시 메타 줄은 떼고(구버전의 소요 시간 포함)
-  // 화면에서 태그 칩 + 제목 + 일시 헤더를 직접 그린다
+  // 회의록 본문 — 저장된 md의 제목(#)/일시 메타 줄(구버전 소요 시간 포함)과
+  // '## 참석자' 섹션은 떼고, 화면에서 헤더·참석자(소속별 그룹)를 직접 그린다
   const minutesBody = useMemo(() => {
     const md = meeting?.summary?.minutes_md
     if (!md) return ''
@@ -147,8 +147,39 @@ export function MeetingDetailView({ meetingId, onBack, onDeleted, onChanged }: M
     if (i < lines.length && lines[i].startsWith('# ')) i++
     while (i < lines.length && lines[i].trim() === '') i++
     if (i < lines.length && lines[i].includes('**일시**')) i++
-    return lines.slice(i).join('\n').trim()
+    const rest = lines.slice(i)
+    const peopleStart = rest.findIndex((l) => l.trim() === '## 참석자')
+    if (peopleStart >= 0) {
+      let peopleEnd = peopleStart + 1
+      while (peopleEnd < rest.length && !rest[peopleEnd].startsWith('## ')) peopleEnd++
+      rest.splice(peopleStart, peopleEnd - peopleStart)
+    }
+    return rest.join('\n').trim()
   }, [meeting?.summary?.minutes_md])
+
+  // 참석자 소속별 그룹 (회의록 탭 표시 + 복사용) — 라이브 데이터라 참석자 편집 즉시 반영
+  const peopleGroups = useMemo(() => {
+    const grouped = new Map<string, Participant[]>()
+    const loose: Participant[] = []
+    for (const p of meeting?.participants ?? []) {
+      const org = (p.organization ?? '').trim()
+      if (org) {
+        const arr = grouped.get(org)
+        if (arr) arr.push(p)
+        else grouped.set(org, [p])
+      } else {
+        loose.push(p)
+      }
+    }
+    const groups = [...grouped.entries()].map(([org, people]) => ({ org, people }))
+    if (loose.length > 0) groups.push({ org: groups.length > 0 ? '소속 미지정' : '', people: loose })
+    return groups
+  }, [meeting?.participants])
+
+  const personLine = (p: Participant) => {
+    const extras = [p.department, p.role].filter((v): v is string => Boolean(v && v.trim()))
+    return extras.length > 0 ? `${p.name} (${extras.join(' · ')})` : p.name
+  }
 
   const minutesHtml = useMemo(() => {
     if (!minutesBody) return ''
@@ -165,6 +196,17 @@ export function MeetingDetailView({ meetingId, onBack, onDeleted, onChanged }: M
   /** 스크립트 세그먼트/메모 시간 칩 클릭 → 플레이어 점프 + 재생 */
   const seekTo = (sec: number) => {
     playerRef.current?.seekTo(sec, true)
+  }
+
+  /** 회의록 문서 다운로드 (브라우저 다운로드 폴더) */
+  const downloadExport = (format: 'docx' | 'pdf') => {
+    if (!meeting) return
+    const a = document.createElement('a')
+    a.href = api.exportUrl(meeting.id, format)
+    a.download = ''
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
   }
 
   const goBackToList = () => {
@@ -254,11 +296,19 @@ export function MeetingDetailView({ meetingId, onBack, onDeleted, onChanged }: M
     }
   }
 
-  // ----- 회의록 복사 (화면과 동일한 헤더로 재구성) -----
+  // ----- 회의록 복사 (화면과 동일한 헤더/참석자 구성으로 재구성) -----
   const handleCopy = async () => {
     if (!meeting || !minutesBody) return
     const meta = `**일시**: ${formatKoreanDateTime(meeting.started_at)}${meeting.tag ? ` · **태그**: #${meeting.tag}` : ''}`
-    const md = `# ${meeting.title}\n\n${meta}\n\n${minutesBody}`
+    const peopleMd = peopleGroups
+      .map((g) =>
+        [g.org ? `**${g.org}**` : null, ...g.people.map((p) => `- ${personLine(p)}`)]
+          .filter(Boolean)
+          .join('\n'),
+      )
+      .join('\n')
+    const peopleSection = peopleMd ? `## 참석자\n${peopleMd}\n\n` : ''
+    const md = `# ${meeting.title}\n\n${meta}\n\n${peopleSection}${minutesBody}`
     try {
       await navigator.clipboard.writeText(md)
       setCopied(true)
@@ -636,17 +686,17 @@ export function MeetingDetailView({ meetingId, onBack, onDeleted, onChanged }: M
               <div className="minutes-toolbar">
                 <button
                   className="btn btn-soft"
-                  title="회의록 양식(.docx)으로 다운로드합니다"
-                  onClick={() => {
-                    const a = document.createElement('a')
-                    a.href = api.exportUrl(meeting.id)
-                    a.download = ''
-                    document.body.appendChild(a)
-                    a.click()
-                    a.remove()
-                  }}
+                  title="회의록 양식(Word .docx)으로 다운로드합니다"
+                  onClick={() => downloadExport('docx')}
                 >
-                  📄 문서로 출력
+                  📄 Word로 출력
+                </button>
+                <button
+                  className="btn btn-soft"
+                  title="회의록 양식(PDF)으로 다운로드합니다"
+                  onClick={() => downloadExport('pdf')}
+                >
+                  🖨 PDF로 출력
                 </button>
                 <button className="btn btn-ghost" onClick={handleCopy}>
                   {copied ? '복사됨 ✓' : '복사'}
@@ -672,6 +722,21 @@ export function MeetingDetailView({ meetingId, onBack, onDeleted, onChanged }: M
                 <h2 className="minutes-title">{meeting.title}</h2>
               </div>
               <p className="minutes-meta muted">일시: {formatKoreanDateTime(meeting.started_at)}</p>
+              {peopleGroups.length > 0 && (
+                <div className="minutes-people">
+                  <h3 className="minutes-people-heading">참석자</h3>
+                  {peopleGroups.map((g) => (
+                    <div key={g.org || '__none__'} className="minutes-people-group">
+                      {g.org && <div className="minutes-people-org">{g.org}</div>}
+                      <ul className="minutes-people-list">
+                        {g.people.map((p) => (
+                          <li key={p.id}>{personLine(p)}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+              )}
               <div className="markdown-body" dangerouslySetInnerHTML={{ __html: minutesHtml }} />
             </div>
           ) : (

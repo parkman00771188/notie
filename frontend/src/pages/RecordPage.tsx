@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { KeyboardEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { KeyboardEvent, ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api'
 import { AvatarStack } from '../components/Avatar'
@@ -37,6 +37,8 @@ export default function RecordPage() {
   const [meetingId, setMeetingId] = useState<number | null>(null)
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([])
   const [memoText, setMemoText] = useState('')
+  const [withTime, setWithTime] = useState(true)
+  const memoAreaRef = useRef<HTMLTextAreaElement>(null)
   const [starting, setStarting] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
@@ -67,6 +69,14 @@ export default function RecordPage() {
     document.addEventListener('mousedown', onDocMouseDown)
     return () => document.removeEventListener('mousedown', onDocMouseDown)
   }, [menuOpenId])
+
+  // 메모 textarea 자동 높이 (기본 2줄 ~ 최대 5줄, 초과 시 스크롤 — max-height는 CSS)
+  useEffect(() => {
+    const el = memoAreaRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${el.scrollHeight}px`
+  }, [memoText])
 
   // ---- 회의 메타 편집 ----
   const syncMeeting = useCallback(
@@ -178,10 +188,12 @@ export default function RecordPage() {
     const text = memoText.trim()
     if (!text || meetingId == null || !canMemo) return
     try {
-      const bm = await api.addBookmark(meetingId, {
-        time_sec: recorder.elapsedSec,
-        title: text,
-      })
+      const bm = await api.addBookmark(
+        meetingId,
+        withTime
+          ? { time_sec: recorder.elapsedSec, title: text, kind: 'memo' }
+          : { time_sec: 0, title: text, kind: 'note' },
+      )
       setBookmarks((prev) => sortByTime([...prev, bm]))
       setMemoText('')
       setRefreshKey((k) => k + 1)
@@ -190,19 +202,21 @@ export default function RecordPage() {
     }
   }
 
-  const onMemoKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key !== 'Enter' || e.nativeEvent.isComposing) return
+  // Enter 제출 / Shift+Enter 줄바꿈 (IME 조합 중에는 무시)
+  const onMemoKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key !== 'Enter' || e.shiftKey || e.nativeEvent.isComposing) return
     e.preventDefault()
     void handleAddMemo()
   }
 
   const handleAddMark = async () => {
     if (meetingId == null || !canMemo) return
-    const n = bookmarks.filter((b) => /^마크 \d+$/.test(b.title)).length + 1
+    const n = bookmarks.filter((b) => b.kind === 'mark').length + 1
     try {
       const bm = await api.addBookmark(meetingId, {
         time_sec: recorder.elapsedSec,
         title: `마크 ${n}`,
+        kind: 'mark',
       })
       setBookmarks((prev) => sortByTime([...prev, bm]))
       setRefreshKey((k) => k + 1)
@@ -252,11 +266,67 @@ export default function RecordPage() {
   }
 
   const waveMarks = useMemo(
-    () => bookmarks.map((b) => ({ timeSec: b.time_sec, label: formatClock(b.time_sec) })),
+    () =>
+      bookmarks
+        .filter((b) => b.kind !== 'note')
+        .map((b) => ({ timeSec: b.time_sec, label: formatClock(b.time_sec) })),
     [bookmarks],
   )
 
+  // 시간 메모/마크 그룹 + 일반 메모(note) 그룹 분리
+  const timedBookmarks = useMemo(() => bookmarks.filter((b) => b.kind !== 'note'), [bookmarks])
+  const noteBookmarks = useMemo(() => bookmarks.filter((b) => b.kind === 'note'), [bookmarks])
+
   const showRecorder = isLive || uploading
+
+  // 메모/마크/일반 메모 공통 행 렌더 (수정/삭제 UX 동일)
+  const renderBookmarkItem = (b: Bookmark): ReactNode => (
+    <li key={b.id} className="memo-item">
+      {b.kind === 'note' ? (
+        <span className="badge badge-gray memo-note-badge">📝 메모</span>
+      ) : (
+        <span className="time-chip">{formatClock(b.time_sec)}</span>
+      )}
+      {b.kind === 'mark' && <span className="badge badge-blue memo-mark-badge">🔖 마크</span>}
+      {editingBookmarkId === b.id ? (
+        <input
+          className="input memo-edit-input"
+          value={editDraft}
+          autoFocus
+          onChange={(e) => setEditDraft(e.target.value)}
+          onBlur={() => void commitBookmarkEdit()}
+          onKeyDown={onEditKeyDown}
+          aria-label="메모 수정"
+        />
+      ) : (
+        <span className="memo-item-title">{b.title}</span>
+      )}
+      <div className="memo-item-menu-wrap" onMouseDown={(e) => e.stopPropagation()}>
+        <button
+          type="button"
+          className="btn-icon memo-menu-btn"
+          aria-label="메모 메뉴"
+          onClick={() => setMenuOpenId(menuOpenId === b.id ? null : b.id)}
+        >
+          ⋯
+        </button>
+        {menuOpenId === b.id && (
+          <div className="memo-menu">
+            <button type="button" onClick={() => beginEditBookmark(b)}>
+              ✏️ 수정
+            </button>
+            <button
+              type="button"
+              className="danger"
+              onClick={() => void handleDeleteBookmark(b.id)}
+            >
+              🗑️ 삭제
+            </button>
+          </div>
+        )}
+      </div>
+    </li>
+  )
 
   return (
     <div className="record-page">
@@ -411,23 +481,36 @@ export default function RecordPage() {
             <span className="memo-count">{bookmarks.length}개</span>
           </div>
 
-          <div className="memo-input-row">
-            <input
-              className="input"
-              placeholder="회의 중 메모를 입력하세요..."
+          <div className="memo-input-area">
+            <textarea
+              ref={memoAreaRef}
+              className="input memo-textarea"
+              placeholder="회의 중 메모를 입력하세요... (Enter 제출, Shift+Enter 줄바꿈)"
+              rows={2}
               value={memoText}
               onChange={(e) => setMemoText(e.target.value)}
               onKeyDown={onMemoKeyDown}
               disabled={!canMemo}
             />
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={() => void handleAddMemo()}
-              disabled={!canMemo || !memoText.trim()}
-            >
-              + 메모 추가
-            </button>
+            <div className="memo-input-footer">
+              <label className="memo-time-toggle">
+                <input
+                  type="checkbox"
+                  checked={withTime}
+                  onChange={(e) => setWithTime(e.target.checked)}
+                  disabled={!canMemo}
+                />
+                ⏱ 시간 기록
+              </label>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => void handleAddMemo()}
+                disabled={!canMemo || !memoText.trim()}
+              >
+                + 메모 추가
+              </button>
+            </div>
           </div>
 
           {!canMemo && bookmarks.length === 0 ? (
@@ -435,53 +518,17 @@ export default function RecordPage() {
           ) : bookmarks.length === 0 ? (
             <p className="memo-empty">아직 메모가 없어요. Enter로 빠르게 추가해보세요.</p>
           ) : (
-            <ul className="memo-list">
-              {bookmarks.map((b) => (
-                <li key={b.id} className="memo-item">
-                  <span className="time-chip">{formatClock(b.time_sec)}</span>
-                  {editingBookmarkId === b.id ? (
-                    <input
-                      className="input memo-edit-input"
-                      value={editDraft}
-                      autoFocus
-                      onChange={(e) => setEditDraft(e.target.value)}
-                      onBlur={() => void commitBookmarkEdit()}
-                      onKeyDown={onEditKeyDown}
-                      aria-label="메모 수정"
-                    />
-                  ) : (
-                    <span className="memo-item-title">{b.title}</span>
-                  )}
-                  <div
-                    className="memo-item-menu-wrap"
-                    onMouseDown={(e) => e.stopPropagation()}
-                  >
-                    <button
-                      type="button"
-                      className="btn-icon memo-menu-btn"
-                      aria-label="메모 메뉴"
-                      onClick={() => setMenuOpenId(menuOpenId === b.id ? null : b.id)}
-                    >
-                      ⋯
-                    </button>
-                    {menuOpenId === b.id && (
-                      <div className="memo-menu">
-                        <button type="button" onClick={() => beginEditBookmark(b)}>
-                          ✏️ 수정
-                        </button>
-                        <button
-                          type="button"
-                          className="danger"
-                          onClick={() => void handleDeleteBookmark(b.id)}
-                        >
-                          🗑️ 삭제
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </li>
-              ))}
-            </ul>
+            <>
+              {timedBookmarks.length > 0 && (
+                <ul className="memo-list">{timedBookmarks.map(renderBookmarkItem)}</ul>
+              )}
+              {noteBookmarks.length > 0 && (
+                <div className="memo-note-group">
+                  <h3 className="memo-group-title">일반 메모</h3>
+                  <ul className="memo-list">{noteBookmarks.map(renderBookmarkItem)}</ul>
+                </div>
+              )}
+            </>
           )}
         </section>
       </div>

@@ -75,6 +75,11 @@
   flex-shrink: 0;
 }
 
+.resummarize-hint {
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+
 .detail-meta {
   display: flex;
   align-items: center;
@@ -158,9 +163,22 @@
   margin-bottom: 20px;
 }
 
+.audio-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .detail-audio {
+  flex: 1;
+  min-width: 0;
   width: 100%;
   display: block;
+}
+
+.audio-mark-btn {
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .bookmark-chips {
@@ -172,7 +190,15 @@
 
 .bm-chip {
   gap: 6px;
-  max-width: 240px;
+  max-width: 280px;
+}
+
+/* 칩 배경(--primary-soft)과 겹치지 않도록 마크 배지는 흰 배경으로 */
+.bm-chip .bm-kind-badge {
+  flex-shrink: 0;
+  padding: 1px 7px;
+  font-size: 11px;
+  background: var(--surface);
 }
 
 .bm-chip-title {
@@ -479,6 +505,12 @@
   white-space: nowrap;
 }
 
+.note-title .note-kind-badge {
+  margin-right: 8px;
+  padding: 2px 8px;
+  font-size: 11.5px;
+}
+
 .note-actions {
   display: flex;
   align-items: center;
@@ -489,4 +521,59 @@
 .note-delete:hover {
   background: var(--red-soft);
   color: var(--red);
+}
+
+/* 일반 메모(note) 그룹 — 시간 기록 없음 */
+.note-group {
+  margin-top: 20px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.note-group-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-3);
+  margin-bottom: 4px;
+}
+
+.note-row.note-plain {
+  align-items: flex-start;
+}
+
+.note-plain-badge {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  font-size: 11.5px;
+  margin-top: 2px;
+}
+
+/* note 제목은 여러 줄 입력 가능 → 말줄임 대신 줄바꿈 */
+.note-row.note-plain .note-title {
+  white-space: pre-wrap;
+  overflow: visible;
+  text-overflow: clip;
+  word-break: break-word;
+}
+
+/* 일반 메모 추가 폼 */
+.note-add {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.note-add-textarea {
+  flex: 1;
+  min-width: 0;
+  resize: none;
+  line-height: 1.5;
+}
+
+.note-add-btn {
+  flex-shrink: 0;
+  white-space: nowrap;
 }

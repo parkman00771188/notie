@@ -1,7 +1,8 @@
-import { useEffect, useId, useState } from 'react'
-import type { FormEvent, MouseEvent } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
+import type { FormEvent, KeyboardEvent } from 'react'
 import { api } from '../api'
-import type { OrgOption, Participant } from '../types'
+import type { OrgKind, OrgOption, Participant } from '../types'
+import Avatar from './Avatar'
 import Modal from './Modal'
 import './components.css'
 import './ParticipantPicker.css'
@@ -13,18 +14,44 @@ export interface ParticipantPickerProps {
   onChange: (p: Participant[]) => void
 }
 
+/** 제안 리스트 서브텍스트: "소속 · 부서 · 직책" */
+function subText(p: Participant): string {
+  return [p.organization, p.department, p.role].filter(Boolean).join(' · ')
+}
+
 export function ParticipantPicker({ open, onClose, selected, onChange }: ParticipantPickerProps) {
   const [all, setAll] = useState<Participant[]>([])
   const [orgOptions, setOrgOptions] = useState<OrgOption[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+
+  // 검색 + 제안 드롭다운
   const [search, setSearch] = useState('')
-  const [name, setName] = useState('')
-  const [department, setDepartment] = useState('')
-  const [role, setRole] = useState('')
+  const [suggestOpen, setSuggestOpen] = useState(false)
+  const [activeIndex, setActiveIndex] = useState(-1)
+  const suggestRef = useRef<HTMLDivElement>(null)
+
+  // 새 참석자 인라인 폼
+  const [mode, setMode] = useState<'search' | 'form'>('search')
+  const [fName, setFName] = useState('')
+  const [fOrganization, setFOrganization] = useState('')
+  const [fDepartment, setFDepartment] = useState('')
+  const [fRole, setFRole] = useState('')
+  const [fEmail, setFEmail] = useState('')
+  const [fPhone, setFPhone] = useState('')
   const [adding, setAdding] = useState(false)
+  const orgListId = useId()
   const deptListId = useId()
   const roleListId = useId()
+
+  const resetForm = () => {
+    setFName('')
+    setFOrganization('')
+    setFDepartment('')
+    setFRole('')
+    setFEmail('')
+    setFPhone('')
+  }
 
   useEffect(() => {
     if (!open) return
@@ -32,6 +59,10 @@ export function ParticipantPicker({ open, onClose, selected, onChange }: Partici
     setLoading(true)
     setError('')
     setSearch('')
+    setSuggestOpen(false)
+    setActiveIndex(-1)
+    setMode('search')
+    resetForm()
     api
       .listParticipants()
       .then((list) => {
@@ -58,30 +89,80 @@ export function ParticipantPicker({ open, onClose, selected, onChange }: Partici
     }
   }, [open])
 
-  const isSelected = (id: number) => selected.some((p) => p.id === id)
-
-  const toggle = (p: Participant) => {
-    if (isSelected(p.id)) {
-      onChange(selected.filter((s) => s.id !== p.id))
-    } else {
-      onChange([...selected, p])
-    }
-  }
-
+  // ---- 제안 계산: 미선택 참석자 중 이름/소속/부서/직책 부분일치 ----
   const query = search.trim().toLowerCase()
-  const filtered = query
-    ? all.filter((p) =>
-        [p.name, p.department ?? '', p.role ?? ''].some((v) =>
+  const unselected = all.filter((p) => !selected.some((s) => s.id === p.id))
+  const suggestions = query
+    ? unselected.filter((p) =>
+        [p.name, p.organization ?? '', p.department ?? '', p.role ?? ''].some((v) =>
           v.toLowerCase().includes(query),
         ),
       )
-    : all
+    : unselected.slice(0, 8) // 포커스만 했을 때는 미선택 전체 최대 8명
+  const addNewIndex = suggestions.length // 마지막 "+ 새 참석자로 추가" 항목
 
+  // 검색어/제안 목록이 바뀌면 하이라이트 리셋 (검색 중엔 첫 항목)
+  useEffect(() => {
+    setActiveIndex(query ? 0 : -1)
+  }, [query, suggestions.length])
+
+  // 키보드 탐색 시 활성 항목이 보이도록 스크롤
+  useEffect(() => {
+    if (activeIndex < 0) return
+    suggestRef.current
+      ?.querySelector(`[data-idx="${activeIndex}"]`)
+      ?.scrollIntoView({ block: 'nearest' })
+  }, [activeIndex])
+
+  const addToSelection = (p: Participant) => {
+    if (selected.some((s) => s.id === p.id)) return
+    onChange([...selected, p])
+    setSearch('')
+  }
+
+  const removeFromSelection = (id: number) => {
+    onChange(selected.filter((s) => s.id !== id))
+  }
+
+  const openForm = () => {
+    setMode('form')
+    setSuggestOpen(false)
+    setFName(search.trim())
+    setError('')
+  }
+
+  const closeForm = () => {
+    setMode('search')
+    resetForm()
+  }
+
+  const onSearchKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.nativeEvent.isComposing) return
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setSuggestOpen(true)
+      setActiveIndex((i) => (i + 1 > addNewIndex ? 0 : i + 1))
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setSuggestOpen(true)
+      setActiveIndex((i) => (i - 1 < 0 ? addNewIndex : i - 1))
+    } else if (e.key === 'Enter') {
+      e.preventDefault()
+      if (!suggestOpen || activeIndex < 0) return
+      if (activeIndex === addNewIndex) openForm()
+      else if (suggestions[activeIndex]) addToSelection(suggestions[activeIndex])
+    } else if (e.key === 'Escape' && suggestOpen) {
+      e.stopPropagation() // 모달까지 닫지 않고 드롭다운만 닫는다
+      setSuggestOpen(false)
+    }
+  }
+
+  const organizations = orgOptions.filter((o) => o.kind === 'organization')
   const departments = orgOptions.filter((o) => o.kind === 'department')
   const roles = orgOptions.filter((o) => o.kind === 'role')
 
-  /** 자유 입력한 소속/직책을 org-options 사전에 자동 등록 (중복 400은 조용히 무시) */
-  const registerOrgOption = async (kind: 'department' | 'role', value: string) => {
+  /** 자유 입력한 소속/부서/직책을 org-options 사전에 자동 등록 (중복 400은 조용히 무시) */
+  const registerOrgOption = async (kind: OrgKind, value: string) => {
     if (!value) return
     if (orgOptions.some((o) => o.kind === kind && o.name === value)) return
     try {
@@ -94,27 +175,32 @@ export function ParticipantPicker({ open, onClose, selected, onChange }: Partici
 
   const handleAdd = async (e: FormEvent) => {
     e.preventDefault()
-    const trimmedName = name.trim()
-    if (!trimmedName || adding) return
+    const name = fName.trim()
+    if (!name || adding) return
     setAdding(true)
     setError('')
     try {
-      const trimmedDept = department.trim()
-      const trimmedRole = role.trim()
+      const organization = fOrganization.trim()
+      const department = fDepartment.trim()
+      const role = fRole.trim()
+      const email = fEmail.trim()
+      const phone = fPhone.trim()
       const created = await api.createParticipant({
-        name: trimmedName,
-        ...(trimmedDept ? { department: trimmedDept } : {}),
-        ...(trimmedRole ? { role: trimmedRole } : {}),
+        name,
+        ...(organization ? { organization } : {}),
+        ...(department ? { department } : {}),
+        ...(role ? { role } : {}),
+        ...(email ? { email } : {}),
+        ...(phone ? { phone } : {}),
       })
       setAll((prev) => [...prev, created])
       onChange([...selected, created])
       await Promise.all([
-        registerOrgOption('department', trimmedDept),
-        registerOrgOption('role', trimmedRole),
+        registerOrgOption('organization', organization),
+        registerOrgOption('department', department),
+        registerOrgOption('role', role),
       ])
-      setName('')
-      setDepartment('')
-      setRole('')
+      closeForm()
       setSearch('')
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : '참석자를 추가하지 못했어요')
@@ -123,124 +209,200 @@ export function ParticipantPicker({ open, onClose, selected, onChange }: Partici
     }
   }
 
-  const handleDelete = async (p: Participant, e: MouseEvent) => {
-    e.stopPropagation()
-    if (!window.confirm(`'${p.name}' 참석자를 디렉터리에서 삭제할까요?`)) return
-    setError('')
-    try {
-      await api.deleteParticipant(p.id)
-      setAll((prev) => prev.filter((x) => x.id !== p.id))
-      if (isSelected(p.id)) {
-        onChange(selected.filter((s) => s.id !== p.id))
-      }
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : '참석자를 삭제하지 못했어요')
-    }
-  }
-
   return (
     <Modal open={open} title="참석자 선택" width={520} onClose={onClose}>
       {error && <div className="pp-error">{error}</div>}
 
-      <div className="pp-search">
-        <input
-          className="input"
-          type="search"
-          placeholder="이름, 소속, 직책으로 검색"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
+      {/* ---- 선택된 참석자 칩 (검색 인풋 위) ---- */}
+      <div className="pp-selected">
+        {selected.length === 0 ? (
+          <span className="pp-selected-empty">
+            선택된 참석자가 없어요. 아래에서 검색해 추가하세요.
+          </span>
+        ) : (
+          selected.map((p) => (
+            <span
+              key={p.id}
+              className="pp-sel-chip"
+              title={subText(p) || undefined}
+              style={{
+                borderColor: p.color,
+                color: p.color,
+                background: `color-mix(in srgb, ${p.color} 12%, transparent)`,
+              }}
+            >
+              {p.name}
+              <button
+                type="button"
+                className="pp-sel-chip-x"
+                aria-label={`${p.name} 선택 해제`}
+                onClick={() => removeFromSelection(p.id)}
+              >
+                ×
+              </button>
+            </span>
+          ))
+        )}
       </div>
 
-      {loading ? (
-        <div className="pp-loading">
-          <span className="spinner" />
-        </div>
-      ) : all.length === 0 ? (
-        <p className="pp-empty">등록된 참석자가 없어요. 아래에서 새 참석자를 추가해보세요.</p>
-      ) : filtered.length === 0 ? (
-        <p className="pp-no-result">‘{search.trim()}’ 검색 결과가 없어요.</p>
-      ) : (
-        <div className="pp-chips">
-          {filtered.map((p) => {
-            const sel = isSelected(p.id)
-            const tooltip = [p.department, p.role].filter(Boolean).join(' · ')
-            return (
-              <button
-                key={p.id}
-                type="button"
-                className="pp-chip"
-                aria-pressed={sel}
-                title={tooltip || undefined}
-                style={{
-                  borderColor: p.color,
-                  color: p.color,
-                  background: sel
-                    ? `color-mix(in srgb, ${p.color} 15%, transparent)`
-                    : undefined,
-                }}
-                onClick={() => toggle(p)}
-              >
-                {sel && <span className="pp-chip-check">✓</span>}
-                <span>{p.name}</span>
-                {p.role && <span className="pp-chip-role">{p.role}</span>}
-                <span
-                  className="pp-chip-x"
-                  role="button"
-                  aria-label={`${p.name} 삭제`}
-                  title="디렉터리에서 삭제"
-                  onClick={(e) => handleDelete(p, e)}
-                >
-                  ×
-                </span>
-              </button>
-            )
-          })}
-        </div>
-      )}
+      {mode === 'search' ? (
+        <div className="pp-searchbox">
+          <input
+            className="input"
+            type="search"
+            placeholder="이름, 소속, 부서, 직책으로 검색"
+            aria-label="참석자 검색"
+            aria-expanded={suggestOpen}
+            value={search}
+            autoFocus
+            onChange={(e) => {
+              setSearch(e.target.value)
+              setSuggestOpen(true)
+            }}
+            onFocus={() => setSuggestOpen(true)}
+            onBlur={() => setSuggestOpen(false)}
+            onKeyDown={onSearchKeyDown}
+          />
 
-      <form className="pp-add" onSubmit={handleAdd}>
-        <div className="pp-add-title">새 참석자 추가</div>
-        <div className="pp-add-fields">
-          <div className="pp-add-row">
+          {suggestOpen && (
+            <div
+              className="pp-suggest"
+              ref={suggestRef}
+              role="listbox"
+              onMouseDown={(e) => e.preventDefault() /* 클릭 시 인풋 blur 방지 */}
+            >
+              {loading ? (
+                <div className="pp-loading">
+                  <span className="spinner" />
+                </div>
+              ) : (
+                <>
+                  {suggestions.map((p, i) => {
+                    const sub = subText(p)
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        data-idx={i}
+                        className={`pp-suggest-item${i === activeIndex ? ' active' : ''}`}
+                        onClick={() => addToSelection(p)}
+                        onMouseEnter={() => setActiveIndex(i)}
+                      >
+                        <Avatar name={p.name} color={p.color} size={30} />
+                        <span className="pp-suggest-texts">
+                          <span className="pp-suggest-name">{p.name}</span>
+                          {sub && <span className="pp-suggest-sub">{sub}</span>}
+                        </span>
+                      </button>
+                    )
+                  })}
+
+                  {suggestions.length === 0 && (
+                    <p className="pp-suggest-empty">
+                      {all.length === 0
+                        ? '등록된 참석자가 없어요.'
+                        : query
+                          ? `‘${search.trim()}’ 검색 결과가 없어요.`
+                          : '추가할 수 있는 참석자가 모두 선택됐어요.'}
+                    </p>
+                  )}
+
+                  <button
+                    type="button"
+                    data-idx={addNewIndex}
+                    className={`pp-suggest-new${activeIndex === addNewIndex ? ' active' : ''}`}
+                    onClick={openForm}
+                    onMouseEnter={() => setActiveIndex(addNewIndex)}
+                  >
+                    + {query ? `‘${search.trim()}’ 새 참석자로 추가` : '새 참석자 추가'}
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      ) : (
+        <form className="pp-form" onSubmit={handleAdd}>
+          <div className="pp-form-title">새 참석자 추가</div>
+          <div className="pp-form-fields">
             <input
               className="input"
-              placeholder="이름"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
+              placeholder="이름 *"
+              aria-label="이름"
+              value={fName}
+              autoFocus
+              onChange={(e) => setFName(e.target.value)}
             />
+            <div className="pp-form-row">
+              <input
+                className="input"
+                placeholder="소속 (선택)"
+                aria-label="소속"
+                list={orgListId}
+                value={fOrganization}
+                onChange={(e) => setFOrganization(e.target.value)}
+              />
+              <datalist id={orgListId}>
+                {organizations.map((o) => (
+                  <option key={o.id} value={o.name} />
+                ))}
+              </datalist>
+              <input
+                className="input"
+                placeholder="부서 (선택)"
+                aria-label="부서"
+                list={deptListId}
+                value={fDepartment}
+                onChange={(e) => setFDepartment(e.target.value)}
+              />
+              <datalist id={deptListId}>
+                {departments.map((o) => (
+                  <option key={o.id} value={o.name} />
+                ))}
+              </datalist>
+              <input
+                className="input"
+                placeholder="직책 (선택)"
+                aria-label="직책"
+                list={roleListId}
+                value={fRole}
+                onChange={(e) => setFRole(e.target.value)}
+              />
+              <datalist id={roleListId}>
+                {roles.map((o) => (
+                  <option key={o.id} value={o.name} />
+                ))}
+              </datalist>
+            </div>
+            <div className="pp-form-row">
+              <input
+                className="input"
+                type="email"
+                placeholder="이메일 (선택)"
+                aria-label="이메일"
+                value={fEmail}
+                onChange={(e) => setFEmail(e.target.value)}
+              />
+              <input
+                className="input"
+                type="tel"
+                placeholder="전화번호 (선택)"
+                aria-label="전화번호"
+                value={fPhone}
+                onChange={(e) => setFPhone(e.target.value)}
+              />
+            </div>
           </div>
-          <div className="pp-add-row">
-            <input
-              className="input"
-              placeholder="소속 (선택)"
-              list={deptListId}
-              value={department}
-              onChange={(e) => setDepartment(e.target.value)}
-            />
-            <datalist id={deptListId}>
-              {departments.map((o) => (
-                <option key={o.id} value={o.name} />
-              ))}
-            </datalist>
-            <input
-              className="input"
-              placeholder="직책 (선택)"
-              list={roleListId}
-              value={role}
-              onChange={(e) => setRole(e.target.value)}
-            />
-            <datalist id={roleListId}>
-              {roles.map((o) => (
-                <option key={o.id} value={o.name} />
-              ))}
-            </datalist>
-            <button type="submit" className="btn btn-primary" disabled={!name.trim() || adding}>
+          <div className="pp-form-actions">
+            <button type="button" className="btn btn-ghost" onClick={closeForm} disabled={adding}>
+              취소
+            </button>
+            <button type="submit" className="btn btn-primary" disabled={!fName.trim() || adding}>
               {adding ? '추가 중...' : '추가'}
             </button>
           </div>
-        </div>
-      </form>
+        </form>
+      )}
 
       <div className="pp-footer">
         <span className="muted">{selected.length}명 선택됨</span>

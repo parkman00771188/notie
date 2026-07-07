@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import type { KeyboardEvent } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { marked } from 'marked'
 import { api } from '../api'
@@ -38,6 +39,10 @@ export default function MeetingDetailPage() {
   const [titleDraft, setTitleDraft] = useState('')
   const [pickerOpen, setPickerOpen] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [audioReady, setAudioReady] = useState(false)
+  const [addingMark, setAddingMark] = useState(false)
+  const [noteDraft, setNoteDraft] = useState('')
+  const [addingNote, setAddingNote] = useState(false)
 
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const skipTitleSaveRef = useRef(false)
@@ -53,6 +58,7 @@ export default function MeetingDetailPage() {
     let alive = true
     setLoading(true)
     setLoadError(null)
+    setAudioReady(false)
     api
       .getMeeting(meetingId)
       .then((m) => {
@@ -189,6 +195,33 @@ export default function MeetingDetailPage() {
     }
   }
 
+  // ----- 마크 추가 (오디오 현재 재생 시간) -----
+  const handleAddMark = async () => {
+    const audio = audioRef.current
+    if (!meeting || !audio || addingMark) return
+    const markCount = meeting.bookmarks.filter((b) => b.kind === 'mark').length
+    setAddingMark(true)
+    try {
+      const created = await api.addBookmark(meeting.id, {
+        time_sec: audio.currentTime,
+        title: `마크 ${markCount + 1}`,
+        kind: 'mark',
+      })
+      setMeeting((prev) =>
+        prev
+          ? {
+              ...prev,
+              bookmarks: [...prev.bookmarks, created].sort((a, b) => a.time_sec - b.time_sec),
+            }
+          : prev,
+      )
+    } catch (e) {
+      alert(e instanceof Error ? e.message : '마크 추가에 실패했어요')
+    } finally {
+      setAddingMark(false)
+    }
+  }
+
   // ----- 북마크(메모) 수정/삭제 -----
   const handleEditBookmark = async (b: Bookmark) => {
     const next = window.prompt('메모 내용을 수정하세요', b.title)
@@ -219,6 +252,30 @@ export default function MeetingDetailPage() {
     }
   }
 
+  // ----- 일반 메모(note) 추가 — 시간 기록 없음 -----
+  const handleAddNote = async () => {
+    if (!meeting || addingNote) return
+    const title = noteDraft.trim()
+    if (!title) return
+    setAddingNote(true)
+    try {
+      const created = await api.addBookmark(meeting.id, { time_sec: 0, title, kind: 'note' })
+      setMeeting((prev) => (prev ? { ...prev, bookmarks: [...prev.bookmarks, created] } : prev))
+      setNoteDraft('')
+    } catch (e) {
+      alert(e instanceof Error ? e.message : '메모 추가에 실패했어요')
+    } finally {
+      setAddingNote(false)
+    }
+  }
+
+  const onNoteKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    // Enter 제출, Shift+Enter 줄바꿈, 한글 IME 조합 중에는 무시
+    if (e.key !== 'Enter' || e.shiftKey || e.nativeEvent.isComposing) return
+    e.preventDefault()
+    void handleAddNote()
+  }
+
   // ----- 렌더 -----
   if (loading) {
     return (
@@ -247,6 +304,9 @@ export default function MeetingDetailPage() {
   }
 
   const summary = meeting.summary
+  // note는 시간 개념이 없으므로 시간 기반 UI(칩/점프)와 분리
+  const timedBookmarks = meeting.bookmarks.filter((b) => b.kind !== 'note')
+  const noteBookmarks = meeting.bookmarks.filter((b) => b.kind === 'note')
   const progressMessage = PROGRESS_MESSAGE[meeting.status]
   const canResummarize =
     meeting.segments.length > 0 && (meeting.status === 'done' || meeting.status === 'failed')
@@ -292,9 +352,14 @@ export default function MeetingDetailPage() {
           <StatusBadge status={meeting.status} />
           <div className="detail-actions">
             {canResummarize && (
-              <button className="btn btn-soft" onClick={handleResummarize}>
-                ✨ 요약 다시 생성
-              </button>
+              <>
+                <span className="muted resummarize-hint">
+                  메모와 전체 스크립트를 기준으로 다시 요약합니다
+                </span>
+                <button className="btn btn-soft" onClick={handleResummarize}>
+                  🔄 재요약
+                </button>
+              </>
             )}
             <button className="btn btn-danger" onClick={handleDelete}>
               삭제
@@ -349,23 +414,39 @@ export default function MeetingDetailPage() {
       {/* 오디오 플레이어 + 북마크 칩 */}
       {meeting.audio_filename && (
         <div className="card audio-card">
-          <audio
-            ref={audioRef}
-            className="detail-audio"
-            controls
-            preload="metadata"
-            src={api.audioUrl(meeting.id)}
-          />
-          {meeting.bookmarks.length > 0 && (
+          <div className="audio-row">
+            <audio
+              ref={audioRef}
+              className="detail-audio"
+              controls
+              preload="metadata"
+              src={api.audioUrl(meeting.id)}
+              onLoadedMetadata={() => setAudioReady(true)}
+            />
+            <button
+              className="btn btn-soft audio-mark-btn"
+              onClick={handleAddMark}
+              disabled={!audioReady || addingMark}
+              title="현재 재생 시간에 마크를 추가합니다"
+            >
+              🔖 마크 추가
+            </button>
+          </div>
+          {timedBookmarks.length > 0 && (
             <div className="bookmark-chips">
-              {meeting.bookmarks.map((b) => (
+              {timedBookmarks.map((b) => (
                 <button
                   key={b.id}
                   className="time-chip bm-chip"
                   title={b.title}
                   onClick={() => seekTo(b.time_sec)}
                 >
-                  🔖 {formatClock(b.time_sec)}
+                  {b.kind === 'mark' ? (
+                    <span className="badge badge-blue bm-kind-badge">🔖 마크</span>
+                  ) : (
+                    <span aria-hidden="true">📝</span>
+                  )}
+                  {formatClock(b.time_sec)}
                   <span className="bm-chip-title">{b.title}</span>
                 </button>
               ))}
@@ -498,45 +579,113 @@ export default function MeetingDetailPage() {
           ))}
 
         {/* 메모 */}
-        {tab === 'notes' &&
-          (meeting.bookmarks.length > 0 ? (
-            <div className="note-list">
-              {meeting.bookmarks.map((b) => (
-                <div key={b.id} className="note-row">
-                  <button className="time-chip" onClick={() => seekTo(b.time_sec)}>
-                    {formatClock(b.time_sec)}
-                  </button>
-                  <div className="note-body">
-                    <p className="note-title">{b.title}</p>
-                    {b.note && <p className="muted">{b.note}</p>}
-                  </div>
-                  <div className="note-actions">
-                    <button
-                      className="btn-icon"
-                      aria-label="메모 수정"
-                      title="수정"
-                      onClick={() => handleEditBookmark(b)}
-                    >
-                      ✏️
+        {tab === 'notes' && (
+          <div className="notes-panel">
+            {meeting.bookmarks.length === 0 && (
+              <div className="empty-state">
+                <div className="emoji">📝</div>
+                <p>녹음 중 남긴 메모가 없어요.</p>
+              </div>
+            )}
+
+            {/* 시간 메모 · 마크 */}
+            {timedBookmarks.length > 0 && (
+              <div className="note-list">
+                {timedBookmarks.map((b) => (
+                  <div key={b.id} className="note-row">
+                    <button className="time-chip" onClick={() => seekTo(b.time_sec)}>
+                      {formatClock(b.time_sec)}
                     </button>
-                    <button
-                      className="btn-icon note-delete"
-                      aria-label="메모 삭제"
-                      title="삭제"
-                      onClick={() => handleDeleteBookmark(b)}
-                    >
-                      🗑️
-                    </button>
+                    <div className="note-body">
+                      <p className="note-title">
+                        {b.kind === 'mark' && (
+                          <span className="badge badge-blue note-kind-badge">🔖 마크</span>
+                        )}
+                        {b.title}
+                      </p>
+                      {b.note && <p className="muted">{b.note}</p>}
+                    </div>
+                    <div className="note-actions">
+                      <button
+                        className="btn-icon"
+                        aria-label="메모 수정"
+                        title="수정"
+                        onClick={() => handleEditBookmark(b)}
+                      >
+                        ✏️
+                      </button>
+                      <button
+                        className="btn-icon note-delete"
+                        aria-label="메모 삭제"
+                        title="삭제"
+                        onClick={() => handleDeleteBookmark(b)}
+                      >
+                        🗑️
+                      </button>
+                    </div>
                   </div>
+                ))}
+              </div>
+            )}
+
+            {/* 일반 메모 (시간 기록 없음) */}
+            {noteBookmarks.length > 0 && (
+              <div className="note-group">
+                <h3 className="note-group-title">일반 메모</h3>
+                <div className="note-list">
+                  {noteBookmarks.map((b) => (
+                    <div key={b.id} className="note-row note-plain">
+                      <span className="badge badge-gray note-plain-badge">📝 메모</span>
+                      <div className="note-body">
+                        <p className="note-title">{b.title}</p>
+                        {b.note && <p className="muted">{b.note}</p>}
+                      </div>
+                      <div className="note-actions">
+                        <button
+                          className="btn-icon"
+                          aria-label="메모 수정"
+                          title="수정"
+                          onClick={() => handleEditBookmark(b)}
+                        >
+                          ✏️
+                        </button>
+                        <button
+                          className="btn-icon note-delete"
+                          aria-label="메모 삭제"
+                          title="삭제"
+                          onClick={() => handleDeleteBookmark(b)}
+                        >
+                          🗑️
+                        </button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              ))}
+              </div>
+            )}
+
+            {/* 일반 메모 추가 */}
+            <div className="note-add">
+              <textarea
+                className="input note-add-textarea"
+                rows={2}
+                placeholder="회의에 대한 메모를 남겨보세요..."
+                value={noteDraft}
+                onChange={(e) => setNoteDraft(e.target.value)}
+                onKeyDown={onNoteKeyDown}
+                aria-label="일반 메모 입력"
+              />
+              <button
+                type="button"
+                className="btn btn-soft note-add-btn"
+                onClick={() => void handleAddNote()}
+                disabled={!noteDraft.trim() || addingNote}
+              >
+                메모 추가
+              </button>
             </div>
-          ) : (
-            <div className="empty-state">
-              <div className="emoji">📝</div>
-              <p>녹음 중 남긴 메모가 없어요.</p>
-            </div>
-          ))}
+          </div>
+        )}
       </div>
 
       {/* 참석자 편집 팝업 */}

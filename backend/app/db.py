@@ -23,6 +23,10 @@ CREATE TABLE IF NOT EXISTS participants (
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
   role TEXT,
+  department TEXT,
+  organization TEXT,
+  email TEXT,
+  phone TEXT,
   color TEXT NOT NULL DEFAULT '#2563eb',
   created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
 );
@@ -52,6 +56,7 @@ CREATE TABLE IF NOT EXISTS bookmarks (
   time_sec REAL NOT NULL,
   title TEXT NOT NULL,
   note TEXT,
+  kind TEXT NOT NULL DEFAULT 'memo',
   created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
 );
 
@@ -85,7 +90,7 @@ CREATE TABLE IF NOT EXISTS tags (
 CREATE TABLE IF NOT EXISTS org_options (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  kind TEXT NOT NULL CHECK (kind IN ('department', 'role')),
+  kind TEXT NOT NULL CHECK (kind IN ('department', 'role', 'organization')),
   name TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
   UNIQUE(user_id, kind, name)
@@ -120,5 +125,34 @@ def init_db() -> None:
 def _migrate(conn: sqlite3.Connection) -> None:
     """기존 DB에 추가된 컬럼 반영 (CREATE IF NOT EXISTS로 못 잡는 변경)"""
     cols = [row[1] for row in conn.execute("PRAGMA table_info(participants)")]
-    if "department" not in cols:
-        conn.execute("ALTER TABLE participants ADD COLUMN department TEXT")
+    for col in ("department", "organization", "email", "phone"):
+        if col not in cols:
+            conn.execute(f"ALTER TABLE participants ADD COLUMN {col} TEXT")
+
+    bcols = [row[1] for row in conn.execute("PRAGMA table_info(bookmarks)")]
+    if "kind" not in bcols:
+        conn.execute("ALTER TABLE bookmarks ADD COLUMN kind TEXT NOT NULL DEFAULT 'memo'")
+
+    # org_options CHECK에 'organization' 추가 (SQLite는 CHECK 변경 불가 → 테이블 재생성)
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='org_options'"
+    ).fetchone()
+    if row and "'organization'" not in row[0]:
+        conn.execute("ALTER TABLE org_options RENAME TO org_options_old")
+        conn.execute(
+            """
+            CREATE TABLE org_options (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+              kind TEXT NOT NULL CHECK (kind IN ('department', 'role', 'organization')),
+              name TEXT NOT NULL,
+              created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+              UNIQUE(user_id, kind, name)
+            )
+            """
+        )
+        conn.execute(
+            "INSERT INTO org_options (id, user_id, kind, name, created_at) "
+            "SELECT id, user_id, kind, name, created_at FROM org_options_old"
+        )
+        conn.execute("DROP TABLE org_options_old")

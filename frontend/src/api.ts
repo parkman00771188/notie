@@ -1,8 +1,10 @@
 import type {
   Bookmark,
+  BookmarkKind,
   Meeting,
   MeetingDetail,
   MeetingStatus,
+  OrgKind,
   OrgOption,
   Participant,
   Tag,
@@ -53,6 +55,7 @@ export interface AppSettings {
   gemini_key_preview: string | null
   gemini_model: string
   ollama_available: boolean
+  summary_prompt: string
 }
 
 export const api = {
@@ -96,6 +99,9 @@ export const api = {
     name: string
     role?: string
     department?: string
+    organization?: string
+    email?: string
+    phone?: string
     color?: string
   }): Promise<Participant> {
     return request<Participant>('/api/participants', {
@@ -106,7 +112,15 @@ export const api = {
 
   updateParticipant(
     id: number,
-    data: { name?: string; role?: string; department?: string; color?: string },
+    data: {
+      name?: string
+      role?: string
+      department?: string
+      organization?: string
+      email?: string
+      phone?: string
+      color?: string
+    },
   ): Promise<Participant> {
     return request<Participant>(`/api/participants/${id}`, {
       method: 'PATCH',
@@ -193,12 +207,12 @@ export const api = {
   },
 
   // ---- org options (소속/부서 · 직책 사전) ----
-  listOrgOptions(kind?: 'department' | 'role'): Promise<OrgOption[]> {
+  listOrgOptions(kind?: OrgKind): Promise<OrgOption[]> {
     const qs = kind ? `?kind=${kind}` : ''
     return request<OrgOption[]>(`/api/org-options${qs}`)
   },
 
-  createOrgOption(data: { kind: 'department' | 'role'; name: string }): Promise<OrgOption> {
+  createOrgOption(data: { kind: OrgKind; name: string }): Promise<OrgOption> {
     return request<OrgOption>('/api/org-options', { method: 'POST', body: JSON.stringify(data) })
   },
 
@@ -211,8 +225,8 @@ export const api = {
     return request<AppSettings>('/api/settings')
   },
 
-  /** gemini_api_key에 빈 문자열을 주면 키 삭제 */
-  updateSettings(data: { gemini_api_key?: string }): Promise<AppSettings> {
+  /** gemini_api_key/summary_prompt에 빈 문자열을 주면 해당 값 삭제 */
+  updateSettings(data: { gemini_api_key?: string; summary_prompt?: string }): Promise<AppSettings> {
     return request<AppSettings>('/api/settings', {
       method: 'PUT',
       body: JSON.stringify(data),
@@ -228,7 +242,7 @@ export const api = {
   // ---- bookmarks ----
   addBookmark(
     meetingId: number,
-    data: { time_sec: number; title: string; note?: string },
+    data: { time_sec: number; title: string; note?: string; kind?: BookmarkKind },
   ): Promise<Bookmark> {
     return request<Bookmark>(`/api/meetings/${meetingId}/bookmarks`, {
       method: 'POST',
@@ -242,7 +256,7 @@ export const api = {
 
   updateBookmark(
     id: number,
-    data: { title?: string; note?: string; time_sec?: number },
+    data: { title?: string; note?: string; time_sec?: number; kind?: BookmarkKind },
   ): Promise<Bookmark> {
     return request<Bookmark>(`/api/bookmarks/${id}`, {
       method: 'PATCH',

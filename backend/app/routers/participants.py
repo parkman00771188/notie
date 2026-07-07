@@ -31,6 +31,9 @@ class ParticipantCreate(BaseModel):
     name: str = Field(min_length=1)
     role: str | None = None
     department: str | None = None
+    organization: str | None = None
+    email: str | None = None
+    phone: str | None = None
     color: str | None = None
 
 
@@ -38,6 +41,9 @@ class ParticipantUpdate(BaseModel):
     name: str | None = None
     role: str | None = None
     department: str | None = None
+    organization: str | None = None
+    email: str | None = None
+    phone: str | None = None
     color: str | None = None
 
 
@@ -47,6 +53,9 @@ def _to_participant(row: sqlite3.Row) -> dict:
         "name": row["name"],
         "role": row["role"],
         "department": row["department"],
+        "organization": row["organization"],
+        "email": row["email"],
+        "phone": row["phone"],
         "color": row["color"],
     }
 
@@ -56,7 +65,8 @@ def list_participants(user: dict = Depends(get_current_user)) -> list[dict]:
     conn = db.get_conn()
     try:
         rows = conn.execute(
-            "SELECT id, name, role, department, color FROM participants WHERE user_id = ? ORDER BY id",
+            "SELECT id, name, role, department, organization, email, phone, color "
+            "FROM participants WHERE user_id = ? ORDER BY id",
             (user["id"],),
         ).fetchall()
     finally:
@@ -75,6 +85,13 @@ def create_participant(
     department = (
         body.department.strip() if body.department and body.department.strip() else None
     )
+    organization = (
+        body.organization.strip()
+        if body.organization and body.organization.strip()
+        else None
+    )
+    email = body.email.strip() if body.email and body.email.strip() else None
+    phone = body.phone.strip() if body.phone and body.phone.strip() else None
     color = body.color.strip() if body.color and body.color.strip() else None
 
     conn = db.get_conn()
@@ -87,8 +104,10 @@ def create_participant(
                 ).fetchone()[0]
                 color = COLOR_PALETTE[count % len(COLOR_PALETTE)]
             cur = conn.execute(
-                "INSERT INTO participants (user_id, name, role, department, color) VALUES (?, ?, ?, ?, ?)",
-                (user["id"], name, role, department, color),
+                "INSERT INTO participants "
+                "(user_id, name, role, department, organization, email, phone, color) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (user["id"], name, role, department, organization, email, phone, color),
             )
             participant_id = cur.lastrowid
     finally:
@@ -99,6 +118,9 @@ def create_participant(
         "name": name,
         "role": role,
         "department": department,
+        "organization": organization,
+        "email": email,
+        "phone": phone,
         "color": color,
     }
 
@@ -121,7 +143,15 @@ def update_participant(
 
         fields: list[str] = []
         values: list = []
-        for key in ("name", "role", "department", "color"):
+        for key in (
+            "name",
+            "role",
+            "department",
+            "organization",
+            "email",
+            "phone",
+            "color",
+        ):
             if key not in updates:
                 continue
             value = updates[key]
@@ -132,11 +162,11 @@ def update_participant(
                     raise HTTPException(
                         status_code=400, detail="참석자 이름을 입력해주세요"
                     )
-            elif key in ("role", "department"):
-                value = value or None  # 빈 문자열은 NULL로 저장
             elif key == "color":
                 if not value:
                     continue  # color는 NOT NULL — 빈 값은 무시
+            else:  # role/department/organization/email/phone
+                value = value or None  # 빈 문자열은 NULL로 저장
             fields.append(f"{key} = ?")
             values.append(value)
 
@@ -148,7 +178,8 @@ def update_participant(
                 )
 
         row = conn.execute(
-            "SELECT id, name, role, department, color FROM participants WHERE id = ?",
+            "SELECT id, name, role, department, organization, email, phone, color "
+            "FROM participants WHERE id = ?",
             (participant_id,),
         ).fetchone()
     finally:

@@ -6,7 +6,7 @@ main.py에서 prefix "/api" 로 include 되므로 내부 경로에 /meetings, /b
 
 import sqlite3
 from contextlib import closing
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -17,17 +17,21 @@ from .meetings import get_owned_meeting, payload_fields
 
 router = APIRouter()
 
+BookmarkKind = Literal["memo", "mark", "note"]
+
 
 class BookmarkCreate(BaseModel):
     time_sec: float
     title: str
     note: Optional[str] = None
+    kind: BookmarkKind = "memo"
 
 
 class BookmarkUpdate(BaseModel):
     title: Optional[str] = None
     note: Optional[str] = None
     time_sec: Optional[float] = None
+    kind: Optional[BookmarkKind] = None
 
 
 def _serialize_bookmark(row: sqlite3.Row) -> dict:
@@ -37,6 +41,7 @@ def _serialize_bookmark(row: sqlite3.Row) -> dict:
         "time_sec": row["time_sec"],
         "title": row["title"],
         "note": row["note"],
+        "kind": row["kind"],
         "created_at": row["created_at"],
     }
 
@@ -64,8 +69,8 @@ def create_bookmark(
         get_owned_meeting(conn, meeting_id, user["id"])
         with conn:
             cur = conn.execute(
-                "INSERT INTO bookmarks (meeting_id, time_sec, title, note) VALUES (?, ?, ?, ?)",
-                (meeting_id, payload.time_sec, payload.title, payload.note),
+                "INSERT INTO bookmarks (meeting_id, time_sec, title, note, kind) VALUES (?, ?, ?, ?, ?)",
+                (meeting_id, payload.time_sec, payload.title, payload.note, payload.kind),
             )
         row = conn.execute("SELECT * FROM bookmarks WHERE id = ?", (cur.lastrowid,)).fetchone()
         return _serialize_bookmark(row)
@@ -101,6 +106,9 @@ def update_bookmark(
             if "time_sec" in data and data["time_sec"] is not None:
                 sets.append("time_sec = ?")
                 values.append(data["time_sec"])
+            if "kind" in data and data["kind"] is not None:
+                sets.append("kind = ?")
+                values.append(data["kind"])
             if sets:
                 values.append(bookmark_id)
                 conn.execute(f"UPDATE bookmarks SET {', '.join(sets)} WHERE id = ?", values)

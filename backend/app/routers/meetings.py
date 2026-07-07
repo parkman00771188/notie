@@ -90,7 +90,7 @@ def serialize_meeting(conn: sqlite3.Connection, row: sqlite3.Row) -> dict:
     """meetings row → Meeting 응답 dict (participants 조인 포함)."""
     participants = conn.execute(
         """
-        SELECT p.id, p.name, p.role, p.department, p.color
+        SELECT p.id, p.name, p.role, p.department, p.organization, p.email, p.phone, p.color
         FROM meeting_participants mp
         JOIN participants p ON p.id = mp.participant_id
         WHERE mp.meeting_id = ?
@@ -174,7 +174,7 @@ def get_meeting(meeting_id: int, user: dict = Depends(get_current_user)) -> dict
         detail["error_message"] = row["error_message"]
 
         bookmarks = conn.execute(
-            "SELECT id, meeting_id, time_sec, title, note, created_at FROM bookmarks WHERE meeting_id = ? ORDER BY time_sec ASC, id ASC",
+            "SELECT id, meeting_id, time_sec, title, note, kind, created_at FROM bookmarks WHERE meeting_id = ? ORDER BY time_sec ASC, id ASC",
             (meeting_id,),
         ).fetchall()
         detail["bookmarks"] = [dict(b) for b in bookmarks]

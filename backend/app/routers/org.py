@@ -28,7 +28,7 @@ TAG_COLOR_PALETTE = [
     "#1098ad",
 ]
 
-ORG_KINDS = ("department", "role")
+ORG_KINDS = ("department", "role", "organization")
 
 
 class TagCreate(BaseModel):
@@ -42,7 +42,7 @@ class TagUpdate(BaseModel):
 
 
 class OrgOptionCreate(BaseModel):
-    kind: Literal["department", "role"]
+    kind: Literal["department", "role", "organization"]
     name: str = Field(min_length=1)
 
 
@@ -181,7 +181,8 @@ def list_org_options(
 ) -> list[dict]:
     if kind is not None and kind not in ORG_KINDS:
         raise HTTPException(
-            status_code=400, detail="kind는 department 또는 role이어야 합니다"
+            status_code=400,
+            detail="kind는 department, role 또는 organization이어야 합니다",
         )
     conn = db.get_conn()
     try:

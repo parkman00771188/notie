@@ -10,6 +10,9 @@ export interface Participant {
   name: string
   role: string | null
   department: string | null
+  organization: string | null
+  email: string | null
+  phone: string | null
   color: string
 }
 
@@ -19,9 +22,11 @@ export interface Tag {
   color: string
 }
 
+export type OrgKind = 'department' | 'role' | 'organization'
+
 export interface OrgOption {
   id: number
-  kind: 'department' | 'role'
+  kind: OrgKind
   name: string
 }
 
@@ -45,12 +50,16 @@ export interface Meeting {
   participants: Participant[]
 }
 
+/** memo: 시간 연동 메모, mark: 시간 핀, note: 시간 기록 없는 일반 메모 */
+export type BookmarkKind = 'memo' | 'mark' | 'note'
+
 export interface Bookmark {
   id: number
   meeting_id: number
   time_sec: number
   title: string
   note: string | null
+  kind: BookmarkKind
   created_at: string
 }
 

@@ -21,6 +21,8 @@ GEMINI_MODEL = os.environ.get("GIMNOTE_GEMINI_MODEL", "gemini-2.0-flash")
 GEMINI_BASE_URL = os.environ.get(
     "GIMNOTE_GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta"
 )
+# 전체 스크립트가 이 글자 수를 넘으면 프롬프트 인라인 대신 텍스트 파일 파트로 첨부
+GEMINI_ATTACH_THRESHOLD = int(os.environ.get("GIMNOTE_GEMINI_ATTACH_THRESHOLD", "20000"))
 
 OLLAMA_URL = os.environ.get("GIMNOTE_OLLAMA_URL", "http://127.0.0.1:11434")
 OLLAMA_MODEL = os.environ.get("GIMNOTE_OLLAMA_MODEL", "")  # 빈 값이면 설치된 첫 모델 사용

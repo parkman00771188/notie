@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent, KeyboardEvent, MouseEvent } from 'react'
 import { api } from '../api'
 import AiEngineSettings from '../components/AiEngineSettings'
 import { Avatar } from '../components/Avatar'
-import type { OrgOption, Participant, Tag } from '../types'
+import type { OrgKind, OrgOption, Participant, Tag } from '../types'
 import './SettingsPage.css'
 
 /** 태그 색 팔레트 (SPEC — 백엔드 자동 배정 팔레트와 동일) */
@@ -19,13 +19,15 @@ const TAG_PALETTE = [
 ]
 
 const SECTIONS = [
-  { id: 'sp-ai', label: 'AI 요약 엔진', icon: '✨' },
-  { id: 'sp-tags', label: '태그 · 프로젝트', icon: '🏷️' },
-  { id: 'sp-org', label: '소속 · 직책', icon: '🏢' },
-  { id: 'sp-people', label: '참석자', icon: '👥' },
+  { id: 'ai', label: 'AI 요약 엔진', icon: '✨' },
+  { id: 'tags', label: '태그 · 프로젝트', icon: '🏷️' },
+  { id: 'org', label: '소속 · 직책', icon: '🏢' },
+  { id: 'people', label: '참석자', icon: '👥' },
 ] as const
 
 type SectionId = (typeof SECTIONS)[number]['id']
+
+const isSectionId = (id: string): id is SectionId => SECTIONS.some((s) => s.id === id)
 
 const errMsg = (e: unknown, fallback: string) => (e instanceof Error ? e.message : fallback)
 
@@ -36,15 +38,78 @@ const sortOrgOptions = (list: OrgOption[]) =>
     a.kind === b.kind ? a.name.localeCompare(b.name, 'ko') : a.kind.localeCompare(b.kind),
   )
 
-/* ---------- 소속/직책 컬럼 ---------- */
+/** 소속 미지정 그룹 키 (조직 이름과 충돌하지 않는 값) */
+const NO_ORG_KEY = '__no_org__'
+
+interface ParticipantDraft {
+  name: string
+  organization: string
+  department: string
+  role: string
+  email: string
+  phone: string
+}
+
+const EMPTY_DRAFT: ParticipantDraft = {
+  name: '',
+  organization: '',
+  department: '',
+  role: '',
+  email: '',
+  phone: '',
+}
+
+/* ---------- 태그 색 선택 (8색 팔레트 + 커스텀 피커) ---------- */
+
+interface ColorPalettePickerProps {
+  value: string | null
+  onChange: (color: string | null) => void
+  /** true면 선택된 스와치를 다시 눌러 해제(자동 배정) 가능 */
+  allowClear?: boolean
+}
+
+function ColorPalettePicker({ value, onChange, allowClear = false }: ColorPalettePickerProps) {
+  const isCustom = value !== null && !TAG_PALETTE.includes(value)
+  return (
+    <div className="sp-palette" role="group" aria-label="태그 색 선택">
+      {TAG_PALETTE.map((c) => (
+        <button
+          key={c}
+          type="button"
+          className={`sp-swatch${value === c ? ' selected' : ''}`}
+          style={{ background: c }}
+          aria-label={`색상 ${c}`}
+          aria-pressed={value === c}
+          title={allowClear && value === c ? '선택 해제 (자동 배정)' : c}
+          onClick={() => onChange(allowClear && value === c ? null : c)}
+        />
+      ))}
+      <label
+        className={`sp-swatch sp-swatch-custom${isCustom ? ' selected' : ''}`}
+        style={isCustom ? { background: value } : undefined}
+        title="원하는 색 직접 선택"
+      >
+        <input
+          type="color"
+          className="sp-color-input"
+          value={isCustom ? value : '#2563eb'}
+          onChange={(e) => onChange(e.target.value)}
+          aria-label="커스텀 색 선택"
+        />
+      </label>
+    </div>
+  )
+}
+
+/* ---------- 소속/부서/직책 컬럼 ---------- */
 
 interface OrgColumnProps {
-  kind: OrgOption['kind']
+  kind: OrgKind
   title: string
   placeholder: string
   options: OrgOption[]
   loading: boolean
-  onCreate: (kind: OrgOption['kind'], name: string) => Promise<boolean>
+  onCreate: (kind: OrgKind, name: string) => Promise<boolean>
   onDelete: (option: OrgOption) => void
 }
 
@@ -110,7 +175,11 @@ function OrgColumn({ kind, title, placeholder, options, loading, onCreate, onDel
 /* ---------- 설정 페이지 ---------- */
 
 export default function SettingsPage() {
-  const [activeSection, setActiveSection] = useState<SectionId>('sp-ai')
+  // 탭 — URL 해시(#ai/#tags/#org/#people)와 동기화
+  const [activeSection, setActiveSection] = useState<SectionId>(() => {
+    const id = window.location.hash.slice(1)
+    return isSectionId(id) ? id : 'ai'
+  })
 
   // 태그 · 프로젝트
   const [tags, setTags] = useState<Tag[] | null>(null)
@@ -120,23 +189,21 @@ export default function SettingsPage() {
   const [tagAdding, setTagAdding] = useState(false)
   const [editingTagId, setEditingTagId] = useState<number | null>(null)
   const [editTagName, setEditTagName] = useState('')
+  const [editTagColor, setEditTagColor] = useState<string | null>(null)
   const [tagSaving, setTagSaving] = useState(false)
 
-  // 소속 · 직책
+  // 소속 · 직책 (org-options 사전)
   const [orgOptions, setOrgOptions] = useState<OrgOption[] | null>(null)
   const [orgError, setOrgError] = useState('')
 
   // 참석자 디렉터리
   const [participants, setParticipants] = useState<Participant[] | null>(null)
   const [peopleError, setPeopleError] = useState('')
-  const [pName, setPName] = useState('')
-  const [pDept, setPDept] = useState('')
-  const [pRole, setPRole] = useState('')
+  const [draft, setDraft] = useState<ParticipantDraft>(EMPTY_DRAFT)
   const [pAdding, setPAdding] = useState(false)
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({})
   const [editingId, setEditingId] = useState<number | null>(null)
-  const [editName, setEditName] = useState('')
-  const [editDept, setEditDept] = useState('')
-  const [editRole, setEditRole] = useState('')
+  const [edit, setEdit] = useState<ParticipantDraft>(EMPTY_DRAFT)
   const [savingEdit, setSavingEdit] = useState(false)
 
   // 초기 데이터 로드
@@ -180,27 +247,19 @@ export default function SettingsPage() {
     }
   }, [])
 
-  // 스크롤 스파이 — 현재 보이는 섹션을 좌측 네비에 표시
+  // 주소창에서 해시를 직접 바꾼 경우 탭 동기화
   useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const visible = entries
-          .filter((en) => en.isIntersecting)
-          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)
-        if (visible.length > 0) setActiveSection(visible[0].target.id as SectionId)
-      },
-      { rootMargin: '-15% 0px -65% 0px' },
-    )
-    for (const s of SECTIONS) {
-      const el = document.getElementById(s.id)
-      if (el) observer.observe(el)
+    const onHashChange = () => {
+      const id = window.location.hash.slice(1)
+      if (isSectionId(id)) setActiveSection(id)
     }
-    return () => observer.disconnect()
+    window.addEventListener('hashchange', onHashChange)
+    return () => window.removeEventListener('hashchange', onHashChange)
   }, [])
 
   const goToSection = (id: SectionId) => {
     setActiveSection(id)
-    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    window.history.replaceState(null, '', `#${id}`)
   }
 
   /* ----- 태그 CRUD ----- */
@@ -226,6 +285,7 @@ export default function SettingsPage() {
   const startTagEdit = (t: Tag) => {
     setEditingTagId(t.id)
     setEditTagName(t.name)
+    setEditTagColor(t.color)
   }
 
   const handleTagEditSubmit = async (e: FormEvent) => {
@@ -234,18 +294,21 @@ export default function SettingsPage() {
     const name = editTagName.trim()
     if (!name) return
     const current = (tags ?? []).find((t) => t.id === editingTagId)
-    if (current && current.name === name) {
+    const data: { name?: string; color?: string } = {}
+    if (!current || current.name !== name) data.name = name
+    if (editTagColor && (!current || current.color !== editTagColor)) data.color = editTagColor
+    if (Object.keys(data).length === 0) {
       setEditingTagId(null)
       return
     }
     setTagSaving(true)
     setTagError('')
     try {
-      const updated = await api.updateTag(editingTagId, { name })
+      const updated = await api.updateTag(editingTagId, data)
       setTags((prev) => sortTags((prev ?? []).map((t) => (t.id === updated.id ? updated : t))))
       setEditingTagId(null)
     } catch (err: unknown) {
-      setTagError(errMsg(err, '태그 이름을 변경하지 못했어요'))
+      setTagError(errMsg(err, '태그를 수정하지 못했어요'))
     } finally {
       setTagSaving(false)
     }
@@ -266,9 +329,9 @@ export default function SettingsPage() {
     }
   }
 
-  /* ----- 소속/직책 CRUD ----- */
+  /* ----- 소속/부서/직책 사전 CRUD ----- */
 
-  const handleCreateOrgOption = async (kind: OrgOption['kind'], name: string) => {
+  const handleCreateOrgOption = async (kind: OrgKind, name: string) => {
     setOrgError('')
     try {
       const created = await api.createOrgOption({ kind, name })
@@ -290,28 +353,88 @@ export default function SettingsPage() {
     }
   }
 
+  /** 콤보박스 자유 입력값을 org-options 사전에 자동 등록 (중복 400은 무시) */
+  const ensureOrgOption = async (kind: OrgKind, rawName: string) => {
+    const name = rawName.trim()
+    if (!name) return
+    if ((orgOptions ?? []).some((o) => o.kind === kind && o.name === name)) return
+    try {
+      const created = await api.createOrgOption({ kind, name })
+      setOrgOptions((prev) => {
+        if ((prev ?? []).some((o) => o.kind === kind && o.name === name)) return prev
+        return sortOrgOptions([...(prev ?? []), created])
+      })
+    } catch {
+      /* 이미 등록돼 있어요(400) 등은 조용히 무시 */
+    }
+  }
+
+  const organizationOptions = (orgOptions ?? []).filter((o) => o.kind === 'organization')
   const departmentOptions = (orgOptions ?? []).filter((o) => o.kind === 'department')
   const roleOptions = (orgOptions ?? []).filter((o) => o.kind === 'role')
 
   /* ----- 참석자 CRUD ----- */
 
+  // 소속(organization)별 그룹 — 이름 가나다순, '소속 미지정'은 마지막
+  const participantGroups = useMemo(() => {
+    if (!participants) return []
+    const map = new Map<string, Participant[]>()
+    for (const p of participants) {
+      const key = (p.organization ?? '').trim()
+      const list = map.get(key)
+      if (list) list.push(p)
+      else map.set(key, [p])
+    }
+    const groups = [...map.entries()]
+      .filter(([org]) => org !== '')
+      .sort((a, b) => a[0].localeCompare(b[0], 'ko'))
+      .map(([org, list]) => ({ key: org, name: org, list }))
+    const noOrg = map.get('')
+    if (noOrg) groups.push({ key: NO_ORG_KEY, name: '', list: noOrg })
+    for (const g of groups) g.list.sort((a, b) => a.name.localeCompare(b.name, 'ko'))
+    return groups
+  }, [participants])
+
+  const toggleGroup = (key: string) => {
+    setCollapsedGroups((prev) => ({ ...prev, [key]: !prev[key] }))
+  }
+
+  const setDraftField = (key: keyof ParticipantDraft, value: string) => {
+    setDraft((prev) => ({ ...prev, [key]: value }))
+  }
+
+  const setEditField = (key: keyof ParticipantDraft, value: string) => {
+    setEdit((prev) => ({ ...prev, [key]: value }))
+  }
+
   const handleAddParticipant = async (e: FormEvent) => {
     e.preventDefault()
-    const name = pName.trim()
+    const name = draft.name.trim()
     if (!name || pAdding) return
     setPAdding(true)
     setPeopleError('')
     try {
-      const data: { name: string; department?: string; role?: string } = { name }
-      const dept = pDept.trim()
-      const role = pRole.trim()
-      if (dept) data.department = dept
-      if (role) data.role = role
+      const data: {
+        name: string
+        organization?: string
+        department?: string
+        role?: string
+        email?: string
+        phone?: string
+      } = { name }
+      if (draft.organization.trim()) data.organization = draft.organization.trim()
+      if (draft.department.trim()) data.department = draft.department.trim()
+      if (draft.role.trim()) data.role = draft.role.trim()
+      if (draft.email.trim()) data.email = draft.email.trim()
+      if (draft.phone.trim()) data.phone = draft.phone.trim()
       const created = await api.createParticipant(data)
+      await Promise.all([
+        ensureOrgOption('organization', draft.organization),
+        ensureOrgOption('department', draft.department),
+        ensureOrgOption('role', draft.role),
+      ])
       setParticipants((prev) => [...(prev ?? []), created])
-      setPName('')
-      setPDept('')
-      setPRole('')
+      setDraft(EMPTY_DRAFT)
     } catch (err: unknown) {
       setPeopleError(errMsg(err, '참석자를 추가하지 못했어요'))
     } finally {
@@ -321,9 +444,14 @@ export default function SettingsPage() {
 
   const startEdit = (p: Participant) => {
     setEditingId(p.id)
-    setEditName(p.name)
-    setEditDept(p.department ?? '')
-    setEditRole(p.role ?? '')
+    setEdit({
+      name: p.name,
+      organization: p.organization ?? '',
+      department: p.department ?? '',
+      role: p.role ?? '',
+      email: p.email ?? '',
+      phone: p.phone ?? '',
+    })
   }
 
   const cancelEdit = () => {
@@ -332,17 +460,25 @@ export default function SettingsPage() {
 
   const saveEdit = async () => {
     if (editingId === null || savingEdit) return
-    const name = editName.trim()
+    const name = edit.name.trim()
     if (!name) return
     setSavingEdit(true)
     setPeopleError('')
     try {
-      // 빈 문자열은 백엔드에서 NULL 처리됨 (소속/직책 비우기)
+      // 빈 문자열은 백엔드에서 NULL 처리됨 (값 비우기)
       const updated = await api.updateParticipant(editingId, {
         name,
-        department: editDept.trim(),
-        role: editRole.trim(),
+        organization: edit.organization.trim(),
+        department: edit.department.trim(),
+        role: edit.role.trim(),
+        email: edit.email.trim(),
+        phone: edit.phone.trim(),
       })
+      await Promise.all([
+        ensureOrgOption('organization', edit.organization),
+        ensureOrgOption('department', edit.department),
+        ensureOrgOption('role', edit.role),
+      ])
       setParticipants((prev) => (prev ?? []).map((x) => (x.id === updated.id ? updated : x)))
       setEditingId(null)
     } catch (err: unknown) {
@@ -374,19 +510,426 @@ export default function SettingsPage() {
     }
   }
 
+  /* ----- 렌더 ----- */
+
+  const renderTagsSection = () => (
+    <section className="card settings-card">
+      <div className="settings-card-head">
+        <h2 className="settings-card-title">
+          <span aria-hidden="true">🏷️</span> 태그 · 프로젝트
+        </h2>
+        <p className="settings-card-desc">
+          회의를 프로젝트/과제별로 분류합니다 (예: Consurt, Panicare, AX Sprint).
+        </p>
+      </div>
+
+      {tagError && <div className="sp-error">{tagError}</div>}
+
+      <form className="sp-tag-add" onSubmit={handleAddTag}>
+        <input
+          className="input sp-tag-name-input"
+          placeholder="새 태그 이름"
+          value={tagName}
+          onChange={(e) => setTagName(e.target.value)}
+        />
+        <ColorPalettePicker value={tagColor} onChange={setTagColor} allowClear />
+        <button type="submit" className="btn btn-primary" disabled={!tagName.trim() || tagAdding}>
+          {tagAdding ? '추가 중...' : '추가'}
+        </button>
+      </form>
+      <p className="sp-hint">
+        색을 고르지 않으면 팔레트에서 자동으로 배정돼요. 맨 끝 무지개 스와치로 원하는 색을 직접 고를
+        수도 있어요.
+      </p>
+
+      {tags === null ? (
+        <div className="sp-loading">
+          <span className="spinner" />
+        </div>
+      ) : tags.length === 0 ? (
+        <p className="sp-empty">등록된 태그가 없어요. 위에서 첫 태그를 만들어보세요.</p>
+      ) : (
+        <ul className="sp-tag-list">
+          {tags.map((t) => (
+            <li key={t.id} className="sp-tag-row">
+              <span
+                className="sp-dot"
+                style={{ background: editingTagId === t.id ? (editTagColor ?? t.color) : t.color }}
+              />
+              {editingTagId === t.id ? (
+                <form className="sp-inline-form sp-tag-edit-form" onSubmit={handleTagEditSubmit}>
+                  <input
+                    autoFocus
+                    className="input sp-inline-input"
+                    value={editTagName}
+                    onChange={(e) => setEditTagName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Escape') setEditingTagId(null)
+                    }}
+                  />
+                  <ColorPalettePicker value={editTagColor} onChange={setEditTagColor} />
+                  <button
+                    type="submit"
+                    className="btn btn-soft"
+                    disabled={!editTagName.trim() || tagSaving}
+                  >
+                    {tagSaving ? '저장 중...' : '저장'}
+                  </button>
+                  <button type="button" className="btn btn-ghost" onClick={() => setEditingTagId(null)}>
+                    취소
+                  </button>
+                </form>
+              ) : (
+                <>
+                  <span className="sp-tag-name">{t.name}</span>
+                  <div className="sp-row-actions">
+                    <button
+                      type="button"
+                      className="btn-icon"
+                      title="이름/색 수정"
+                      aria-label={`${t.name} 수정`}
+                      onClick={() => startTagEdit(t)}
+                    >
+                      ✏️
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-icon sp-icon-danger"
+                      title="삭제"
+                      aria-label={`${t.name} 삭제`}
+                      onClick={(e) => handleDeleteTag(t, e)}
+                    >
+                      🗑
+                    </button>
+                  </div>
+                </>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  )
+
+  const renderOrgSection = () => (
+    <section className="card settings-card">
+      <div className="settings-card-head">
+        <h2 className="settings-card-title">
+          <span aria-hidden="true">🏢</span> 소속 · 직책
+        </h2>
+        <p className="settings-card-desc">
+          참석자에게 지정할 소속(회사/기관), 부서, 직책 목록을 관리합니다. 참석자 입력 시 제안
+          목록으로 사용돼요.
+        </p>
+      </div>
+
+      {orgError && <div className="sp-error">{orgError}</div>}
+
+      <div className="sp-org-grid">
+        <OrgColumn
+          kind="organization"
+          title="소속 (회사/기관)"
+          placeholder="예: 마인즈에이아이"
+          options={organizationOptions}
+          loading={orgOptions === null}
+          onCreate={handleCreateOrgOption}
+          onDelete={handleDeleteOrgOption}
+        />
+        <OrgColumn
+          kind="department"
+          title="부서"
+          placeholder="예: AI사업부"
+          options={departmentOptions}
+          loading={orgOptions === null}
+          onCreate={handleCreateOrgOption}
+          onDelete={handleDeleteOrgOption}
+        />
+        <OrgColumn
+          kind="role"
+          title="직책"
+          placeholder="예: 팀장"
+          options={roleOptions}
+          loading={orgOptions === null}
+          onCreate={handleCreateOrgOption}
+          onDelete={handleDeleteOrgOption}
+        />
+      </div>
+    </section>
+  )
+
+  const renderPersonRow = (p: Participant) =>
+    editingId === p.id ? (
+      <tr key={p.id} className="sp-row-editing">
+        <td colSpan={6}>
+          <div className="sp-edit-form">
+            <div className="sp-edit-grid">
+              <label className="sp-edit-field">
+                <span className="sp-edit-label">이름 *</span>
+                <div className="sp-cell-name">
+                  <Avatar name={edit.name || p.name} color={p.color} size={28} />
+                  <input
+                    autoFocus
+                    className="input sp-inline-input"
+                    value={edit.name}
+                    onChange={(e) => setEditField('name', e.target.value)}
+                    onKeyDown={handleEditKeyDown}
+                    placeholder="이름"
+                  />
+                </div>
+              </label>
+              <label className="sp-edit-field">
+                <span className="sp-edit-label">소속 (회사/기관)</span>
+                <input
+                  className="input sp-inline-input"
+                  list="sp-organization-options"
+                  value={edit.organization}
+                  onChange={(e) => setEditField('organization', e.target.value)}
+                  onKeyDown={handleEditKeyDown}
+                  placeholder="소속"
+                />
+              </label>
+              <label className="sp-edit-field">
+                <span className="sp-edit-label">부서</span>
+                <input
+                  className="input sp-inline-input"
+                  list="sp-dept-options"
+                  value={edit.department}
+                  onChange={(e) => setEditField('department', e.target.value)}
+                  onKeyDown={handleEditKeyDown}
+                  placeholder="부서"
+                />
+              </label>
+              <label className="sp-edit-field">
+                <span className="sp-edit-label">직책</span>
+                <input
+                  className="input sp-inline-input"
+                  list="sp-role-options"
+                  value={edit.role}
+                  onChange={(e) => setEditField('role', e.target.value)}
+                  onKeyDown={handleEditKeyDown}
+                  placeholder="직책"
+                />
+              </label>
+              <label className="sp-edit-field">
+                <span className="sp-edit-label">이메일</span>
+                <input
+                  className="input sp-inline-input"
+                  type="email"
+                  value={edit.email}
+                  onChange={(e) => setEditField('email', e.target.value)}
+                  onKeyDown={handleEditKeyDown}
+                  placeholder="name@example.com"
+                />
+              </label>
+              <label className="sp-edit-field">
+                <span className="sp-edit-label">전화</span>
+                <input
+                  className="input sp-inline-input"
+                  value={edit.phone}
+                  onChange={(e) => setEditField('phone', e.target.value)}
+                  onKeyDown={handleEditKeyDown}
+                  placeholder="010-0000-0000"
+                />
+              </label>
+            </div>
+            <div className="sp-edit-actions">
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => void saveEdit()}
+                disabled={!edit.name.trim() || savingEdit}
+              >
+                {savingEdit ? '저장 중...' : '저장'}
+              </button>
+              <button type="button" className="btn btn-ghost" onClick={cancelEdit}>
+                취소
+              </button>
+            </div>
+          </div>
+        </td>
+      </tr>
+    ) : (
+      <tr key={p.id} className="sp-row" onClick={() => startEdit(p)}>
+        <td>
+          <div className="sp-cell-name">
+            <Avatar name={p.name} color={p.color} size={28} />
+            <span>{p.name}</span>
+          </div>
+        </td>
+        <td className="sp-cell-muted">{p.department || '—'}</td>
+        <td className="sp-cell-muted">{p.role || '—'}</td>
+        <td className="sp-cell-muted">{p.email || '—'}</td>
+        <td className="sp-cell-muted">{p.phone || '—'}</td>
+        <td className="sp-td-actions">
+          <button
+            type="button"
+            className="btn-icon"
+            title="수정"
+            aria-label={`${p.name} 수정`}
+            onClick={(e) => {
+              e.stopPropagation()
+              startEdit(p)
+            }}
+          >
+            ✏️
+          </button>
+          <button
+            type="button"
+            className="btn-icon sp-icon-danger"
+            title="삭제"
+            aria-label={`${p.name} 삭제`}
+            onClick={(e) => handleDeleteParticipant(p, e)}
+          >
+            🗑
+          </button>
+        </td>
+      </tr>
+    )
+
+  const renderPeopleSection = () => (
+    <section className="card settings-card">
+      <div className="settings-card-head">
+        <h2 className="settings-card-title">
+          <span aria-hidden="true">👥</span> 참석자
+        </h2>
+        <p className="settings-card-desc">
+          회의에 참석하는 사람들의 디렉터리입니다. 소속별로 묶어서 보여드려요. 행을 클릭하면 바로
+          수정할 수 있어요.
+        </p>
+      </div>
+
+      {peopleError && <div className="sp-error">{peopleError}</div>}
+
+      <datalist id="sp-organization-options">
+        {organizationOptions.map((o) => (
+          <option key={o.id} value={o.name} />
+        ))}
+      </datalist>
+      <datalist id="sp-dept-options">
+        {departmentOptions.map((o) => (
+          <option key={o.id} value={o.name} />
+        ))}
+      </datalist>
+      <datalist id="sp-role-options">
+        {roleOptions.map((o) => (
+          <option key={o.id} value={o.name} />
+        ))}
+      </datalist>
+
+      <form className="sp-people-add" onSubmit={handleAddParticipant}>
+        <input
+          className="input"
+          placeholder="이름 *"
+          value={draft.name}
+          onChange={(e) => setDraftField('name', e.target.value)}
+        />
+        <input
+          className="input"
+          placeholder="소속 (회사/기관)"
+          list="sp-organization-options"
+          value={draft.organization}
+          onChange={(e) => setDraftField('organization', e.target.value)}
+        />
+        <input
+          className="input"
+          placeholder="부서"
+          list="sp-dept-options"
+          value={draft.department}
+          onChange={(e) => setDraftField('department', e.target.value)}
+        />
+        <input
+          className="input"
+          placeholder="직책"
+          list="sp-role-options"
+          value={draft.role}
+          onChange={(e) => setDraftField('role', e.target.value)}
+        />
+        <input
+          className="input sp-add-email"
+          type="email"
+          placeholder="이메일"
+          value={draft.email}
+          onChange={(e) => setDraftField('email', e.target.value)}
+        />
+        <input
+          className="input"
+          placeholder="전화"
+          value={draft.phone}
+          onChange={(e) => setDraftField('phone', e.target.value)}
+        />
+        <button type="submit" className="btn btn-primary" disabled={!draft.name.trim() || pAdding}>
+          {pAdding ? '추가 중...' : '+ 추가'}
+        </button>
+      </form>
+      <p className="sp-hint">소속/부서/직책에 새 이름을 입력하면 제안 목록에 자동으로 등록돼요.</p>
+
+      {participants === null ? (
+        <div className="sp-loading">
+          <span className="spinner" />
+        </div>
+      ) : participants.length === 0 ? (
+        <p className="sp-empty">등록된 참석자가 없어요. 위에서 새 참석자를 추가해보세요.</p>
+      ) : (
+        <div className="sp-groups">
+          {participantGroups.map((g) => {
+            const isCollapsed = !!collapsedGroups[g.key]
+            return (
+              <div key={g.key} className="sp-group">
+                <button
+                  type="button"
+                  className="sp-group-head"
+                  onClick={() => toggleGroup(g.key)}
+                  aria-expanded={!isCollapsed}
+                >
+                  <span className="sp-group-chevron" aria-hidden="true">
+                    {isCollapsed ? '▸' : '▾'}
+                  </span>
+                  <span className="sp-group-title">
+                    <span aria-hidden="true">🏢</span> {g.name || '소속 미지정'}
+                  </span>
+                  <span className="sp-group-count">{g.list.length}명</span>
+                </button>
+                {!isCollapsed && (
+                  <div className="sp-table-wrap">
+                    <table className="sp-table">
+                      <thead>
+                        <tr>
+                          <th>이름</th>
+                          <th>부서</th>
+                          <th>직책</th>
+                          <th>이메일</th>
+                          <th>전화</th>
+                          <th className="sp-th-actions">
+                            <span className="sr-only">관리</span>
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>{g.list.map(renderPersonRow)}</tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </section>
+  )
+
   return (
     <div className="page settings-page">
       <h1 className="page-title">설정</h1>
       <p className="sp-subtitle">AI 요약 엔진과 태그, 소속·직책, 참석자 디렉터리를 관리합니다.</p>
 
       <div className="sp-layout">
-        {/* 좌측 앵커 네비 */}
+        {/* 좌측 탭 네비 */}
         <nav className="sp-nav" aria-label="설정 섹션">
           {SECTIONS.map((s) => (
             <button
               key={s.id}
               type="button"
               className={`sp-nav-link${activeSection === s.id ? ' active' : ''}`}
+              aria-current={activeSection === s.id ? 'true' : undefined}
               onClick={() => goToSection(s.id)}
             >
               <span className="sp-nav-icon" aria-hidden="true">
@@ -397,314 +940,12 @@ export default function SettingsPage() {
           ))}
         </nav>
 
-        {/* 우측 섹션 카드 스택 */}
+        {/* 우측 — 선택된 섹션만 렌더 */}
         <div className="sp-sections">
-          {/* 1. AI 요약 엔진 */}
-          <div id="sp-ai" className="sp-block">
-            <AiEngineSettings />
-          </div>
-
-          {/* 2. 태그 · 프로젝트 */}
-          <section id="sp-tags" className="card settings-card sp-block">
-            <div className="settings-card-head">
-              <h2 className="settings-card-title">
-                <span aria-hidden="true">🏷️</span> 태그 · 프로젝트
-              </h2>
-              <p className="settings-card-desc">
-                회의를 프로젝트/과제별로 분류합니다 (예: Consurt, Panicare, AX Sprint).
-              </p>
-            </div>
-
-            {tagError && <div className="sp-error">{tagError}</div>}
-
-            <form className="sp-tag-add" onSubmit={handleAddTag}>
-              <input
-                className="input sp-tag-name-input"
-                placeholder="새 태그 이름"
-                value={tagName}
-                onChange={(e) => setTagName(e.target.value)}
-              />
-              <div className="sp-palette" role="group" aria-label="태그 색 선택">
-                {TAG_PALETTE.map((c) => (
-                  <button
-                    key={c}
-                    type="button"
-                    className={`sp-swatch${tagColor === c ? ' selected' : ''}`}
-                    style={{ background: c }}
-                    aria-label={`색상 ${c}`}
-                    aria-pressed={tagColor === c}
-                    title={tagColor === c ? '선택 해제 (자동 배정)' : c}
-                    onClick={() => setTagColor((prev) => (prev === c ? null : c))}
-                  />
-                ))}
-              </div>
-              <button type="submit" className="btn btn-primary" disabled={!tagName.trim() || tagAdding}>
-                {tagAdding ? '추가 중...' : '추가'}
-              </button>
-            </form>
-            <p className="sp-hint">색을 고르지 않으면 팔레트에서 자동으로 배정돼요.</p>
-
-            {tags === null ? (
-              <div className="sp-loading">
-                <span className="spinner" />
-              </div>
-            ) : tags.length === 0 ? (
-              <p className="sp-empty">등록된 태그가 없어요. 위에서 첫 태그를 만들어보세요.</p>
-            ) : (
-              <ul className="sp-tag-list">
-                {tags.map((t) => (
-                  <li key={t.id} className="sp-tag-row">
-                    <span className="sp-dot" style={{ background: t.color }} />
-                    {editingTagId === t.id ? (
-                      <form className="sp-inline-form" onSubmit={handleTagEditSubmit}>
-                        <input
-                          autoFocus
-                          className="input sp-inline-input"
-                          value={editTagName}
-                          onChange={(e) => setEditTagName(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Escape') setEditingTagId(null)
-                          }}
-                        />
-                        <button
-                          type="submit"
-                          className="btn btn-soft"
-                          disabled={!editTagName.trim() || tagSaving}
-                        >
-                          {tagSaving ? '저장 중...' : '저장'}
-                        </button>
-                        <button type="button" className="btn btn-ghost" onClick={() => setEditingTagId(null)}>
-                          취소
-                        </button>
-                      </form>
-                    ) : (
-                      <>
-                        <span className="sp-tag-name">{t.name}</span>
-                        <div className="sp-row-actions">
-                          <button
-                            type="button"
-                            className="btn-icon"
-                            title="이름 수정"
-                            aria-label={`${t.name} 이름 수정`}
-                            onClick={() => startTagEdit(t)}
-                          >
-                            ✏️
-                          </button>
-                          <button
-                            type="button"
-                            className="btn-icon sp-icon-danger"
-                            title="삭제"
-                            aria-label={`${t.name} 삭제`}
-                            onClick={(e) => handleDeleteTag(t, e)}
-                          >
-                            🗑
-                          </button>
-                        </div>
-                      </>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-
-          {/* 3. 소속 · 직책 */}
-          <section id="sp-org" className="card settings-card sp-block">
-            <div className="settings-card-head">
-              <h2 className="settings-card-title">
-                <span aria-hidden="true">🏢</span> 소속 · 직책
-              </h2>
-              <p className="settings-card-desc">
-                참석자에게 지정할 소속(부서)과 직책 목록을 관리합니다. 참석자 입력 시 제안 목록으로
-                사용돼요.
-              </p>
-            </div>
-
-            {orgError && <div className="sp-error">{orgError}</div>}
-
-            <div className="sp-org-grid">
-              <OrgColumn
-                kind="department"
-                title="소속 · 부서"
-                placeholder="예: AI사업부"
-                options={departmentOptions}
-                loading={orgOptions === null}
-                onCreate={handleCreateOrgOption}
-                onDelete={handleDeleteOrgOption}
-              />
-              <OrgColumn
-                kind="role"
-                title="직책"
-                placeholder="예: 팀장"
-                options={roleOptions}
-                loading={orgOptions === null}
-                onCreate={handleCreateOrgOption}
-                onDelete={handleDeleteOrgOption}
-              />
-            </div>
-          </section>
-
-          {/* 4. 참석자 디렉터리 */}
-          <section id="sp-people" className="card settings-card sp-block">
-            <div className="settings-card-head">
-              <h2 className="settings-card-title">
-                <span aria-hidden="true">👥</span> 참석자
-              </h2>
-              <p className="settings-card-desc">
-                회의에 참석하는 사람들의 디렉터리입니다. 행을 클릭하면 바로 수정할 수 있어요.
-              </p>
-            </div>
-
-            {peopleError && <div className="sp-error">{peopleError}</div>}
-
-            <datalist id="sp-dept-options">
-              {departmentOptions.map((o) => (
-                <option key={o.id} value={o.name} />
-              ))}
-            </datalist>
-            <datalist id="sp-role-options">
-              {roleOptions.map((o) => (
-                <option key={o.id} value={o.name} />
-              ))}
-            </datalist>
-
-            <form className="sp-people-add" onSubmit={handleAddParticipant}>
-              <input
-                className="input"
-                placeholder="이름"
-                value={pName}
-                onChange={(e) => setPName(e.target.value)}
-              />
-              <input
-                className="input"
-                placeholder="소속 (선택)"
-                list="sp-dept-options"
-                value={pDept}
-                onChange={(e) => setPDept(e.target.value)}
-              />
-              <input
-                className="input"
-                placeholder="직책 (선택)"
-                list="sp-role-options"
-                value={pRole}
-                onChange={(e) => setPRole(e.target.value)}
-              />
-              <button type="submit" className="btn btn-primary" disabled={!pName.trim() || pAdding}>
-                {pAdding ? '추가 중...' : '+ 추가'}
-              </button>
-            </form>
-
-            {participants === null ? (
-              <div className="sp-loading">
-                <span className="spinner" />
-              </div>
-            ) : participants.length === 0 ? (
-              <p className="sp-empty">등록된 참석자가 없어요. 위에서 새 참석자를 추가해보세요.</p>
-            ) : (
-              <div className="sp-table-wrap">
-                <table className="sp-table">
-                  <thead>
-                    <tr>
-                      <th>이름</th>
-                      <th>소속</th>
-                      <th>직책</th>
-                      <th className="sp-th-actions">
-                        <span className="sr-only">관리</span>
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {participants.map((p) =>
-                      editingId === p.id ? (
-                        <tr key={p.id} className="sp-row-editing">
-                          <td>
-                            <div className="sp-cell-name">
-                              <Avatar name={editName || p.name} color={p.color} size={28} />
-                              <input
-                                autoFocus
-                                className="input sp-inline-input"
-                                value={editName}
-                                onChange={(e) => setEditName(e.target.value)}
-                                onKeyDown={handleEditKeyDown}
-                                placeholder="이름"
-                              />
-                            </div>
-                          </td>
-                          <td>
-                            <input
-                              className="input sp-inline-input"
-                              list="sp-dept-options"
-                              value={editDept}
-                              onChange={(e) => setEditDept(e.target.value)}
-                              onKeyDown={handleEditKeyDown}
-                              placeholder="소속"
-                            />
-                          </td>
-                          <td>
-                            <input
-                              className="input sp-inline-input"
-                              list="sp-role-options"
-                              value={editRole}
-                              onChange={(e) => setEditRole(e.target.value)}
-                              onKeyDown={handleEditKeyDown}
-                              placeholder="직책"
-                            />
-                          </td>
-                          <td className="sp-td-actions">
-                            <button
-                              type="button"
-                              className="btn btn-primary"
-                              onClick={() => void saveEdit()}
-                              disabled={!editName.trim() || savingEdit}
-                            >
-                              {savingEdit ? '저장 중...' : '저장'}
-                            </button>
-                            <button type="button" className="btn btn-ghost" onClick={cancelEdit}>
-                              취소
-                            </button>
-                          </td>
-                        </tr>
-                      ) : (
-                        <tr key={p.id} className="sp-row" onClick={() => startEdit(p)}>
-                          <td>
-                            <div className="sp-cell-name">
-                              <Avatar name={p.name} color={p.color} size={28} />
-                              <span>{p.name}</span>
-                            </div>
-                          </td>
-                          <td className="sp-cell-muted">{p.department || '—'}</td>
-                          <td className="sp-cell-muted">{p.role || '—'}</td>
-                          <td className="sp-td-actions">
-                            <button
-                              type="button"
-                              className="btn-icon"
-                              title="수정"
-                              aria-label={`${p.name} 수정`}
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                startEdit(p)
-                              }}
-                            >
-                              ✏️
-                            </button>
-                            <button
-                              type="button"
-                              className="btn-icon sp-icon-danger"
-                              title="삭제"
-                              aria-label={`${p.name} 삭제`}
-                              onClick={(e) => handleDeleteParticipant(p, e)}
-                            >
-                              🗑
-                            </button>
-                          </td>
-                        </tr>
-                      ),
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </section>
+          {activeSection === 'ai' && <AiEngineSettings />}
+          {activeSection === 'tags' && renderTagsSection()}
+          {activeSection === 'org' && renderOrgSection()}
+          {activeSection === 'people' && renderPeopleSection()}
         </div>
       </div>
     </div>

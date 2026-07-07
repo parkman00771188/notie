@@ -16,8 +16,18 @@
 - minutes_md 마크다운 구조는 모든 엔진 공통 (Gemini의 detail 문단은 상세 내용 섹션에 사용).
 - 세그먼트 0개(무음)면 빈 배열 + "인식된 음성이 없습니다" 안내.
 - test_gemini_key(key) -> (ok, message): settings API의 연결 테스트에서 재사용.
+- 2차 개선 A: get_summary_prompt() — app_settings 'summary_prompt' 조회(사용자 지정 지시사항).
+  LLM 프롬프트에 (a) 사용자 지시사항 섹션(있을 때만), (b) 북마크 목록 + 메모를
+  요약/회의록에 반드시 반영하라는 지시 포함.
+- SPEC H+I(메모 필터/일반 메모): LLM 프롬프트의 북마크 목록은 kind='mark' 제외,
+  kind='memo'(또는 kind 없는 레거시 dict)는 "[HH:MM:SS] 제목", kind='note'는 "(일반 메모) 제목".
+- SPEC H(장문 스크립트 파일 첨부): Gemini 호출 시 전체 스크립트가
+  config.GEMINI_ATTACH_THRESHOLD 초과이면 프롬프트에 인라인하지 않고
+  parts=[{text: 지시문+메모목록+transcript.txt 참고 안내}, {inline_data: base64 텍스트 파일}]로 첨부.
+  임계값 이하는 기존 인라인 유지. Ollama는 항상 인라인.
 """
 
+import base64
 import json
 import logging
 import re
@@ -39,6 +49,7 @@ _MAX_ITEMS_LLM = 8           # LLM(Gemini/Ollama) 응답 방어적 상한
 _MAX_TRANSCRIPT_CHARS = 12000  # 프롬프트에 넣을 녹취록 길이 제한
 
 GEMINI_KEY_SETTING = "gemini_api_key"
+SUMMARY_PROMPT_SETTING = "summary_prompt"
 
 
 # ---------------------------------------------------------------------------
@@ -160,27 +171,81 @@ _LLM_SYSTEM_PROMPT = (
 )
 
 
+def get_summary_prompt() -> str | None:
+    """사용자 지정 요약 지시사항 조회 — app_settings 'summary_prompt', 없거나 비면 None."""
+    try:
+        conn = db.get_conn()
+        try:
+            row = conn.execute(
+                "SELECT value FROM app_settings WHERE key = ?",
+                (SUMMARY_PROMPT_SETTING,),
+            ).fetchone()
+        finally:
+            conn.close()
+        if row is not None:
+            value = str(row["value"] or "").strip()
+            if value:
+                return value
+    except Exception as exc:
+        logger.warning("summarizer: summary_prompt 조회 실패 — 기본 프롬프트만 사용: %s", exc)
+    return None
+
+
 def _build_llm_user_prompt(
     meeting: dict,
     transcript: str,
     bookmarks: list[dict],
     participants: list[dict],
     detail_key: str,
+    include_transcript: bool = True,
 ) -> str:
-    """Gemini/Ollama 공용 요약 프롬프트. detail_key는 상세 문단의 JSON 키 이름."""
+    """Gemini/Ollama 공용 요약 프롬프트. detail_key는 상세 문단의 JSON 키 이름.
+
+    include_transcript=False면 녹취록을 인라인하지 않고 첨부 파일(transcript.txt)을
+    참고하라는 안내 문구로 대체한다 (SPEC H — Gemini 장문 스크립트 파일 첨부).
+    """
     names = ", ".join(str(p.get("name") or "") for p in participants if p.get("name")) or "미지정"
-    bookmark_lines = "\n".join(
-        f"- {_format_clock(b.get('time_sec') or 0)} {str(b.get('title') or '').strip()}"
-        for b in bookmarks
-    ) or "없음"
-    clipped = transcript[:_MAX_TRANSCRIPT_CHARS]
+
+    # 메모 목록 (SPEC H+I) — kind='mark'는 시간 핀일 뿐이므로 제외,
+    # kind='memo'(kind 없는 레거시 dict 포함)는 "[HH:MM:SS] 제목", kind='note'는 "(일반 메모) 제목"
+    memo_lines: list[str] = []
+    for b in bookmarks:
+        kind = str(b.get("kind") or "memo")  # 레거시 dict(kind 없음)는 memo 취급
+        if kind == "mark":
+            continue
+        title = str(b.get("title") or "").strip()
+        if kind == "note":
+            memo_lines.append(f"(일반 메모) {title}")
+        else:
+            memo_lines.append(f"[{_format_clock(b.get('time_sec') or 0)}] {title}")
+    if memo_lines:
+        bookmark_block = (
+            "회의 중 메모(북마크):\n" + "\n".join(memo_lines) + "\n"
+            "사용자가 회의 중 남긴 메모는 중요 포인트이니 요약과 회의록에 반드시 반영하라.\n"
+        )
+    else:
+        bookmark_block = "회의 중 메모(북마크): 없음\n"
+
+    # 사용자 지정 추가 지시사항 (있을 때만 — SPEC 2차 개선 A)
+    user_instructions = get_summary_prompt()
+    user_block = (
+        "\n\n다음은 사용자가 지정한 추가 지시사항이다. "
+        f"기본 규칙과 충돌하면 사용자 지시를 우선하라:\n{user_instructions}"
+        if user_instructions
+        else ""
+    )
+
+    if include_transcript:
+        transcript_block = f"녹취록:\n{transcript[:_MAX_TRANSCRIPT_CHARS]}\n"
+    else:
+        transcript_block = "전체 스크립트는 첨부된 텍스트 파일(transcript.txt)을 참고하라.\n"
 
     return (
         "다음 회의 녹취록을 분석해서 아래 JSON 형식으로 요약해주세요.\n\n"
         f"회의 제목: {str(meeting.get('title') or '제목 없음')}\n"
         f"참석자: {names}\n"
-        f"회의 중 메모(북마크):\n{bookmark_lines}\n\n"
-        f"녹취록:\n{clipped}\n\n"
+        f"{bookmark_block}\n"
+        f"{transcript_block}\n"
         "출력 JSON 형식 (모든 값은 한국어로 작성):\n"
         "{\n"
         '  "key_points": ["회의의 핵심 내용을 요약한 문장 3~5개"],\n'
@@ -188,6 +253,7 @@ def _build_llm_user_prompt(
         '  "action_items": [{"text": "해야 할 일", "owner": "담당자 이름 또는 null", "due": "기한 또는 null"}],\n'
         f'  "{detail_key}": "회의 전체 내용을 3~5문장으로 정리한 상세 요약 문단"\n'
         "}"
+        f"{user_block}"
     )
 
 
@@ -223,19 +289,40 @@ def _try_gemini(
     participants: list[dict],
     api_key: str,
 ) -> tuple[dict, str]:
-    """Gemini generateContent REST 호출로 요약 JSON을 받는다. 실패 시 예외를 던진다."""
+    """Gemini generateContent REST 호출로 요약 JSON을 받는다. 실패 시 예외를 던진다.
+
+    전체 스크립트가 config.GEMINI_ATTACH_THRESHOLD 초과이면 프롬프트에 인라인하지 않고
+    별도 inline_data 파트(text/plain, base64)로 첨부한다 (SPEC H).
+    """
     import httpx  # 미설치 시 ImportError → 폴백
 
     model_name = config.GEMINI_MODEL
+    attach_transcript = len(transcript) > config.GEMINI_ATTACH_THRESHOLD
     prompt = _LLM_SYSTEM_PROMPT + "\n\n" + _build_llm_user_prompt(
-        meeting, transcript, bookmarks, participants, detail_key="detail"
+        meeting,
+        transcript,
+        bookmarks,
+        participants,
+        detail_key="detail",
+        include_transcript=not attach_transcript,
     )
+
+    parts: list[dict] = [{"text": prompt}]
+    if attach_transcript:
+        parts.append(
+            {
+                "inline_data": {
+                    "mime_type": "text/plain",
+                    "data": base64.b64encode(transcript.encode("utf-8")).decode("ascii"),
+                }
+            }
+        )
 
     resp = httpx.post(
         f"{config.GEMINI_BASE_URL.rstrip('/')}/models/{model_name}:generateContent",
         params={"key": api_key},
         json={
-            "contents": [{"parts": [{"text": prompt}]}],
+            "contents": [{"parts": parts}],
             "generationConfig": {"response_mime_type": "application/json"},
         },
         timeout=120.0,
@@ -550,12 +637,19 @@ def _build_minutes_md(
     lines += action_lines or ["_(기록된 액션 아이템이 없습니다)_"]
 
     lines += ["", "## 타임라인"]
-    sorted_bookmarks = sorted(bookmarks, key=lambda b: float(b.get("time_sec") or 0))
+    # 일반 메모(note)는 시간 개념이 없으므로 타임라인에서 제외하고 별도 섹션에 나열
+    timed = [b for b in bookmarks if b.get("kind") != "note"]
+    plain_notes = [b for b in bookmarks if b.get("kind") == "note"]
+    sorted_bookmarks = sorted(timed, key=lambda b: float(b.get("time_sec") or 0))
     timeline_lines = [
         f"- **{_format_clock(b.get('time_sec') or 0)}** — {str(b.get('title') or '').strip() or '(제목 없음)'}"
         for b in sorted_bookmarks
     ]
     lines += timeline_lines or ["_(기록된 북마크가 없습니다)_"]
+
+    if plain_notes:
+        lines += ["", "## 일반 메모"]
+        lines += [f"- {str(b.get('title') or '').strip() or '(내용 없음)'}" for b in plain_notes]
 
     lines += ["", "## 상세 내용", overview.strip() or "_(상세 내용이 없습니다)_", ""]
     return "\n".join(lines)

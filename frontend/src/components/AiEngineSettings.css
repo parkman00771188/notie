@@ -1,5 +1,6 @@
 /* ==========================================================================
-   AiEngineSettings — AI 요약 엔진 설정 카드 섹션 (Gemini API 키 관리)
+   AiEngineSettings — AI 요약 엔진 설정 카드 섹션
+   (Gemini API 키 관리 + 요약 지시사항 프롬프트 카드)
    (구 SettingsModal.css에서 이전. 색상은 global.css의 CSS 변수만 사용한다.)
    ========================================================================== */
 
@@ -120,6 +121,14 @@
 .settings-test-result.fail {
   background: var(--red-soft);
   color: var(--red);
+}
+
+/* 요약 지시사항 (프롬프트) textarea */
+.settings-prompt-textarea {
+  display: block;
+  min-height: 112px;
+  resize: vertical;
+  line-height: 1.6;
 }
 
 /* 하단 안내 문구 */

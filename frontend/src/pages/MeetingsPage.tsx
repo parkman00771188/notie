@@ -26,7 +26,7 @@ export default function MeetingsPage() {
   const [uploadOpen, setUploadOpen] = useState(false)
   const [tags, setTags] = useState<Tag[]>([])
   const [tagFilter, setTagFilter] = useState<TagFilter>('all')
-  const [view, setView] = useState<'list' | 'folder'>('list')
+  const [view, setView] = useState<'list' | 'folder'>('folder')
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
 
   // 태그 사전 로드 (필터 칩 + 폴더 색)

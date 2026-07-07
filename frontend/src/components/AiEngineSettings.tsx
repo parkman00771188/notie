@@ -6,7 +6,7 @@ import './AiEngineSettings.css'
 
 /**
  * AI 요약 엔진 설정 카드 섹션 (설정 페이지에서 사용).
- * 현재 엔진 상태 배지 + Gemini API 키 등록/테스트/삭제.
+ * 현재 엔진 상태 배지 + Gemini API 키 등록/테스트/삭제 + 요약 지시사항(프롬프트) 카드.
  */
 export function AiEngineSettings() {
   const [settings, setSettings] = useState<AppSettings | null>(null)
@@ -21,13 +21,23 @@ export function AiEngineSettings() {
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null)
   const savedTimerRef = useRef<number | null>(null)
 
+  // 요약 지시사항 (프롬프트)
+  const [promptInput, setPromptInput] = useState('')
+  const [promptError, setPromptError] = useState('')
+  const [promptSaving, setPromptSaving] = useState(false)
+  const [promptSaved, setPromptSaved] = useState(false)
+  const promptTimerRef = useRef<number | null>(null)
+
   // 마운트 시 설정 로드
   useEffect(() => {
     let cancelled = false
     api
       .getSettings()
       .then((s) => {
-        if (!cancelled) setSettings(s)
+        if (!cancelled) {
+          setSettings(s)
+          setPromptInput(s.summary_prompt)
+        }
       })
       .catch((e: unknown) => {
         if (!cancelled) setError(e instanceof Error ? e.message : '설정을 불러오지 못했어요')
@@ -44,6 +54,7 @@ export function AiEngineSettings() {
   useEffect(() => {
     return () => {
       if (savedTimerRef.current) window.clearTimeout(savedTimerRef.current)
+      if (promptTimerRef.current) window.clearTimeout(promptTimerRef.current)
     }
   }, [])
 
@@ -86,6 +97,28 @@ export function AiEngineSettings() {
     }
   }
 
+  const promptUnchanged = settings !== null && promptInput.trim() === settings.summary_prompt
+
+  const handlePromptSave = async (e: FormEvent) => {
+    e.preventDefault()
+    if (promptSaving || !settings || promptUnchanged) return
+    setPromptSaving(true)
+    setPromptError('')
+    try {
+      // 빈 문자열로 저장하면 프롬프트 삭제(기본 프롬프트만 사용)
+      const next = await api.updateSettings({ summary_prompt: promptInput.trim() })
+      setSettings(next)
+      setPromptInput(next.summary_prompt)
+      setPromptSaved(true)
+      if (promptTimerRef.current) window.clearTimeout(promptTimerRef.current)
+      promptTimerRef.current = window.setTimeout(() => setPromptSaved(false), 2000)
+    } catch (err: unknown) {
+      setPromptError(err instanceof Error ? err.message : '지시사항 저장에 실패했어요')
+    } finally {
+      setPromptSaving(false)
+    }
+  }
+
   const handleDeleteKey = async () => {
     if (deleting) return
     if (!window.confirm('저장된 Gemini API 키를 삭제할까요?\n삭제하면 Ollama 또는 내장 추출 요약으로 동작해요.')) {
@@ -119,101 +152,156 @@ export function AiEngineSettings() {
   }
 
   return (
-    <section className="card settings-card ai-engine-settings">
-      <div className="settings-card-head">
-        <h2 className="settings-card-title">
-          <span aria-hidden="true">✨</span> AI 요약 엔진
-        </h2>
-        <p className="settings-card-desc">
-          회의 요약에 사용할 엔진을 관리합니다. Gemini API 키를 등록하면 더 정확한 AI 요약을 받을 수
-          있어요.
-        </p>
-      </div>
-
-      {error && <div className="settings-error">{error}</div>}
-
-      {loading ? (
-        <div className="settings-loading">
-          <span className="spinner" />
+    <>
+      <section className="card settings-card ai-engine-settings">
+        <div className="settings-card-head">
+          <h2 className="settings-card-title">
+            <span aria-hidden="true">✨</span> AI 요약 엔진
+          </h2>
+          <p className="settings-card-desc">
+            회의 요약에 사용할 엔진을 관리합니다. Gemini API 키를 등록하면 더 정확한 AI 요약을 받을 수
+            있어요.
+          </p>
         </div>
-      ) : settings ? (
-        <>
-          <div className="settings-status-row">
-            <span className="settings-status-label">현재 엔진</span>
-            {renderEngineBadge(settings)}
-          </div>
 
-          <form onSubmit={handleSave}>
-            <label className="field-label" htmlFor="settings-gemini-key">
-              Gemini API 키
-            </label>
-            <div className="settings-key-wrap">
-              <input
-                id="settings-gemini-key"
-                className="input settings-key-input"
-                type={showKey ? 'text' : 'password'}
-                value={keyInput}
-                onChange={(e) => setKeyInput(e.target.value)}
-                placeholder="AIza..."
-                autoComplete="off"
-                spellCheck={false}
-              />
-              <button
-                type="button"
-                className="settings-key-toggle"
-                onClick={() => setShowKey((v) => !v)}
-                aria-label={showKey ? 'API 키 숨기기' : 'API 키 표시'}
-                title={showKey ? 'API 키 숨기기' : 'API 키 표시'}
-              >
-                {showKey ? '🙈' : '👁'}
-              </button>
+        {error && <div className="settings-error">{error}</div>}
+
+        {loading ? (
+          <div className="settings-loading">
+            <span className="spinner" />
+          </div>
+        ) : settings ? (
+          <>
+            <div className="settings-status-row">
+              <span className="settings-status-label">현재 엔진</span>
+              {renderEngineBadge(settings)}
             </div>
 
-            <div className="settings-actions">
-              <button
-                type="submit"
-                className="btn btn-primary"
-                disabled={!keyInput.trim() || saving}
-              >
-                {saving ? '저장 중...' : saved ? '저장됨 ✓' : '저장'}
-              </button>
-              <button
-                type="button"
-                className="btn btn-ghost"
-                onClick={handleTest}
-                disabled={!settings.gemini_api_key_set || testing}
-              >
-                {testing ? '테스트 중...' : '연결 테스트'}
-              </button>
-              {settings.gemini_api_key_set && (
+            <form onSubmit={handleSave}>
+              <label className="field-label" htmlFor="settings-gemini-key">
+                Gemini API 키
+              </label>
+              <div className="settings-key-wrap">
+                <input
+                  id="settings-gemini-key"
+                  className="input settings-key-input"
+                  type={showKey ? 'text' : 'password'}
+                  value={keyInput}
+                  onChange={(e) => setKeyInput(e.target.value)}
+                  placeholder="AIza..."
+                  autoComplete="off"
+                  spellCheck={false}
+                />
                 <button
                   type="button"
-                  className="btn btn-danger settings-delete"
-                  onClick={handleDeleteKey}
-                  disabled={deleting}
+                  className="settings-key-toggle"
+                  onClick={() => setShowKey((v) => !v)}
+                  aria-label={showKey ? 'API 키 숨기기' : 'API 키 표시'}
+                  title={showKey ? 'API 키 숨기기' : 'API 키 표시'}
                 >
-                  {deleting ? '삭제 중...' : '키 삭제'}
+                  {showKey ? '🙈' : '👁'}
                 </button>
-              )}
-            </div>
-          </form>
+              </div>
 
-          {testResult && (
-            <div className={`settings-test-result ${testResult.ok ? 'ok' : 'fail'}`}>
-              {testResult.ok ? '✅' : '❌'} {testResult.message}
-            </div>
-          )}
+              <div className="settings-actions">
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={!keyInput.trim() || saving}
+                >
+                  {saving ? '저장 중...' : saved ? '저장됨 ✓' : '저장'}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={handleTest}
+                  disabled={!settings.gemini_api_key_set || testing}
+                >
+                  {testing ? '테스트 중...' : '연결 테스트'}
+                </button>
+                {settings.gemini_api_key_set && (
+                  <button
+                    type="button"
+                    className="btn btn-danger settings-delete"
+                    onClick={handleDeleteKey}
+                    disabled={deleting}
+                  >
+                    {deleting ? '삭제 중...' : '키 삭제'}
+                  </button>
+                )}
+              </div>
+            </form>
 
-          <p className="muted settings-note">
-            키는 이 PC의 로컬 데이터베이스에만 저장됩니다.{' '}
-            <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer">
-              Google AI Studio(aistudio.google.com/apikey)
-            </a>
-            에서 무료로 발급받을 수 있어요.
+            {testResult && (
+              <div className={`settings-test-result ${testResult.ok ? 'ok' : 'fail'}`}>
+                {testResult.ok ? '✅' : '❌'} {testResult.message}
+              </div>
+            )}
+
+            <p className="muted settings-note">
+              키는 이 PC의 로컬 데이터베이스에만 저장됩니다.{' '}
+              <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer">
+                Google AI Studio(aistudio.google.com/apikey)
+              </a>
+              에서 무료로 발급받을 수 있어요.
+            </p>
+          </>
+        ) : null}
+      </section>
+
+      {/* 요약 지시사항 (프롬프트) 카드 */}
+      <section className="card settings-card ai-prompt-settings">
+        <div className="settings-card-head">
+          <h2 className="settings-card-title">
+            <span aria-hidden="true">📝</span> 요약 지시사항 (프롬프트)
+          </h2>
+          <p className="settings-card-desc">
+            AI가 요약과 회의록을 만들 때 따라야 할 추가 지시사항을 적어두세요.
           </p>
-        </>
-      ) : null}
-    </section>
+        </div>
+
+        {promptError && <div className="settings-error">{promptError}</div>}
+
+        {loading ? (
+          <div className="settings-loading">
+            <span className="spinner" />
+          </div>
+        ) : settings ? (
+          <>
+            <form onSubmit={handlePromptSave}>
+              <label className="field-label" htmlFor="settings-summary-prompt">
+                요약 지시사항
+              </label>
+              <textarea
+                id="settings-summary-prompt"
+                className="input settings-prompt-textarea"
+                value={promptInput}
+                onChange={(e) => setPromptInput(e.target.value)}
+                placeholder={
+                  '결정 사항은 담당자와 기한을 반드시 표기해줘.\n회의록은 격식체로 작성해줘.'
+                }
+                rows={4}
+                spellCheck={false}
+              />
+              <div className="settings-actions">
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={promptUnchanged || promptSaving}
+                >
+                  {promptSaving ? '저장 중...' : promptSaved ? '저장됨 ✓' : '저장'}
+                </button>
+              </div>
+            </form>
+
+            <p className="muted settings-note">
+              요약 생성 시 기본 규칙과 함께 AI에게 전달돼요. 기본 규칙과 충돌하면 이 지시사항이
+              우선됩니다. 비워두고 저장하면 기본 프롬프트만 사용해요.
+            </p>
+          </>
+        ) : null}
+      </section>
+    </>
   )
 }
 

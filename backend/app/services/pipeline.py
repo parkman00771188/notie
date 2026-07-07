@@ -155,7 +155,7 @@ def _summarize_and_store(conn, meeting_id: int) -> None:
     bookmarks = [
         dict(r)
         for r in conn.execute(
-            "SELECT id, time_sec, title, note FROM bookmarks"
+            "SELECT id, time_sec, title, note, kind FROM bookmarks"
             " WHERE meeting_id = ? ORDER BY time_sec ASC",
             (meeting_id,),
         )

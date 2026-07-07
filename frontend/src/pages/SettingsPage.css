@@ -1,5 +1,5 @@
 /* ==========================================================================
-   SettingsPage — 설정 페이지 (좌측 앵커 네비 + 섹션 카드 스택)
+   SettingsPage — 설정 페이지 (좌측 탭 네비 + 우측 선택 섹션 렌더)
    카드 섹션 공통 클래스(.settings-card 등)는 AiEngineSettings.css에 정의됨.
    색상은 global.css의 CSS 변수만 사용한다.
    ========================================================================== */
@@ -17,7 +17,7 @@
   margin-top: 24px;
 }
 
-/* ---------- 좌측 앵커 네비 (sticky) ---------- */
+/* ---------- 좌측 탭 네비 (sticky) ---------- */
 .sp-nav {
   position: sticky;
   top: 24px;
@@ -65,18 +65,14 @@
   font-size: 14px;
 }
 
-/* ---------- 우측 섹션 카드 스택 ---------- */
+/* ---------- 우측 콘텐츠 ---------- */
 .sp-sections {
   flex: 1;
   min-width: 0;
-  max-width: 760px;
+  max-width: 800px;
   display: flex;
   flex-direction: column;
   gap: 20px;
-}
-
-.sp-block {
-  scroll-margin-top: 24px;
 }
 
 /* ---------- 섹션 공통 ---------- */
@@ -193,6 +189,35 @@
   transform: scale(1.05);
 }
 
+/* 커스텀 색 스와치 — 기본은 무지개, 커스텀 색 선택 시 그 색으로 표시 */
+.sp-swatch-custom {
+  position: relative;
+  display: inline-flex;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: conic-gradient(
+    #ef4444,
+    #f08c00,
+    #16a34a,
+    #1098ad,
+    #2563eb,
+    #7048e8,
+    #d6336c,
+    #ef4444
+  );
+}
+
+.sp-color-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: none;
+  opacity: 0;
+  cursor: pointer;
+}
+
 .sp-tag-list {
   list-style: none;
   margin: 0;
@@ -212,6 +237,15 @@
 
 .sp-tag-row:hover {
   background: var(--bg);
+}
+
+/* 태그 인라인 수정 폼 — 팔레트가 길어 줄바꿈 허용 */
+.sp-tag-edit-form {
+  flex-wrap: wrap;
+}
+
+.sp-tag-edit-form .sp-inline-input {
+  min-width: 140px;
 }
 
 .sp-dot {
@@ -245,11 +279,11 @@
   opacity: 1;
 }
 
-/* ---------- 소속 · 직책 (2컬럼) ---------- */
+/* ---------- 소속 · 직책 (3컬럼: 소속/부서/직책) ---------- */
 .sp-org-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 24px;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 20px;
 }
 
 .sp-org-title {
@@ -341,14 +375,75 @@
 /* ---------- 참석자 디렉터리 ---------- */
 .sp-people-add {
   display: grid;
-  grid-template-columns: 1.2fr 1fr 1fr auto;
+  grid-template-columns: 1.1fr 1fr 1fr 1fr;
   gap: 8px;
-  margin-bottom: 16px;
 }
 
 .sp-people-add .input {
   min-width: 0;
   padding: 9px 12px;
+}
+
+.sp-add-email {
+  grid-column: span 2;
+}
+
+/* 소속별 그룹 (접기/펼치기) */
+.sp-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sp-group {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.sp-group-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 11px 14px;
+  background: var(--bg);
+  border: none;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s;
+}
+
+.sp-group-head:hover {
+  background: var(--gray-soft);
+}
+
+.sp-group-chevron {
+  width: 14px;
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.sp-group-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sp-group-count {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-3);
 }
 
 .sp-table-wrap {
@@ -366,13 +461,13 @@
   font-size: 12.5px;
   font-weight: 600;
   color: var(--text-3);
-  padding: 8px 10px;
+  padding: 8px 12px;
   border-bottom: 1px solid var(--border);
   white-space: nowrap;
 }
 
 .sp-table td {
-  padding: 9px 10px;
+  padding: 9px 12px;
   border-bottom: 1px solid var(--border);
   vertical-align: middle;
 }
@@ -394,16 +489,6 @@
   background: var(--primary-soft);
 }
 
-.sp-row-editing td:first-child {
-  border-top-left-radius: 10px;
-  border-bottom-left-radius: 10px;
-}
-
-.sp-row-editing td:last-child {
-  border-top-right-radius: 10px;
-  border-bottom-right-radius: 10px;
-}
-
 .sp-cell-name {
   display: flex;
   align-items: center;
@@ -423,15 +508,6 @@
   white-space: nowrap;
 }
 
-.sp-td-actions .btn {
-  padding: 7px 12px;
-  font-size: 13px;
-}
-
-.sp-td-actions .btn + .btn {
-  margin-left: 6px;
-}
-
 .sp-row .sp-td-actions .btn-icon {
   opacity: 0;
   transition: opacity 0.15s;
@@ -440,6 +516,53 @@
 .sp-row:hover .sp-td-actions .btn-icon,
 .sp-td-actions .btn-icon:focus-visible {
   opacity: 1;
+}
+
+/* 참석자 인라인 수정 폼 (행 전체 확장) */
+.sp-edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 0;
+}
+
+.sp-edit-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px 12px;
+}
+
+.sp-edit-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.sp-edit-field .sp-cell-name {
+  gap: 8px;
+}
+
+.sp-edit-field .sp-cell-name .sp-inline-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.sp-edit-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.sp-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.sp-edit-actions .btn {
+  padding: 7px 14px;
+  font-size: 13px;
 }
 
 /* ---------- 좁은 화면 대응 (최소) ---------- */
@@ -453,5 +576,9 @@
     width: 100%;
     flex-direction: row;
     flex-wrap: wrap;
+  }
+
+  .sp-org-grid {
+    grid-template-columns: 1fr;
   }
 }

@@ -159,25 +159,25 @@ def build_minutes_pdf(
     pdf.cell(0, 12, "회의록", new_x="LMARGIN", new_y="NEXT")
     pdf.ln(3)
 
-    # ---- 표 1: 회의일시/회의명 + 참석자 (docx와 동일) ----
+    # ---- 표 1: 회의 분류(태그)/일시 + 회의명 + 참석자 (docx와 동일) ----
     tag = str(meeting.get("tag") or "").strip()
-    meeting_name = str(meeting.get("title") or "")
-    if tag:
-        meeting_name += f"  (#{tag})"
 
     label_style = FontFace(emphasis="BOLD", fill_color=LABEL_BG)
     pdf.set_font(FONT, "", 10)
     with pdf.table(
-        col_widths=(LABEL_W, 62, 20, 68),
+        col_widths=(LABEL_W, 58, 18, 74),
         text_align="LEFT",
         line_height=7,
         padding=1.5,
     ) as table:
         row = table.row()
-        row.cell("회의일시", style=label_style, align="CENTER")
+        row.cell("회의 분류", style=label_style, align="CENTER")
+        row.cell(tag or "-")
+        row.cell("일시", style=label_style, align="CENTER")
         row.cell(_fmt_datetime(meeting.get("started_at")))
+        row = table.row()
         row.cell("회의명", style=label_style, align="CENTER")
-        row.cell(meeting_name)
+        row.cell(str(meeting.get("title") or ""), colspan=3)
         row = table.row()
         row.cell("참석자", style=label_style, align="CENTER")
         row.cell(format_participants_grouped(participants) or "-", colspan=3)

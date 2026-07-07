@@ -183,25 +183,27 @@ def build_minutes_docx(
     _set_run(title_p.add_run("회의록"), size=22, bold=True)
     title_p.paragraph_format.space_after = Pt(10)
 
-    # ---- 표 1: 회의일시/회의명 + 참석기관 ----
-    t1 = doc.add_table(rows=2, cols=4)
+    # ---- 표 1: 회의 분류(태그)/일시 + 회의명 + 참석자 ----
+    t1 = doc.add_table(rows=3, cols=4)
     t1.style = "Table Grid"
-    widths = [Cm(2.6), Cm(6.4), Cm(2.2), Cm(usable_cm - 2.6 - 6.4 - 2.2)]
+    widths = [Cm(2.6), Cm(5.8), Cm(2.0), Cm(usable_cm - 2.6 - 5.8 - 2.0)]
     for row in t1.rows:
         for i, cell in enumerate(row.cells):
             cell.width = widths[i]
 
-    _label_cell(t1.cell(0, 0), "회의일시")
-    _cell_text(t1.cell(0, 1), _fmt_datetime(meeting.get("started_at")))
-    _label_cell(t1.cell(0, 2), "회의명")
     tag = str(meeting.get("tag") or "").strip()
-    meeting_name = str(meeting.get("title") or "")
-    if tag:
-        meeting_name += f"  (#{tag})"
-    _cell_text(t1.cell(0, 3), meeting_name)
 
-    _label_cell(t1.cell(1, 0), "참석자")
-    body = t1.cell(1, 1).merge(t1.cell(1, 2)).merge(t1.cell(1, 3))
+    _label_cell(t1.cell(0, 0), "회의 분류")
+    _cell_text(t1.cell(0, 1), tag or "-")
+    _label_cell(t1.cell(0, 2), "일시")
+    _cell_text(t1.cell(0, 3), _fmt_datetime(meeting.get("started_at")))
+
+    _label_cell(t1.cell(1, 0), "회의명")
+    name_cell = t1.cell(1, 1).merge(t1.cell(1, 2)).merge(t1.cell(1, 3))
+    _cell_text(name_cell, str(meeting.get("title") or ""))
+
+    _label_cell(t1.cell(2, 0), "참석자")
+    body = t1.cell(2, 1).merge(t1.cell(2, 2)).merge(t1.cell(2, 3))
     _cell_text(body, format_participants_grouped(participants) or "-")
 
     doc.add_paragraph().paragraph_format.space_after = Pt(2)

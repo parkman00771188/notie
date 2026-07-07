@@ -445,7 +445,7 @@ export function MeetingDetailView({ meetingId, onBack, onDeleted, onChanged }: M
           )}
           <span className="muted">참석자 {meeting.participants.length}명</span>
           <button className="btn btn-ghost detail-people-edit" onClick={() => setPickerOpen(true)}>
-            참석자 편집
+            참석자
           </button>
         </div>
       </div>

@@ -384,26 +384,41 @@ def _try_gemini(
             }
         )
 
-    resp = httpx.post(
-        f"{config.GEMINI_BASE_URL.rstrip('/')}/models/{model_name}:generateContent",
-        headers={"x-goog-api-key": api_key},
-        json={
-            "contents": [{"parts": parts}],
-            "generationConfig": {"response_mime_type": "application/json"},
+    payload = {
+        "contents": [{"parts": parts}],
+        "generationConfig": {
+            "response_mime_type": "application/json",
+            "maxOutputTokens": 16384,
+            "temperature": 0,  # 재현성·유효 JSON 확률을 높인다
         },
-        timeout=120.0,
-    )
-    resp.raise_for_status()
+    }
+    url = f"{config.GEMINI_BASE_URL.rstrip('/')}/models/{model_name}:generateContent"
 
-    text = _extract_gemini_text(resp.json())
-    parsed = json.loads(_strip_code_fences(text))
-    if not isinstance(parsed, dict):
-        raise ValueError("Gemini 응답이 JSON 객체가 아닙니다")
-    return parsed, model_name
+    # Gemini는 호출마다 응답이 달라 가끔 깨진 JSON을 반환한다 — 파싱 실패 시 재시도
+    last_err: Exception | None = None
+    for attempt in range(3):
+        resp = httpx.post(url, headers={"x-goog-api-key": api_key}, json=payload, timeout=120.0)
+        resp.raise_for_status()  # HTTP 오류(400/403 등)는 재시도하지 않고 즉시 전파
+        try:
+            text = _extract_gemini_text(resp.json())
+            parsed = extract_first_json(text)
+            if not isinstance(parsed, dict):
+                raise ValueError("Gemini 응답이 JSON 객체가 아닙니다")
+            return parsed, model_name
+        except (json.JSONDecodeError, ValueError) as exc:
+            last_err = exc
+            logger.warning(
+                "summarizer: Gemini JSON 파싱 실패(시도 %d/3) — 재시도: %s", attempt + 1, exc
+            )
+    raise last_err or ValueError("Gemini 응답 파싱 실패")
 
 
 def _extract_gemini_text(body) -> str:
-    """Gemini 응답에서 candidates[0].content.parts[0].text를 방어적으로 추출."""
+    """Gemini 응답에서 candidates[0].content.parts[*].text를 모두 이어붙여 추출.
+
+    Gemini 3.x 사고형 모델은 응답을 여러 파트로 나눠 보낼 수 있으므로 parts[0]만
+    보지 않고 모든 text 파트를 결합한다.
+    """
     candidates = body.get("candidates") if isinstance(body, dict) else None
     if not isinstance(candidates, list) or not candidates:
         raise ValueError("Gemini 응답에 candidates가 없습니다")
@@ -411,8 +426,13 @@ def _extract_gemini_text(body) -> str:
     parts = content.get("parts") if isinstance(content, dict) else None
     if not isinstance(parts, list) or not parts:
         raise ValueError("Gemini 응답에 parts가 없습니다")
-    text = parts[0].get("text") if isinstance(parts[0], dict) else None
-    if not isinstance(text, str) or not text.strip():
+    texts = [
+        p["text"]
+        for p in parts
+        if isinstance(p, dict) and isinstance(p.get("text"), str) and not p.get("thought")
+    ]
+    text = "".join(texts).strip()
+    if not text:
         raise ValueError("Gemini 응답에 text가 없습니다")
     return text
 
@@ -425,6 +445,20 @@ def _strip_code_fences(text: str) -> str:
         if text.rstrip().endswith("```"):
             text = text.rstrip()[:-3]
     return text.strip()
+
+
+def extract_first_json(text: str):
+    """텍스트에서 첫 번째 완결 JSON 값만 파싱한다 (뒤에 붙은 여분 데이터는 무시).
+
+    Gemini가 JSON 뒤에 설명/중복을 덧붙여 'Extra data' 오류가 나는 것을 방지.
+    STT(gemini_stt)와 요약 양쪽에서 공용으로 사용.
+    """
+    cleaned = _strip_code_fences(text)
+    start = next((i for i, ch in enumerate(cleaned) if ch in "{["), None)
+    if start is None:
+        raise ValueError("응답에서 JSON을 찾지 못했습니다")
+    obj, _end = json.JSONDecoder().raw_decode(cleaned, start)
+    return obj
 
 
 def test_gemini_key(key: str) -> tuple[bool, str]:

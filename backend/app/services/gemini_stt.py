@@ -21,7 +21,7 @@ import wave
 from pathlib import Path
 
 from .. import config, db
-from .summarizer import get_gemini_key, get_gemini_model
+from .summarizer import extract_first_json, get_gemini_key, get_gemini_model
 
 logger = logging.getLogger("gimnote.gemini_stt")
 
@@ -34,6 +34,8 @@ _GENERATE_TIMEOUT = 600.0
 # 긴 오디오는 조각으로 나눠 전사 — 응답이 출력 토큰 한도에 잘려 JSON이 깨지는 것을 방지
 _CHUNK_SECONDS = 600  # 10분
 _MAX_OUTPUT_TOKENS = 65536
+# 이 진폭(int16 최대 32767 기준) 이하면 무음으로 보고 전사하지 않음 — 환각 방지
+_SILENCE_PEAK = 350
 
 _TS_RE = re.compile(r"^\s*(?:(\d+):)?(\d{1,2}):(\d{2}(?:\.\d+)?)\s*$")
 
@@ -179,21 +181,19 @@ def _build_prompt() -> str:
         '{"start": "MM:SS", "end": "MM:SS", "text": "발화 내용"}\n'
         "- 문장 단위(대략 5~15초)로 나누고, start/end는 오디오 안에서의 실제 발화 시각\n"
         "- 1시간이 넘으면 H:MM:SS 형식 사용\n"
-        "- 무음·잡음 구간은 제외하고, 들리는 그대로 자연스러운 한국어로 표기"
+        "- 무음·잡음 구간은 제외하고, 들리는 그대로 자연스러운 한국어로 표기\n"
+        "- 사람 음성이 전혀 없거나 무음이면 빈 배열 []만 출력하고, 내용을 지어내지 마세요"
     )
 
 
 def _parse_segments(text: str) -> list[dict]:
-    cleaned = text.strip()
-    if cleaned.startswith("```"):
-        cleaned = re.sub(r"^```[a-zA-Z]*\s*", "", cleaned)
-        cleaned = re.sub(r"\s*```$", "", cleaned)
     try:
-        data = json.loads(cleaned)
-    except json.JSONDecodeError:
+        # 여분 데이터가 뒤에 붙어도 첫 완결 JSON 값만 파싱 (요약과 공용)
+        data = extract_first_json(text)
+    except Exception:
         # 응답이 토큰 한도로 중간에 잘린 경우 — 완결된 평면 객체만 건져서 복구
         data = []
-        for chunk in re.findall(r"\{[^{}]*\}", cleaned):
+        for chunk in re.findall(r"\{[^{}]*\}", text):
             try:
                 data.append(json.loads(chunk))
             except json.JSONDecodeError:
@@ -222,6 +222,22 @@ def _parse_segments(text: str) -> list[dict]:
         segments.append({"start": round(start, 2), "end": round(end, 2), "text": text_value})
     segments.sort(key=lambda s: s["start"])
     return segments
+
+
+def _wav_peak(wav_path: Path) -> int:
+    """16bit WAV의 최대 절대 진폭(0~32767). 무음 판정용."""
+    import numpy as np
+
+    peak = 0
+    with wave.open(str(wav_path), "rb") as w:
+        while True:
+            frames = w.readframes(160000)  # ~10초씩
+            if not frames:
+                break
+            arr = np.frombuffer(frames, dtype=np.int16)
+            if arr.size:
+                peak = max(peak, int(np.abs(arr).max()))
+    return peak
 
 
 def _split_wav(src: Path, chunk_seconds: int) -> list[tuple[Path, float]]:
@@ -271,25 +287,35 @@ def _transcribe_one(httpx, api_key: str, model: str, wav_path: Path) -> list[dic
                 }
             }
 
-        resp = httpx.post(
-            f"{config.GEMINI_BASE_URL.rstrip('/')}/models/{model}:generateContent",
-            headers={"x-goog-api-key": api_key},
-            json={
-                "contents": [{"parts": [audio_part, {"text": _build_prompt()}]}],
-                "generationConfig": {
-                    "response_mime_type": "application/json",
-                    "maxOutputTokens": _MAX_OUTPUT_TOKENS,
-                },
+        payload = {
+            "contents": [{"parts": [audio_part, {"text": _build_prompt()}]}],
+            "generationConfig": {
+                "response_mime_type": "application/json",
+                "maxOutputTokens": _MAX_OUTPUT_TOKENS,
+                "temperature": 0,
             },
-            timeout=_GENERATE_TIMEOUT,
-        )
-        resp.raise_for_status()
-        body = resp.json()
-        try:
-            text = body["candidates"][0]["content"]["parts"][0]["text"]
-        except (KeyError, IndexError, TypeError) as exc:
-            raise RuntimeError("Gemini 전사 응답에서 텍스트를 찾지 못했습니다") from exc
-        return _parse_segments(text)
+        }
+        url = f"{config.GEMINI_BASE_URL.rstrip('/')}/models/{model}:generateContent"
+        # 응답이 확률적이라 가끔 JSON이 깨진다 — 파싱 실패 시 재시도
+        last_err: Exception | None = None
+        for attempt in range(2):
+            resp = httpx.post(
+                url, headers={"x-goog-api-key": api_key}, json=payload, timeout=_GENERATE_TIMEOUT
+            )
+            resp.raise_for_status()
+            body = resp.json()
+            try:
+                parts = body["candidates"][0]["content"]["parts"]
+                text = "".join(
+                    p["text"]
+                    for p in parts
+                    if isinstance(p, dict) and isinstance(p.get("text"), str) and not p.get("thought")
+                )
+                return _parse_segments(text)
+            except (RuntimeError, KeyError, IndexError, TypeError) as exc:
+                last_err = exc
+                logger.warning("gemini_stt: 전사 파싱 실패(시도 %d/2) — 재시도: %s", attempt + 1, exc)
+        raise RuntimeError(f"Gemini 전사 응답 파싱 실패: {last_err}")
     finally:
         if uploaded_name:
             _delete_file(httpx, api_key, uploaded_name)
@@ -317,6 +343,12 @@ def transcribe(audio_path: str) -> list[dict]:
     try:
         duration = _transcode_to_wav(src, tmp)
 
+        # 무음/거의 무음이면 전사하지 않는다 — 생성형 모델이 무음을 환각으로 받아 적는 것 방지
+        peak = _wav_peak(tmp)
+        if peak < _SILENCE_PEAK:
+            logger.info("gemini_stt: 무음 감지(peak=%d) — 전사 생략", peak)
+            return []
+
         if duration > _CHUNK_SECONDS * 1.2:
             chunks = _split_wav(tmp, _CHUNK_SECONDS)
             chunk_files = [p for p, _ in chunks]
@@ -327,10 +359,15 @@ def transcribe(audio_path: str) -> list[dict]:
         for i, (part_path, offset) in enumerate(chunks):
             part_segments = _transcribe_one(httpx, api_key, model, part_path)
             for s in part_segments:
+                start = s["start"] + offset
+                end = s["end"] + offset
+                # 오디오 길이를 벗어나는 환각성 타임스탬프는 버리거나 클램프
+                if start > duration + 1:
+                    continue
                 segments.append(
                     {
-                        "start": round(s["start"] + offset, 2),
-                        "end": round(s["end"] + offset, 2),
+                        "start": round(min(start, duration), 2),
+                        "end": round(min(end, duration), 2),
                         "text": s["text"],
                     }
                 )

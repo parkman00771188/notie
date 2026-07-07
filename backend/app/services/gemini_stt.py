@@ -31,6 +31,9 @@ STT_ENGINE_SETTING = "stt_engine"
 _INLINE_LIMIT_BYTES = 15 * 1024 * 1024
 # 전사 응답 대기 (장시간 회의 대비)
 _GENERATE_TIMEOUT = 600.0
+# 긴 오디오는 조각으로 나눠 전사 — 응답이 출력 토큰 한도에 잘려 JSON이 깨지는 것을 방지
+_CHUNK_SECONDS = 600  # 10분
+_MAX_OUTPUT_TOKENS = 65536
 
 _TS_RE = re.compile(r"^\s*(?:(\d+):)?(\d{1,2}):(\d{2}(?:\.\d+)?)\s*$")
 
@@ -185,7 +188,19 @@ def _parse_segments(text: str) -> list[dict]:
     if cleaned.startswith("```"):
         cleaned = re.sub(r"^```[a-zA-Z]*\s*", "", cleaned)
         cleaned = re.sub(r"\s*```$", "", cleaned)
-    data = json.loads(cleaned)
+    try:
+        data = json.loads(cleaned)
+    except json.JSONDecodeError:
+        # 응답이 토큰 한도로 중간에 잘린 경우 — 완결된 평면 객체만 건져서 복구
+        data = []
+        for chunk in re.findall(r"\{[^{}]*\}", cleaned):
+            try:
+                data.append(json.loads(chunk))
+            except json.JSONDecodeError:
+                continue
+        if not data:
+            raise RuntimeError("Gemini 전사 응답 JSON을 해석하지 못했습니다")
+        logger.warning("gemini_stt: 잘린 JSON에서 %d개 세그먼트 복구", len(data))
     if isinstance(data, dict):  # {"segments": [...]} 형태도 방어적으로 허용
         data = data.get("segments") or data.get("transcript") or []
     if not isinstance(data, list):
@@ -209,34 +224,44 @@ def _parse_segments(text: str) -> list[dict]:
     return segments
 
 
-def transcribe(audio_path: str) -> list[dict]:
-    """Gemini로 오디오 전사 → [{"start", "end", "text"}]. 실패 시 RuntimeError."""
-    try:
-        import httpx
-    except ImportError as exc:
-        raise RuntimeError("httpx 패키지가 설치되어 있지 않습니다") from exc
+def _split_wav(src: Path, chunk_seconds: int) -> list[tuple[Path, float]]:
+    """16kHz 모노 WAV를 chunk_seconds 단위 조각 파일들로 분할. 반환: [(경로, 시작오프셋초)]."""
+    chunks: list[tuple[Path, float]] = []
+    with wave.open(str(src), "rb") as inp:
+        rate = inp.getframerate()
+        frames_per_chunk = rate * chunk_seconds
+        total = inp.getnframes()
+        offset_frames = 0
+        index = 0
+        while offset_frames < total:
+            n = min(frames_per_chunk, total - offset_frames)
+            data = inp.readframes(n)
+            part_path = src.with_name(f"{src.stem}_part{index}.wav")
+            with wave.open(str(part_path), "wb") as out:
+                out.setnchannels(1)
+                out.setsampwidth(2)
+                out.setframerate(rate)
+                out.writeframes(data)
+            chunks.append((part_path, offset_frames / rate))
+            offset_frames += n
+            index += 1
+    return chunks
 
-    api_key = get_gemini_key()
-    if not api_key:
-        raise RuntimeError("등록된 Gemini API 키가 없습니다")
-    model = get_gemini_model()
 
-    src = Path(audio_path)
-    tmp = Path(tempfile.gettempdir()) / f"notie_stt_{src.stem}.wav"
+def _transcribe_one(httpx, api_key: str, model: str, wav_path: Path) -> list[dict]:
+    """WAV 파일 하나를 전사 (작으면 인라인, 크면 Files API 업로드)."""
     uploaded_name: str | None = None
     try:
-        _transcode_to_wav(src, tmp)
-        size = tmp.stat().st_size
-
+        size = wav_path.stat().st_size
         if size <= _INLINE_LIMIT_BYTES:
             audio_part = {
                 "inline_data": {
                     "mime_type": "audio/wav",
-                    "data": base64.b64encode(tmp.read_bytes()).decode("ascii"),
+                    "data": base64.b64encode(wav_path.read_bytes()).decode("ascii"),
                 }
             }
         else:
-            file_info = _upload_file(httpx, api_key, tmp)
+            file_info = _upload_file(httpx, api_key, wav_path)
             uploaded_name = file_info.get("name")
             file_info = _wait_active(httpx, api_key, file_info)
             audio_part = {
@@ -251,7 +276,10 @@ def transcribe(audio_path: str) -> list[dict]:
             headers={"x-goog-api-key": api_key},
             json={
                 "contents": [{"parts": [audio_part, {"text": _build_prompt()}]}],
-                "generationConfig": {"response_mime_type": "application/json"},
+                "generationConfig": {
+                    "response_mime_type": "application/json",
+                    "maxOutputTokens": _MAX_OUTPUT_TOKENS,
+                },
             },
             timeout=_GENERATE_TIMEOUT,
         )
@@ -261,8 +289,60 @@ def transcribe(audio_path: str) -> list[dict]:
             text = body["candidates"][0]["content"]["parts"][0]["text"]
         except (KeyError, IndexError, TypeError) as exc:
             raise RuntimeError("Gemini 전사 응답에서 텍스트를 찾지 못했습니다") from exc
+        return _parse_segments(text)
+    finally:
+        if uploaded_name:
+            _delete_file(httpx, api_key, uploaded_name)
 
-        segments = _parse_segments(text)
+
+def transcribe(audio_path: str) -> list[dict]:
+    """Gemini로 오디오 전사 → [{"start", "end", "text"}]. 실패 시 RuntimeError.
+
+    긴 오디오는 10분 조각으로 나눠 순차 전사한다 — 조각별 응답이 짧아
+    출력 토큰 한도에 잘리지 않고, 타임스탬프 오차 누적도 줄어든다.
+    """
+    try:
+        import httpx
+    except ImportError as exc:
+        raise RuntimeError("httpx 패키지가 설치되어 있지 않습니다") from exc
+
+    api_key = get_gemini_key()
+    if not api_key:
+        raise RuntimeError("등록된 Gemini API 키가 없습니다")
+    model = get_gemini_model()
+
+    src = Path(audio_path)
+    tmp = Path(tempfile.gettempdir()) / f"notie_stt_{src.stem}.wav"
+    chunk_files: list[Path] = []
+    try:
+        duration = _transcode_to_wav(src, tmp)
+
+        if duration > _CHUNK_SECONDS * 1.2:
+            chunks = _split_wav(tmp, _CHUNK_SECONDS)
+            chunk_files = [p for p, _ in chunks]
+        else:
+            chunks = [(tmp, 0.0)]
+
+        segments: list[dict] = []
+        for i, (part_path, offset) in enumerate(chunks):
+            part_segments = _transcribe_one(httpx, api_key, model, part_path)
+            for s in part_segments:
+                segments.append(
+                    {
+                        "start": round(s["start"] + offset, 2),
+                        "end": round(s["end"] + offset, 2),
+                        "text": s["text"],
+                    }
+                )
+            if len(chunks) > 1:
+                logger.info(
+                    "gemini_stt: 조각 %d/%d 전사 완료 (%d개 세그먼트)",
+                    i + 1,
+                    len(chunks),
+                    len(part_segments),
+                )
+
+        segments.sort(key=lambda s: s["start"])
         logger.info("gemini_stt: 전사 완료 — %d개 세그먼트 (model=%s)", len(segments), model)
         return segments
     except RuntimeError:
@@ -272,9 +352,8 @@ def transcribe(audio_path: str) -> list[dict]:
         detail = f"HTTP {status}" if status else exc.__class__.__name__
         raise RuntimeError(f"Gemini 음성 변환 실패 ({detail})") from exc
     finally:
-        if uploaded_name:
-            _delete_file(httpx, api_key, uploaded_name)
-        try:
-            tmp.unlink(missing_ok=True)
-        except OSError:
-            pass
+        for p in [tmp, *chunk_files]:
+            try:
+                p.unlink(missing_ok=True)
+            except OSError:
+                pass

@@ -104,13 +104,13 @@ function PromptDialog({
 
   return createPortal(
     <div className="confirm-overlay" onMouseDown={handleOverlayMouseDown}>
-      <div className="confirm-card" role="dialog" aria-modal="true" aria-label={title}>
+      <div className="confirm-card prompt-card" role="dialog" aria-modal="true" aria-label={title}>
         <h3 className="confirm-title">{title}</h3>
         {message && <p className="confirm-message">{message}</p>}
         <textarea
           ref={inputRef}
           className="input prompt-input"
-          rows={2}
+          rows={5}
           value={value}
           placeholder={placeholder}
           onChange={(e) => setValue(e.target.value)}

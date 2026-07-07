@@ -45,13 +45,18 @@
   margin-top: 12px;
 }
 
-/* 입력 팝업 (window.prompt 대체, prompt.tsx) — 같은 카드 안의 textarea */
+/* 입력 팝업 (window.prompt 대체, prompt.tsx) — 확인 팝업보다 넓은 카드 + 큰 textarea */
+.prompt-card {
+  width: 560px;
+  padding: 24px 26px 22px;
+}
+
 .prompt-input {
   resize: none;
-  margin-top: 4px;
-  font-size: 14.5px;
-  line-height: 22px;
-  min-height: 68px;
-  max-height: 160px;
+  margin-top: 6px;
+  font-size: 15px;
+  line-height: 23px;
+  min-height: 150px;
+  max-height: 320px;
   overflow-y: auto;
 }

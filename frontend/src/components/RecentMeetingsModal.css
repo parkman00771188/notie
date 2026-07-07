@@ -202,10 +202,12 @@
   gap: 8px;
   padding: 11px 14px;
   border: none;
-  background: transparent;
+  /* 그룹 헤더는 연회색 배경으로 아래 회의 리스트와 확실히 구분한다 */
+  background: var(--gray-soft);
+  border-bottom: 1px solid var(--border);
   font-family: inherit;
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 800;
   color: var(--text);
   cursor: pointer;
   text-align: left;
@@ -213,7 +215,7 @@
 }
 
 .rmm-group-head:hover {
-  background: #f8fafd;
+  background: var(--primary-soft);
 }
 
 .rmm-caret {
@@ -258,7 +260,8 @@
   height: 20px;
   padding: 0 7px;
   border-radius: var(--radius-full);
-  background: var(--gray-soft);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
   color: var(--text-2);
   font-size: 12px;
   font-weight: 700;

@@ -71,6 +71,14 @@ class MeetingUpdate(BaseModel):
     participant_ids: Optional[List[int]] = None
 
 
+class SummaryUpdate(BaseModel):
+    discussion: Optional[str] = None
+    key_points: Optional[List[str]] = None
+    decisions: Optional[List[str]] = None
+    followups: Optional[List[str]] = None
+    action_items: Optional[list] = None  # [str] 또는 [{text, owner?, due?}]
+
+
 def payload_fields(model: BaseModel) -> dict:
     """요청 본문에 실제로 포함된 필드만 dict로 (pydantic v1/v2 호환)."""
     if hasattr(model, "model_dump"):
@@ -461,6 +469,118 @@ def get_status(meeting_id: int, user: dict = Depends(get_current_user)) -> dict:
     with closing(db.get_conn()) as conn:
         row = get_owned_meeting(conn, meeting_id, user["id"])
         return {"status": row["status"], "error_message": row["error_message"]}
+
+
+@router.patch("/{meeting_id}/summary")
+def update_summary(
+    meeting_id: int, body: SummaryUpdate, user: dict = Depends(get_current_user)
+) -> dict:
+    """요약 내용을 사용자가 직접 수정 — 회의록(minutes_md)도 함께 재생성한다."""
+    from ..services import summarizer
+
+    data = payload_fields(body)
+
+    def clean_list(value) -> list[str]:
+        return [str(x).strip() for x in (value or []) if str(x).strip()]
+
+    with closing(db.get_conn()) as conn:
+        row = get_owned_meeting(conn, meeting_id, user["id"])
+        srow = conn.execute(
+            "SELECT * FROM summaries WHERE meeting_id = ?", (meeting_id,)
+        ).fetchone()
+        if srow is None:
+            raise HTTPException(status_code=400, detail="아직 요약이 없어요. 먼저 AI 요약을 실행해주세요")
+
+        # 기존 값 로드 후 요청 필드만 병합
+        cur = {
+            "key_points": json.loads(srow["key_points"]),
+            "decisions": json.loads(srow["decisions"]),
+            "action_items": json.loads(srow["action_items"]),
+            "discussion": srow["discussion"] or "",
+            "followups": json.loads(srow["followups"]) if srow["followups"] else [],
+        }
+        if "discussion" in data:
+            cur["discussion"] = str(data["discussion"] or "").strip()
+        for key in ("key_points", "decisions", "followups"):
+            if key in data and data[key] is not None:
+                cur[key] = clean_list(data[key])
+        if "action_items" in data and data["action_items"] is not None:
+            items: list[dict] = []
+            for it in data["action_items"]:
+                if isinstance(it, dict):
+                    text = str(it.get("text") or "").strip()
+                    owner = it.get("owner") or None
+                    due = it.get("due") or None
+                elif isinstance(it, str):
+                    text, owner, due = it.strip(), None, None
+                else:
+                    continue
+                if text:
+                    items.append({"text": text, "owner": owner, "due": due})
+            cur["action_items"] = items
+
+        # 회의록 재생성용 참석자/북마크 로드
+        participants = [
+            dict(p)
+            for p in conn.execute(
+                """
+                SELECT p.name, p.role, p.department, p.organization
+                FROM meeting_participants mp JOIN participants p ON p.id = mp.participant_id
+                WHERE mp.meeting_id = ? ORDER BY p.id
+                """,
+                (meeting_id,),
+            ).fetchall()
+        ]
+        bookmarks = [
+            dict(b)
+            for b in conn.execute(
+                "SELECT time_sec, title, kind FROM bookmarks WHERE meeting_id = ? ORDER BY time_sec ASC, id ASC",
+                (meeting_id,),
+            ).fetchall()
+        ]
+        minutes_md = summarizer.render_minutes_md(
+            dict(row),
+            participants,
+            bookmarks,
+            cur["key_points"],
+            cur["decisions"],
+            cur["action_items"],
+            cur["discussion"],
+            cur["followups"],
+        )
+
+        with conn:
+            conn.execute(
+                """
+                UPDATE summaries SET
+                  key_points = ?, decisions = ?, action_items = ?,
+                  discussion = ?, followups = ?, minutes_md = ?, engine_note = NULL
+                WHERE meeting_id = ?
+                """,
+                (
+                    json.dumps(cur["key_points"], ensure_ascii=False),
+                    json.dumps(cur["decisions"], ensure_ascii=False),
+                    json.dumps(cur["action_items"], ensure_ascii=False),
+                    cur["discussion"],
+                    json.dumps(cur["followups"], ensure_ascii=False),
+                    minutes_md,
+                    meeting_id,
+                ),
+            )
+        srow = conn.execute(
+            "SELECT * FROM summaries WHERE meeting_id = ?", (meeting_id,)
+        ).fetchone()
+        return {
+            "key_points": json.loads(srow["key_points"]),
+            "decisions": json.loads(srow["decisions"]),
+            "action_items": json.loads(srow["action_items"]),
+            "discussion": srow["discussion"] or "",
+            "followups": json.loads(srow["followups"]) if srow["followups"] else [],
+            "engine_note": srow["engine_note"],
+            "minutes_md": srow["minutes_md"],
+            "engine": srow["engine"],
+            "created_at": srow["created_at"],
+        }
 
 
 @router.post("/{meeting_id}/summarize")

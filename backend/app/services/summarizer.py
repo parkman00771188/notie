@@ -803,6 +803,22 @@ def _participant_lines_grouped(participants: list[dict]) -> list[str]:
     return lines
 
 
+def render_minutes_md(
+    meeting: dict,
+    participants: list[dict],
+    bookmarks: list[dict],
+    key_points: list[str],
+    decisions: list[str],
+    action_items: list[dict],
+    discussion: str,
+    followups: list[str],
+) -> str:
+    """회의록 마크다운 재생성 공개 API — 요약 수동 편집 후 라우터에서 재사용."""
+    return _build_minutes_md(
+        meeting, participants, bookmarks, key_points, decisions, action_items, discussion, followups
+    )
+
+
 def _build_minutes_md(
     meeting: dict,
     participants: list[dict],

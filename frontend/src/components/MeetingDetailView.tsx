@@ -66,6 +66,17 @@ export function MeetingDetailView({ meetingId, onBack, onDeleted, onChanged }: M
   const [hourDraft, setHourDraft] = useState(9)
   const [minuteDraft, setMinuteDraft] = useState(0)
 
+  // AI 요약 내용 직접 편집 (리스트는 "한 줄에 하나" 텍스트로 편집)
+  const [editingSummary, setEditingSummary] = useState(false)
+  const [savingSummary, setSavingSummary] = useState(false)
+  const [sumDraft, setSumDraft] = useState({
+    discussion: '',
+    key_points: '',
+    decisions: '',
+    followups: '',
+    action_items: '',
+  })
+
   // 회의록 헤더의 태그 칩 색 매칭용 (실패해도 기본색으로 표시)
   useEffect(() => {
     api
@@ -231,6 +242,43 @@ export function MeetingDetailView({ meetingId, onBack, onDeleted, onChanged }: M
       notifyChanged()
     } catch (e) {
       alert(e instanceof Error ? e.message : '날짜 변경에 실패했어요')
+    }
+  }
+
+  /** 요약 편집 시작 — 리스트는 줄바꿈으로 펼쳐서 textarea에 채운다 */
+  const beginEditSummary = () => {
+    const s = meeting?.summary
+    if (!s) return
+    setSumDraft({
+      discussion: s.discussion ?? '',
+      key_points: (s.key_points ?? []).join('\n'),
+      decisions: (s.decisions ?? []).join('\n'),
+      followups: (s.followups ?? []).join('\n'),
+      action_items: (s.action_items ?? []).map((a) => a.text).join('\n'),
+    })
+    setEditingSummary(true)
+  }
+
+  const commitSummary = async () => {
+    if (!meeting || savingSummary) return
+    setSavingSummary(true)
+    const toLines = (v: string) =>
+      v.split('\n').map((x) => x.trim()).filter(Boolean)
+    try {
+      const updated = await api.updateSummary(meeting.id, {
+        discussion: sumDraft.discussion.trim(),
+        key_points: toLines(sumDraft.key_points),
+        decisions: toLines(sumDraft.decisions),
+        followups: toLines(sumDraft.followups),
+        action_items: toLines(sumDraft.action_items).map((text) => ({ text })),
+      })
+      setMeeting((prev) => (prev ? { ...prev, summary: updated } : prev))
+      setEditingSummary(false)
+      notifyChanged()
+    } catch (e) {
+      alert(e instanceof Error ? e.message : '요약 수정에 실패했어요')
+    } finally {
+      setSavingSummary(false)
     }
   }
 
@@ -672,6 +720,60 @@ export function MeetingDetailView({ meetingId, onBack, onDeleted, onChanged }: M
         {/* AI 요약 — K1 구조: 회의내용 / 핵심내용 / 결정사항(+추가 확인 필요) / 할 일 */}
         {tab === 'summary' &&
           (summary ? (
+            editingSummary ? (
+              <div className="summary-panel summary-edit">
+                <p className="muted summary-edit-hint">
+                  각 항목을 직접 수정할 수 있어요. 핵심내용·결정사항·추가 확인·할 일은 한 줄에
+                  하나씩 적어주세요. 저장하면 회의록과 문서 출력에도 반영됩니다.
+                </p>
+                <label className="field-label">회의내용 (마크다운)</label>
+                <textarea
+                  className="input summary-edit-area summary-edit-discussion"
+                  value={sumDraft.discussion}
+                  onChange={(e) => setSumDraft((d) => ({ ...d, discussion: e.target.value }))}
+                />
+                <label className="field-label">핵심내용 (한 줄에 하나)</label>
+                <textarea
+                  className="input summary-edit-area"
+                  value={sumDraft.key_points}
+                  onChange={(e) => setSumDraft((d) => ({ ...d, key_points: e.target.value }))}
+                />
+                <label className="field-label">결정사항 (한 줄에 하나)</label>
+                <textarea
+                  className="input summary-edit-area"
+                  value={sumDraft.decisions}
+                  onChange={(e) => setSumDraft((d) => ({ ...d, decisions: e.target.value }))}
+                />
+                <label className="field-label">추가 확인 필요 사항 (한 줄에 하나)</label>
+                <textarea
+                  className="input summary-edit-area"
+                  value={sumDraft.followups}
+                  onChange={(e) => setSumDraft((d) => ({ ...d, followups: e.target.value }))}
+                />
+                <label className="field-label">할 일 (한 줄에 하나)</label>
+                <textarea
+                  className="input summary-edit-area"
+                  value={sumDraft.action_items}
+                  onChange={(e) => setSumDraft((d) => ({ ...d, action_items: e.target.value }))}
+                />
+                <div className="summary-edit-actions">
+                  <button
+                    className="btn btn-ghost"
+                    onClick={() => setEditingSummary(false)}
+                    disabled={savingSummary}
+                  >
+                    취소
+                  </button>
+                  <button
+                    className="btn btn-primary"
+                    onClick={() => void commitSummary()}
+                    disabled={savingSummary}
+                  >
+                    {savingSummary ? '저장 중...' : '저장'}
+                  </button>
+                </div>
+              </div>
+            ) : (
             <div className="summary-panel">
               {summary.engine_note && (
                 <div className="engine-warn-banner">
@@ -685,6 +787,12 @@ export function MeetingDetailView({ meetingId, onBack, onDeleted, onChanged }: M
                   </button>
                 </div>
               )}
+
+              <div className="summary-toolbar">
+                <button className="btn btn-ghost" onClick={beginEditSummary}>
+                  ✏️ 요약 수정
+                </button>
+              </div>
 
               {discussionHtml && (
                 <section className="summary-section">
@@ -765,6 +873,7 @@ export function MeetingDetailView({ meetingId, onBack, onDeleted, onChanged }: M
                 </div>
               )}
             </div>
+            )
           ) : (
             <div className="empty-state">
               <div className="emoji">✨</div>

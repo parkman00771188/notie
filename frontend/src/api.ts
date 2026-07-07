@@ -7,6 +7,7 @@ import type {
   OrgKind,
   OrgOption,
   Participant,
+  Summary,
   Tag,
   User,
 } from './types'
@@ -199,6 +200,23 @@ export const api = {
 
   resummarize(id: number): Promise<{ ok: boolean }> {
     return request<{ ok: boolean }>(`/api/meetings/${id}/summarize`, { method: 'POST' })
+  },
+
+  /** 요약 내용 직접 수정 — 회의록도 함께 재생성됨. 보낸 필드만 반영 */
+  updateSummary(
+    id: number,
+    data: {
+      discussion?: string
+      key_points?: string[]
+      decisions?: string[]
+      followups?: string[]
+      action_items?: { text: string; owner?: string | null; due?: string | null }[]
+    },
+  ): Promise<Summary> {
+    return request<Summary>(`/api/meetings/${id}/summary`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    })
   },
 
   /** 파형 피크(서버 계산, ≤600개) — 브라우저 전체 디코딩 OOM 방지 */

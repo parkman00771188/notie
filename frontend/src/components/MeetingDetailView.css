@@ -684,3 +684,40 @@
   flex-shrink: 0;
   white-space: nowrap;
 }
+
+/* ---------- AI 요약 수정 ---------- */
+.summary-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 4px;
+}
+
+.summary-edit-hint {
+  font-size: 13px;
+  line-height: 1.5;
+  margin-bottom: 6px;
+}
+
+.summary-edit .field-label {
+  margin-top: 14px;
+}
+
+.summary-edit-area {
+  width: 100%;
+  resize: vertical;
+  min-height: 64px;
+  font-size: 14px;
+  line-height: 1.6;
+  font-family: inherit;
+}
+
+.summary-edit-discussion {
+  min-height: 150px;
+}
+
+.summary-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}

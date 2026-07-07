@@ -33,9 +33,14 @@ app.include_router(org.router, prefix="/api", tags=["org"])
 
 @app.get("/api/health")
 def health() -> dict:
-    from .services import stt
+    from .services import gemini_stt, stt
 
-    return {"ok": True, "whisper_model": config.WHISPER_MODEL, "whisper_device": stt.get_device_info()}
+    return {
+        "ok": True,
+        "whisper_model": config.WHISPER_MODEL,
+        "whisper_device": stt.get_device_info(),
+        "stt_engine": gemini_stt.get_engine(),
+    }
 
 
 # 프론트엔드 프로덕션 빌드가 있으면 함께 서빙 (npm run build 후 단일 서버 운용 가능)

@@ -64,8 +64,24 @@ def _run_full_job(meeting_id: int) -> None:
         except Exception:
             logger.warning("pipeline: 파형 계산 실패 — 요청 시 재계산됨 (meeting %s)", meeting_id)
 
-        # 1) 변환
-        segments = stt.transcribe(str(audio_path))
+        # 1) 변환 — 설정이 'gemini'면 Gemini 전사 시도, 실패 시 로컬 Whisper 폴백
+        segments = None
+        try:
+            from . import gemini_stt
+
+            if gemini_stt.get_engine() == "gemini":
+                try:
+                    segments = gemini_stt.transcribe(str(audio_path))
+                except Exception as exc:
+                    logger.warning(
+                        "pipeline: Gemini 전사 실패 — 로컬 Whisper로 폴백 (meeting %s): %s",
+                        meeting_id,
+                        exc,
+                    )
+        except Exception:
+            pass  # gemini_stt 모듈 문제 시에도 로컬 경로로 진행
+        if segments is None:
+            segments = stt.transcribe(str(audio_path))
 
         # 기존 세그먼트 삭제 후 삽입 (무음이면 0개 — 정상 진행)
         with conn:

@@ -478,6 +478,31 @@ props: {
   SettingsPage(태그/참석자 삭제), ComboBox(옵션 삭제), RecordPage(메모 삭제 등 있으면), RecentMeetingsPanel/TrashModal.
   (window.prompt 기반 편집은 이번 범위 아님 — 그대로 둠)
 
+## STT 엔진 선택 (L) — 로컬 Whisper ↔ Google Speech-to-Text
+
+- app_settings keys: `stt_engine` ('local'|'google', 기본 'local'), `google_stt_api_key`.
+- settings API 확장: GET/PUT 응답에 `stt_engine`, `google_stt_key_set: bool`, `google_stt_key_preview: "...abcd"|null` 포함.
+  PUT 바디에 `stt_engine?`('local'|'google' 외 400), `google_stt_api_key?`(trim, 빈 값 삭제) 수용 — 기존 upsert 패턴.
+  `POST /settings/test-google-stt` → 0.5초 무음 LINEAR16을 speech:recognize로 호출해 `{ok, message}` (400/403 "API 키가 올바르지 않거나 Speech-to-Text API가 비활성", 그 외 한국어 요약).
+- `services/google_stt.py` 신규:
+  - `get_engine() -> str` (app_settings stt_engine, 기본 'local'), `get_api_key() -> str|None` (app_settings → env `NOTIE_GOOGLE_STT_API_KEY`/`GIMNOTE_...` 폴백).
+  - `transcribe(audio_path) -> [{start, end, text}]`:
+    PyAV로 16kHz 모노 PCM16 리샘플 디코드 → **55초 청크**로 분할 → 각 청크 base64로
+    `POST https://speech.googleapis.com/v1/speech:recognize` (헤더 `x-goog-api-key`, body: config{encoding LINEAR16,
+    sampleRateHertz 16000, languageCode config.LANGUAGE 기반 'ko-KR', enableWordTimeOffsets true, enableAutomaticPunctuation true}).
+    각 result의 alternative[0]을 세그먼트 1개로: start=첫 단어 startTime+청크오프셋, end=마지막 단어 endTime+청크오프셋, text=transcript.strip().
+    단어 타임스탬프 없으면 청크 경계로 근사. 실패 시 한국어 RuntimeError(키 미포함).
+  - `test_key(key) -> tuple[bool, str]` (settings의 연결 테스트 재사용).
+- `pipeline.py`: 변환 단계에서 `google_stt.get_engine()=='google'`이고 키가 있으면 google_stt.transcribe 시도,
+  **실패 시 경고 로그 후 로컬 Whisper로 자동 폴백**(회의가 실패하지 않게). engine 정보는 로그만.
+- `/api/health`에 `stt_engine` 포함.
+- **UI (AiEngineSettings에 카드 추가)**: "🎙 음성 변환(STT) 엔진" 카드 —
+  ComboBox 또는 라디오 [로컬 Whisper (기본, 무료)] / [Google Speech-to-Text (클라우드, 분당 과금)],
+  Google 선택 시 API 키 입력(password+토글)/저장("저장됨 ✓" 패턴)/연결 테스트/키 삭제,
+  muted 안내: "GCP 콘솔에서 Speech-to-Text API를 활성화한 프로젝트의 API 키가 필요해요. Gemini(AI Studio) 키와는 별개입니다.
+  Google 변환 실패 시 자동으로 로컬 Whisper로 대체됩니다."
+  api.ts에 updateSettings 필드 확장 + testGoogleStt() 추가(뼈대 반영 예정).
+
 ## 디자인 규칙
 - global.css의 CSS 변수/클래스만 색상 소스로 사용. 배경 `--bg`, 카드 흰색 radius 12~16px + `--shadow-card`.
 - 버튼: `.btn .btn-primary|.btn-ghost|.btn-danger|.btn-soft`. 인풋: `.input`. 배지: `.badge .badge-*`. 칩: `.chip`.

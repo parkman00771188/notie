@@ -192,3 +192,69 @@
 .settings-note a {
   font-weight: 600;
 }
+
+/* ---------- 음성 변환(STT) 엔진 카드 ---------- */
+.stt-saved {
+  margin-left: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--green);
+}
+
+.stt-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.stt-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 13px 15px;
+  border: 1.5px solid var(--border);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.stt-option:hover:not(.disabled) {
+  border-color: var(--border-strong);
+}
+
+.stt-option.selected {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.stt-option.disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.stt-option input[type='radio'] {
+  margin-top: 3px;
+  accent-color: var(--primary);
+}
+
+.stt-option-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.stt-option-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14.5px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.stt-option-desc {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-3);
+}

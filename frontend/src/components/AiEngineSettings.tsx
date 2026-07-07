@@ -33,6 +33,28 @@ export function AiEngineSettings() {
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null)
   const savedTimerRef = useRef<number | null>(null)
 
+  // STT 엔진 선택 (local Whisper | gemini)
+  const [sttSaving, setSttSaving] = useState(false)
+  const [sttSaved, setSttSaved] = useState(false)
+  const sttTimerRef = useRef<number | null>(null)
+
+  const handleSttChange = async (engine: 'local' | 'gemini') => {
+    if (!settings || settings.stt_engine === engine || sttSaving) return
+    setSttSaving(true)
+    setError('')
+    try {
+      const next = await api.updateSettings({ stt_engine: engine })
+      setSettings(next)
+      setSttSaved(true)
+      if (sttTimerRef.current) window.clearTimeout(sttTimerRef.current)
+      sttTimerRef.current = window.setTimeout(() => setSttSaved(false), 2000)
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'STT 엔진 설정에 실패했어요')
+    } finally {
+      setSttSaving(false)
+    }
+  }
+
   // Gemini 모델 선택
   const [modelInput, setModelInput] = useState('')
   const [modelOptions, setModelOptions] = useState<string[]>(FALLBACK_GEMINI_MODELS)
@@ -240,6 +262,75 @@ export function AiEngineSettings() {
 
   return (
     <>
+      {/* 음성 변환(STT) 엔진 카드 */}
+      <section className="card settings-card stt-settings">
+        <div className="settings-card-head">
+          <h2 className="settings-card-title">
+            <span aria-hidden="true">🎙</span> 음성 변환(STT) 엔진
+            {sttSaved && <span className="stt-saved">저장됨 ✓</span>}
+          </h2>
+          <p className="settings-card-desc">
+            녹음·업로드한 음성을 텍스트로 바꿀 때 사용할 엔진을 선택합니다.
+          </p>
+        </div>
+
+        {loading ? (
+          <div className="settings-loading">
+            <span className="spinner" />
+          </div>
+        ) : settings ? (
+          <>
+            <div className="stt-options" role="radiogroup" aria-label="STT 엔진 선택">
+              <label className={`stt-option${settings.stt_engine === 'local' ? ' selected' : ''}`}>
+                <input
+                  type="radio"
+                  name="stt-engine"
+                  checked={settings.stt_engine === 'local'}
+                  onChange={() => void handleSttChange('local')}
+                  disabled={sttSaving}
+                />
+                <span className="stt-option-body">
+                  <span className="stt-option-title">
+                    로컬 Whisper <span className="badge badge-green">기본 · 무료</span>
+                  </span>
+                  <span className="stt-option-desc">
+                    이 PC에서 변환해요 — 음성이 외부로 나가지 않아요. GPU가 있으면 빠릅니다.
+                  </span>
+                </span>
+              </label>
+
+              <label
+                className={`stt-option${settings.stt_engine === 'gemini' ? ' selected' : ''}${
+                  !settings.gemini_api_key_set ? ' disabled' : ''
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="stt-engine"
+                  checked={settings.stt_engine === 'gemini'}
+                  onChange={() => void handleSttChange('gemini')}
+                  disabled={sttSaving || !settings.gemini_api_key_set}
+                />
+                <span className="stt-option-body">
+                  <span className="stt-option-title">
+                    Gemini <span className="badge badge-blue">클라우드</span>
+                  </span>
+                  <span className="stt-option-desc">
+                    아래에 등록된 Gemini 키로 전사해요 — GPU 없이도 빠르지만 음성이 Google
+                    서버로 전송됩니다.
+                  </span>
+                </span>
+              </label>
+            </div>
+            <p className="muted settings-note">
+              {settings.gemini_api_key_set
+                ? 'Gemini 변환이 실패하면 자동으로 로컬 Whisper로 대체되니 회의가 실패하지 않아요.'
+                : 'Gemini 변환을 사용하려면 아래 카드에서 API 키를 먼저 등록해주세요.'}
+            </p>
+          </>
+        ) : null}
+      </section>
+
       <section className="card settings-card ai-engine-settings">
         <div className="settings-card-head">
           <h2 className="settings-card-title">

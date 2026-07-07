@@ -56,6 +56,8 @@ export interface AppSettings {
   gemini_model: string
   ollama_available: boolean
   summary_prompt: string
+  /** 음성 변환 엔진 — local(Whisper) | gemini(클라우드 전사) */
+  stt_engine: 'local' | 'gemini'
 }
 
 export const api = {
@@ -267,6 +269,7 @@ export const api = {
     gemini_api_key?: string
     summary_prompt?: string
     gemini_model?: string
+    stt_engine?: 'local' | 'gemini'
   }): Promise<AppSettings> {
     return request<AppSettings>('/api/settings', {
       method: 'PUT',

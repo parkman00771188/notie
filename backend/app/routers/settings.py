@@ -15,7 +15,7 @@ main.py에서 prefix="/api/settings"로 include된다.
   (name은 "models/" 프리픽스 제거). 키 없음/호출 실패 시 {models: [], error: "<한국어 사유>"} (200으로) — SPEC J5.
 """
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from .. import config, db
@@ -27,12 +27,14 @@ router = APIRouter()
 GEMINI_KEY_SETTING = "gemini_api_key"
 GEMINI_MODEL_SETTING = "gemini_model"
 SUMMARY_PROMPT_SETTING = "summary_prompt"
+STT_ENGINE_SETTING = "stt_engine"
 
 
 class SettingsUpdate(BaseModel):
     gemini_api_key: str | None = None
     summary_prompt: str | None = None
     gemini_model: str | None = None
+    stt_engine: str | None = None
 
 
 def _check_ollama_available() -> bool:
@@ -61,6 +63,8 @@ def _get_summary_prompt() -> str:
 
 def _settings_response() -> dict:
     """GET/PUT 공통 응답 — 현재 유효한 키(DB 우선, 없으면 환경변수) 기준."""
+    from ..services import gemini_stt
+
     key = summarizer.get_gemini_key()
     return {
         "gemini_api_key_set": bool(key),
@@ -68,6 +72,7 @@ def _settings_response() -> dict:
         "gemini_model": summarizer.get_gemini_model(),
         "ollama_available": _check_ollama_available(),
         "summary_prompt": _get_summary_prompt(),
+        "stt_engine": gemini_stt.get_engine(),
     }
 
 
@@ -81,10 +86,15 @@ def update_settings(
     body: SettingsUpdate, user: dict = Depends(get_current_user)
 ) -> dict:
     updates = body.model_dump(exclude_unset=True)
+    if "stt_engine" in updates:
+        value = (updates["stt_engine"] or "").strip()
+        if value not in ("local", "gemini"):
+            raise HTTPException(status_code=400, detail="지원하지 않는 STT 엔진입니다")
     field_to_setting = {
         "gemini_api_key": GEMINI_KEY_SETTING,
         "summary_prompt": SUMMARY_PROMPT_SETTING,
         "gemini_model": GEMINI_MODEL_SETTING,
+        "stt_engine": STT_ENGINE_SETTING,
     }
     targets = [
         (setting_key, (updates[field] or "").strip())

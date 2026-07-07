@@ -3,6 +3,7 @@ import type { KeyboardEvent, ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api'
 import { AvatarStack } from '../components/Avatar'
+import { useConfirm } from '../components/confirm'
 import { ParticipantPicker } from '../components/ParticipantPicker'
 import { RecentMeetingsPanel } from '../components/RecentMeetingsPanel'
 import { TagPicker } from '../components/TagPicker'
@@ -22,6 +23,7 @@ function sortByTime(list: Bookmark[]): Bookmark[] {
 export default function RecordPage() {
   const navigate = useNavigate()
   const recorder = useRecorder()
+  const confirm = useConfirm()
 
   // ---- 회의 메타 ----
   const [title, setTitle] = useState(DEFAULT_TITLE)
@@ -160,9 +162,11 @@ export default function RecordPage() {
       await api.uploadAudio(meetingId, blob, durationSec)
       navigate(`/meetings/${meetingId}`)
     } catch (err) {
-      const retry = window.confirm(
-        `업로드에 실패했어요: ${(err as Error).message}\n다시 시도할까요?`,
-      )
+      const retry = await confirm({
+        title: '업로드에 실패했어요',
+        message: `${(err as Error).message}\n다시 시도할까요?`,
+        confirmLabel: '다시 시도',
+      })
       if (retry) return uploadAndGo(blob, durationSec)
       setUploading(false)
       navigate(`/meetings/${meetingId}`)

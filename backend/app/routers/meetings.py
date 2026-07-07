@@ -75,12 +75,17 @@ def payload_fields(model: BaseModel) -> dict:
     return model.dict(exclude_unset=True)
 
 
-def get_owned_meeting(conn: sqlite3.Connection, meeting_id: int, user_id: int) -> sqlite3.Row:
-    """현재 사용자 소유의 meeting row를 반환. 없거나 남의 것이면 404."""
-    row = conn.execute(
-        "SELECT * FROM meetings WHERE id = ? AND user_id = ?",
-        (meeting_id, user_id),
-    ).fetchone()
+def get_owned_meeting(
+    conn: sqlite3.Connection, meeting_id: int, user_id: int, include_deleted: bool = False
+) -> sqlite3.Row:
+    """현재 사용자 소유의 meeting row를 반환. 없거나 남의 것이면 404.
+
+    휴지통(소프트 삭제)의 회의는 기본적으로 제외한다 — restore/permanent만 include_deleted=True.
+    """
+    sql = "SELECT * FROM meetings WHERE id = ? AND user_id = ?"
+    if not include_deleted:
+        sql += " AND deleted_at IS NULL"
+    row = conn.execute(sql, (meeting_id, user_id)).fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail="회의를 찾을 수 없습니다")
     return row
@@ -151,7 +156,7 @@ def list_meetings(
     user: dict = Depends(get_current_user),
 ) -> list:
     with closing(db.get_conn()) as conn:
-        where = ["user_id = ?"]
+        where = ["user_id = ?", "deleted_at IS NULL"]
         values: list = [user["id"]]
         if q:
             where.append("title LIKE ?")
@@ -164,6 +169,24 @@ def list_meetings(
             values,
         ).fetchall()
         return [serialize_meeting(conn, row) for row in rows]
+
+
+# 주의: /{meeting_id}보다 먼저 선언해야 "trash"가 int 경로 매칭에 걸리지 않는다.
+@router.get("/trash")
+def list_trash(user: dict = Depends(get_current_user)) -> list:
+    """휴지통 목록 — 소프트 삭제된 회의 (deleted_at DESC)."""
+    with closing(db.get_conn()) as conn:
+        rows = conn.execute(
+            "SELECT * FROM meetings WHERE user_id = ? AND deleted_at IS NOT NULL "
+            "ORDER BY deleted_at DESC, id DESC",
+            (user["id"],),
+        ).fetchall()
+        result = []
+        for row in rows:
+            item = serialize_meeting(conn, row)
+            item["deleted_at"] = row["deleted_at"]
+            result.append(item)
+        return result
 
 
 @router.get("/{meeting_id}")
@@ -195,6 +218,10 @@ def get_meeting(meeting_id: int, user: dict = Depends(get_current_user)) -> dict
                 "key_points": json.loads(summary_row["key_points"]),
                 "decisions": json.loads(summary_row["decisions"]),
                 "action_items": json.loads(summary_row["action_items"]),
+                # 레거시 행(마이그레이션 이전) 방어: discussion '', followups [], engine_note None
+                "discussion": summary_row["discussion"] or "",
+                "followups": json.loads(summary_row["followups"]) if summary_row["followups"] else [],
+                "engine_note": summary_row["engine_note"],
                 "minutes_md": summary_row["minutes_md"],
                 "engine": summary_row["engine"],
                 "created_at": summary_row["created_at"],
@@ -229,8 +256,35 @@ def update_meeting(
 
 @router.delete("/{meeting_id}")
 def delete_meeting(meeting_id: int, user: dict = Depends(get_current_user)) -> dict:
+    """소프트 삭제 — 휴지통으로 이동 (오디오 파일 유지, 복원 가능)."""
+    deleted_at = datetime.now().isoformat(timespec="seconds")
     with closing(db.get_conn()) as conn:
+        get_owned_meeting(conn, meeting_id, user["id"])
+        with conn:
+            conn.execute(
+                "UPDATE meetings SET deleted_at = ? WHERE id = ?", (deleted_at, meeting_id)
+            )
+    return {"ok": True}
+
+
+@router.post("/{meeting_id}/restore")
+def restore_meeting(meeting_id: int, user: dict = Depends(get_current_user)) -> dict:
+    """휴지통에서 복원."""
+    with closing(db.get_conn()) as conn:
+        row = get_owned_meeting(conn, meeting_id, user["id"], include_deleted=True)
+        if row["deleted_at"] is None:
+            raise HTTPException(status_code=400, detail="휴지통에 있는 회의가 아닙니다")
+        with conn:
+            conn.execute("UPDATE meetings SET deleted_at = NULL WHERE id = ?", (meeting_id,))
         row = get_owned_meeting(conn, meeting_id, user["id"])
+        return serialize_meeting(conn, row)
+
+
+@router.delete("/{meeting_id}/permanent")
+def purge_meeting(meeting_id: int, user: dict = Depends(get_current_user)) -> dict:
+    """완전 삭제 — 복구 불가 (오디오 파일 포함, FK cascade로 관련 기록 전부 삭제)."""
+    with closing(db.get_conn()) as conn:
+        row = get_owned_meeting(conn, meeting_id, user["id"], include_deleted=True)
         audio_filename = row["audio_filename"]
         with conn:
             conn.execute("DELETE FROM meetings WHERE id = ?", (meeting_id,))

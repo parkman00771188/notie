@@ -4,6 +4,7 @@ import { api } from '../api'
 import AiEngineSettings from '../components/AiEngineSettings'
 import { Avatar } from '../components/Avatar'
 import ComboBox from '../components/ComboBox'
+import { useConfirm } from '../components/confirm'
 import type { OrgKind, OrgOption, Participant, Tag } from '../types'
 import './SettingsPage.css'
 
@@ -104,6 +105,8 @@ function ColorPalettePicker({ value, onChange, allowClear = false }: ColorPalett
 /* ---------- 설정 페이지 ---------- */
 
 export default function SettingsPage() {
+  const confirm = useConfirm()
+
   // 탭 — URL 해시(#tags/#people/#ai)와 동기화
   const [activeSection, setActiveSection] = useState<SectionId>(() => {
     const id = window.location.hash.slice(1)
@@ -242,9 +245,13 @@ export default function SettingsPage() {
 
   const handleDeleteTag = async (t: Tag, e: MouseEvent) => {
     e.stopPropagation()
-    if (!window.confirm(`'${t.name}' 태그를 삭제할까요?\n기존 회의에 표시된 태그는 그대로 남아요.`)) {
-      return
-    }
+    const ok = await confirm({
+      title: `'${t.name}' 태그를 삭제할까요?`,
+      message: '기존 회의에 표시된 태그는 그대로 남아요.',
+      confirmLabel: '삭제',
+      danger: true,
+    })
+    if (!ok) return
     setTagError('')
     try {
       await api.deleteTag(t.id)
@@ -414,7 +421,13 @@ export default function SettingsPage() {
 
   const handleDeleteParticipant = async (p: Participant, e: MouseEvent) => {
     e.stopPropagation()
-    if (!window.confirm(`'${p.name}' 참석자를 디렉터리에서 삭제할까요?`)) return
+    const ok = await confirm({
+      title: `'${p.name}' 참석자를 삭제할까요?`,
+      message: '참석자 디렉터리에서 제거돼요. 기존 회의 기록에는 영향을 주지 않아요.',
+      confirmLabel: '삭제',
+      danger: true,
+    })
+    if (!ok) return
     setPeopleError('')
     try {
       await api.deleteParticipant(p.id)

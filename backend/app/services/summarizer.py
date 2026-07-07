@@ -2,9 +2,9 @@
 
 계약 (SPEC.md):
 - summarize(meeting, segments, bookmarks, participants) ->
-  {"key_points": [str], "decisions": [str],
+  {"key_points": [str], "decisions": [str], "followups": [str],
    "action_items": [{"text": str, "owner": str|None, "due": str|None}],
-   "minutes_md": str, "engine": str}
+   "discussion": str, "minutes_md": str, "engine": str, "engine_note": str|None}
 - 1차: Gemini — API 키(app_settings 'gemini_api_key' 우선, 없으면 환경변수)가 있으면
   POST {GEMINI_BASE_URL}/models/{GEMINI_MODEL}:generateContent
   (generationConfig.response_mime_type="application/json", timeout 120s).
@@ -13,7 +13,11 @@
   POST /api/chat (stream=False, format="json", timeout 300s). engine="ollama:<model>".
   응답 JSON 파싱은 방어적으로: 키 누락/타입 오류 시 추출 요약 결과를 병합.
 - 폴백: 추출 요약 (engine="extractive"). 각 엔진 실패는 로그 출력 후 다음으로.
-- minutes_md 마크다운 구조는 모든 엔진 공통 (Gemini의 detail 문단은 상세 내용 섹션에 사용).
+- minutes_md 마크다운 구조는 모든 엔진 공통 (K1: 참석자/회의내용/핵심내용/결정사항/
+  추가 확인 필요/액션 아이템/타임라인/일반 메모).
+- discussion(str): 주제별로 묶은 회의내용 마크다운. followups(list[str]): 추가 확인 필요 사항.
+  engine_note(str|None): Gemini/Ollama 실패로 폴백했을 때 사람이 읽을 한국어 사유
+  (HTTP 상태 포함, API 키는 절대 미포함). 정상이면 None.
 - 세그먼트 0개(무음)면 빈 배열 + "인식된 음성이 없습니다" 안내.
 - test_gemini_key(key) -> (ok, message): settings API의 연결 테스트에서 재사용.
 - 2차 개선 A: get_summary_prompt() — app_settings 'summary_prompt' 조회(사용자 지정 지시사항).
@@ -43,12 +47,25 @@ logger = logging.getLogger("gimnote.summarizer")
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?다요죠음됨함])\s+")
 _DECISION_RE = re.compile(r"결정|확정|하기로|승인|합의|채택|진행하기로")
 _ACTION_RE = re.compile(r"해야|할 일|까지|담당|예정|부탁|준비|공유하기로")
+_FOLLOWUP_RE = re.compile(r"확인 필요|검토|추후|다시 논의|파악")  # K1 추가 확인 필요 사항 패턴
 _WORD_RE = re.compile(r"[가-힣a-zA-Z0-9]{2,}")
 
 _MIN_SENTENCE_LEN = 10       # 이보다 짧은 문장 제외
 _MAX_ITEMS_EXTRACTIVE = 5    # 폴백 시 각 항목 최대 개수
+_MAX_DISCUSSION_EXTRACTIVE = 8  # 폴백 회의내용 불릿 상위 문장 최대 개수 (5~8)
 _MAX_ITEMS_LLM = 8           # LLM(Gemini/Ollama) 응답 방어적 상한
 _MAX_TRANSCRIPT_CHARS = 12000  # 프롬프트에 넣을 녹취록 길이 제한
+
+# HTTP 상태 코드 → 사람이 읽을 한국어 사유 (engine_note용 — 민감정보 미포함)
+_HTTP_REASONS = {
+    400: "잘못된 요청",
+    401: "인증 실패(API 키 확인 필요)",
+    403: "접근 거부(API 키 확인 필요)",
+    404: "모델 또는 엔드포인트 없음",
+    429: "요청 한도 초과",
+    500: "서버 오류",
+    503: "서버 일시적 사용 불가",
+}
 
 GEMINI_KEY_SETTING = "gemini_api_key"
 GEMINI_MODEL_SETTING = "gemini_model"
@@ -76,17 +93,22 @@ def summarize(
 
     # 무음(세그먼트 0개) — 빈 요약 + 안내 문구로 정상 처리
     if not texts:
-        overview = (
+        notice = (
             "인식된 음성이 없습니다. 녹음 파일에서 인식 가능한 음성을 찾지 못했어요. "
             "마이크 상태를 확인한 뒤 다시 녹음해보세요."
         )
-        minutes_md = _build_minutes_md(meeting, participants, bookmarks, [], [], [], overview)
+        minutes_md = _build_minutes_md(
+            meeting, participants, bookmarks, [], [], [], notice, []
+        )
         return {
             "key_points": [],
             "decisions": [],
             "action_items": [],
+            "discussion": notice,
+            "followups": [],
             "minutes_md": minutes_md,
             "engine": "extractive",
+            "engine_note": None,
         }
 
     transcript = "\n".join(texts)
@@ -103,7 +125,11 @@ def summarize(
     key_points: list | None = None
     decisions: list | None = None
     action_items: list | None = None
-    overview: str | None = None
+    followups: list | None = None
+    discussion: str | None = None
+    # 폴백 사유 (사람이 읽을 한국어, 민감정보 미포함) — engine_note 구성에 사용
+    gemini_note: str | None = None
+    ollama_note: str | None = None
 
     # 1차: Gemini (API 키가 등록된 경우)
     gemini_key = get_gemini_key()
@@ -115,14 +141,13 @@ def summarize(
             engine = f"gemini:{model_name}"
             key_points = _clean_str_list(parsed.get("key_points"), _MAX_ITEMS_LLM)
             decisions = _clean_str_list(parsed.get("decisions"), _MAX_ITEMS_LLM)
+            followups = _clean_str_list(parsed.get("followups"), _MAX_ITEMS_LLM)
             action_items = _clean_action_items(parsed.get("action_items"), _MAX_ITEMS_LLM)
-            # detail 문단 → minutes_md의 상세 내용 섹션 (overview 키도 방어적으로 허용)
-            overview = _clean_detail(parsed.get("detail")) or _clean_detail(
-                parsed.get("overview")
-            )
+            discussion = _clean_discussion(parsed.get("discussion"))
         except Exception as exc:
             # 네트워크/HTTP 오류/JSON 파싱 실패 → Ollama로 폴백
             logger.warning("summarizer: Gemini 요약 실패 — Ollama로 폴백: %s", exc)
+            gemini_note = _describe_llm_error("Gemini", exc)
             engine = "extractive"
 
     # 2차: Ollama (Gemini 키가 없거나 실패한 경우)
@@ -134,33 +159,43 @@ def summarize(
             engine = f"ollama:{model_name}"
             key_points = _clean_str_list(parsed.get("key_points"), _MAX_ITEMS_LLM)
             decisions = _clean_str_list(parsed.get("decisions"), _MAX_ITEMS_LLM)
+            followups = _clean_str_list(parsed.get("followups"), _MAX_ITEMS_LLM)
             action_items = _clean_action_items(parsed.get("action_items"), _MAX_ITEMS_LLM)
-            overview = _clean_detail(parsed.get("overview"))
+            discussion = _clean_discussion(parsed.get("discussion"))
         except Exception as exc:
             # Ollama 미설치/미실행/타임아웃/JSON 파싱 실패 → 전체 추출 요약 폴백
             logger.warning("summarizer: Ollama 요약 실패 — 추출 요약으로 폴백: %s", exc)
+            ollama_note = _describe_llm_error("Ollama", exc)
             engine = "extractive"
 
-    # 방어적 병합: 키 누락/타입 오류(None) 시 폴백 결과 사용
+    # 방어적 병합: 키 누락/타입 오류(None) 시 폴백(추출 요약) 결과 사용.
+    # followups는 빈 배열([])이 유효(확인 필요 사항 없음)하므로 None일 때만 병합.
     if not key_points:
         key_points = fallback()["key_points"]
     if decisions is None:
         decisions = fallback()["decisions"]
     if action_items is None:
         action_items = fallback()["action_items"]
-    if not overview:
-        joined = " ".join(fallback()["key_points"][:3]).strip()
-        overview = joined or transcript[:300].strip()
+    if followups is None:
+        followups = fallback()["followups"]
+    if not discussion:
+        discussion = fallback()["discussion"]
+
+    engine_note = _build_engine_note(engine, gemini_note, ollama_note)
 
     minutes_md = _build_minutes_md(
-        meeting, participants, bookmarks, key_points, decisions, action_items, overview
+        meeting, participants, bookmarks, key_points, decisions, action_items,
+        discussion, followups,
     )
     return {
         "key_points": key_points,
         "decisions": decisions,
         "action_items": action_items,
+        "discussion": discussion,
+        "followups": followups,
         "minutes_md": minutes_md,
         "engine": engine,
+        "engine_note": engine_note,
     }
 
 
@@ -199,10 +234,9 @@ def _build_llm_user_prompt(
     transcript: str,
     bookmarks: list[dict],
     participants: list[dict],
-    detail_key: str,
     include_transcript: bool = True,
 ) -> str:
-    """Gemini/Ollama 공용 요약 프롬프트. detail_key는 상세 문단의 JSON 키 이름.
+    """Gemini/Ollama 공용 요약 프롬프트 (K1 JSON 스키마).
 
     include_transcript=False면 녹취록을 인라인하지 않고 첨부 파일(transcript.txt)을
     참고하라는 안내 문구로 대체한다 (SPEC H — Gemini 장문 스크립트 파일 첨부).
@@ -249,12 +283,22 @@ def _build_llm_user_prompt(
         f"참석자: {names}\n"
         f"{bookmark_block}\n"
         f"{transcript_block}\n"
+        "작성 규칙:\n"
+        "- discussion(회의내용): 논의된 주제별로 묶어 마크다운으로 정리하라. "
+        "주제마다 '### 소제목'을 달고 그 아래 '- 불릿'으로 요점을 적는다. "
+        "발언을 시간 순서대로 나열하지 말고 주제 중심으로 재구성하라.\n"
+        "- key_points(핵심내용): 요구사항/문제점/검토가 필요한 점/주요 의견 등 핵심을 3~7개.\n"
+        "- decisions(결정사항): 회의에서 명확하게 확정/결정된 것만 넣어라. "
+        "명확한 결정이 없으면 반드시 빈 배열([])로 두고, 논의만 되고 확정되지 않은 내용은 "
+        "decisions가 아니라 followups(추가 확인 필요 사항)에 넣어라.\n"
+        "- followups(추가 확인 필요 사항): 결정되지 않고 추가 확인/검토가 필요한 사항.\n\n"
         "출력 JSON 형식 (모든 값은 한국어로 작성):\n"
         "{\n"
-        '  "key_points": ["회의의 핵심 내용을 요약한 문장 3~5개"],\n'
-        '  "decisions": ["회의에서 확정/결정된 사항 (없으면 빈 배열)"],\n'
-        '  "action_items": [{"text": "해야 할 일", "owner": "담당자 이름 또는 null", "due": "기한 또는 null"}],\n'
-        f'  "{detail_key}": "회의 전체 내용을 3~5문장으로 정리한 상세 요약 문단"\n'
+        '  "discussion": "회의내용을 주제별로 묶은 마크다운(### 소제목 + - 불릿)",\n'
+        '  "key_points": ["핵심내용 3~7개"],\n'
+        '  "decisions": ["명확하게 확정된 결정사항만 (없으면 빈 배열)"],\n'
+        '  "followups": ["추가로 확인/검토가 필요한 사항 (없으면 빈 배열)"],\n'
+        '  "action_items": [{"text": "해야 할 일", "owner": "담당자 이름 또는 null", "due": "기한 또는 null"}]\n'
         "}"
         f"{user_block}"
     )
@@ -326,7 +370,6 @@ def _try_gemini(
         transcript,
         bookmarks,
         participants,
-        detail_key="detail",
         include_transcript=not attach_transcript,
     )
 
@@ -449,9 +492,7 @@ def _summarize_with_ollama(
         raise RuntimeError("사용 가능한 Ollama 모델이 없습니다")
 
     system_prompt = _LLM_SYSTEM_PROMPT
-    user_prompt = _build_llm_user_prompt(
-        meeting, transcript, bookmarks, participants, detail_key="overview"
-    )
+    user_prompt = _build_llm_user_prompt(meeting, transcript, bookmarks, participants)
 
     chat_resp = httpx.post(
         f"{base}/api/chat",
@@ -537,11 +578,68 @@ def _opt_str(value) -> str | None:
     return text
 
 
-def _clean_detail(value) -> str | None:
-    """상세 문단(detail/overview)을 방어적으로 정제. 문자열이 아니거나 비면 None(→폴백)."""
+def _clean_discussion(value) -> str | None:
+    """회의내용(discussion) 마크다운을 방어적으로 정제. 문자열이 아니거나 비면 None(→폴백)."""
     if isinstance(value, str) and value.strip():
         return value.strip()
     return None
+
+
+# ---------------------------------------------------------------------------
+# 폴백 사유 (engine_note) — 사람이 읽을 한국어, API 키 등 민감정보 미포함
+# ---------------------------------------------------------------------------
+
+def _describe_llm_error(engine_label: str, exc: Exception) -> str:
+    """LLM 호출 예외를 사람이 읽을 한국어 사유로 요약한다 (HTTP 상태 포함, 키 미포함).
+
+    httpx는 함수 내부에서만 import하므로 isinstance 대신 속성/클래스명으로 판별한다.
+    """
+    reason = _describe_error_reason(exc)
+    return f"{engine_label} 호출 실패({reason})"
+
+
+def _describe_error_reason(exc: Exception) -> str:
+    # HTTP 응답이 있으면 상태 코드 기반으로 (URL·헤더 등 민감정보는 노출하지 않음)
+    response = getattr(exc, "response", None)
+    status = getattr(response, "status_code", None)
+    if isinstance(status, int):
+        reason = _HTTP_REASONS.get(status)
+        return f"HTTP {status}: {reason}" if reason else f"HTTP {status}"
+
+    name = exc.__class__.__name__
+    if "Timeout" in name:
+        return "응답 시간 초과"
+    if "Connect" in name:
+        return "서버에 연결할 수 없음"
+    if isinstance(exc, ImportError):
+        return "httpx 패키지 미설치"
+    if isinstance(exc, RuntimeError):
+        # 자체 RuntimeError(예: 사용 가능한 모델 없음)는 메시지가 안전하고 유용함
+        msg = str(exc).strip()
+        return msg or name
+    if isinstance(exc, ValueError):
+        # json 파싱 실패 및 자체 응답 형식 오류 — 메시지에 민감정보 없음
+        return "응답 형식 오류"
+    return name
+
+
+def _build_engine_note(
+    engine: str, gemini_note: str | None, ollama_note: str | None
+) -> str | None:
+    """최종 엔진과 폴백 사유로 engine_note를 구성. 정상(최상위 엔진 성공)이면 None."""
+    if engine.startswith("gemini:"):
+        return None
+    if engine.startswith("ollama:"):
+        # Ollama 성공. Gemini 키가 있었으나 실패했다면 그 사유를 알린다.
+        if gemini_note:
+            return f"{gemini_note} → Ollama 요약으로 대체했어요."
+        return None
+    # engine == "extractive": LLM이 모두 실패(또는 미가용) → 내장 요약으로 대체.
+    # Gemini 키를 등록한 사용자에게만 경고한다 — LLM을 아예 설정하지 않은 경우
+    # (키 없음 + Ollama 미실행)는 의도된 동작이므로 배너를 띄우지 않는다.
+    if not gemini_note:
+        return None
+    return f"{gemini_note} → 내장 요약으로 대체했어요."
 
 
 # ---------------------------------------------------------------------------
@@ -569,7 +667,13 @@ def _extractive_summary(transcript: str) -> dict:
     """단어 빈도 기반 한국어 추출 요약."""
     sentences = _split_sentences(transcript)
     if not sentences:
-        return {"key_points": [], "decisions": [], "action_items": []}
+        return {
+            "key_points": [],
+            "decisions": [],
+            "action_items": [],
+            "discussion": "",
+            "followups": [],
+        }
 
     # 단어 빈도 계산
     freq: Counter = Counter()
@@ -586,13 +690,17 @@ def _extractive_summary(transcript: str) -> dict:
             return 0.0
         return sum(freq[w] for w in words) / len(words)
 
-    top_indices = sorted(
-        sorted(range(len(sentences)), key=score, reverse=True)[:_MAX_ITEMS_EXTRACTIVE]
-    )  # 상위 3~5문장, 원문 순서 유지
+    ranked = sorted(range(len(sentences)), key=score, reverse=True)
+    top_indices = sorted(ranked[:_MAX_ITEMS_EXTRACTIVE])  # 상위 3~5문장, 원문 순서 유지
     key_points = [sentences[i] for i in top_indices]
+
+    # 회의내용(discussion): 상위 점수 문장 5~8개를 불릿 마크다운으로 (원문 순서 유지)
+    disc_indices = sorted(ranked[:_MAX_DISCUSSION_EXTRACTIVE])
+    discussion = "\n".join(f"- {sentences[i]}" for i in disc_indices)
 
     decisions: list[str] = []
     action_items: list[dict] = []
+    followups: list[str] = []
     for sent in sentences:
         if len(decisions) < _MAX_ITEMS_EXTRACTIVE and _DECISION_RE.search(sent):
             if sent not in decisions:
@@ -600,8 +708,18 @@ def _extractive_summary(transcript: str) -> dict:
         if len(action_items) < _MAX_ITEMS_EXTRACTIVE and _ACTION_RE.search(sent):
             if all(item["text"] != sent for item in action_items):
                 action_items.append({"text": sent, "owner": None, "due": None})
+        # 추가 확인 필요 사항(followups): 확인/검토/추후 패턴 문장 (최대 5)
+        if len(followups) < _MAX_ITEMS_EXTRACTIVE and _FOLLOWUP_RE.search(sent):
+            if sent not in followups:
+                followups.append(sent)
 
-    return {"key_points": key_points, "decisions": decisions, "action_items": action_items}
+    return {
+        "key_points": key_points,
+        "decisions": decisions,
+        "action_items": action_items,
+        "discussion": discussion,
+        "followups": followups,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -619,6 +737,20 @@ def _format_clock(seconds) -> str:
     return f"{hours:02d}:{minutes:02d}:{secs:02d}"
 
 
+def _format_participant_line(p: dict) -> str:
+    """참석자 한 줄: '- 이름 (소속 · 부서 · 직책 — 있는 값만 " · " 연결)'."""
+    name = str(p.get("name") or "").strip() or "이름 없음"
+    # 소속(organization) · 부서(department) · 직책(role) 순, 있는 값만
+    extras = [
+        str(p.get(key) or "").strip()
+        for key in ("organization", "department", "role")
+    ]
+    extras = [v for v in extras if v]
+    if extras:
+        return f"- {name} ({' · '.join(extras)})"
+    return f"- {name}"
+
+
 def _build_minutes_md(
     meeting: dict,
     participants: list[dict],
@@ -626,25 +758,36 @@ def _build_minutes_md(
     key_points: list[str],
     decisions: list[str],
     action_items: list[dict],
-    overview: str,
+    discussion: str,
+    followups: list[str],
 ) -> str:
     title = str(meeting.get("title") or "").strip() or "회의록"
     started_at = str(meeting.get("started_at") or "").replace("T", " ")[:16] or "-"
-    names = ", ".join(str(p.get("name") or "") for p in participants if p.get("name")) or "없음"
     duration = meeting.get("duration_sec")
     duration_text = _format_clock(duration) if duration else "-"
 
     lines: list[str] = [
         f"# {title}",
         "",
-        f"**일시**: {started_at} · **참석자**: {names} · **소요 시간**: {duration_text}",
+        f"**일시**: {started_at} · **소요 시간**: {duration_text}",
         "",
-        "## 핵심 요약",
+        "## 참석자",
     ]
+    lines += [
+        _format_participant_line(p) for p in participants if p.get("name")
+    ] or ["_(기록된 참석자가 없습니다)_"]
+
+    lines += ["", "## 회의내용", (discussion or "").strip() or "_(정리된 회의내용이 없습니다)_"]
+
+    lines += ["", "## 핵심내용"]
     lines += [f"- {point}" for point in key_points] or ["_(요약할 내용이 없습니다)_"]
 
-    lines += ["", "## 결정 사항"]
-    lines += [f"- [x] {item}" for item in decisions] or ["_(기록된 결정 사항이 없습니다)_"]
+    lines += ["", "## 결정사항"]
+    lines += [f"- [x] {item}" for item in decisions] or ["명확히 확정된 결정사항은 없음"]
+
+    if followups:
+        lines += ["", "### 추가 확인 필요 사항"]
+        lines += [f"- [ ] {item}" for item in followups]
 
     lines += ["", "## 액션 아이템"]
     action_lines: list[str] = []
@@ -674,5 +817,5 @@ def _build_minutes_md(
         lines += ["", "## 일반 메모"]
         lines += [f"- {str(b.get('title') or '').strip() or '(내용 없음)'}" for b in plain_notes]
 
-    lines += ["", "## 상세 내용", overview.strip() or "_(상세 내용이 없습니다)_", ""]
+    lines += [""]
     return "\n".join(lines)

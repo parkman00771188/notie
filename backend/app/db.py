@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS meetings (
   duration_sec REAL,
   audio_filename TEXT,
   error_message TEXT,
+  deleted_at TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
 );
 
@@ -73,6 +74,9 @@ CREATE TABLE IF NOT EXISTS summaries (
   key_points TEXT NOT NULL,
   decisions TEXT NOT NULL,
   action_items TEXT NOT NULL,
+  discussion TEXT NOT NULL DEFAULT '',
+  followups TEXT NOT NULL DEFAULT '[]',
+  engine_note TEXT,
   minutes_md TEXT NOT NULL,
   engine TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
@@ -132,6 +136,18 @@ def _migrate(conn: sqlite3.Connection) -> None:
     bcols = [row[1] for row in conn.execute("PRAGMA table_info(bookmarks)")]
     if "kind" not in bcols:
         conn.execute("ALTER TABLE bookmarks ADD COLUMN kind TEXT NOT NULL DEFAULT 'memo'")
+
+    mcols = [row[1] for row in conn.execute("PRAGMA table_info(meetings)")]
+    if "deleted_at" not in mcols:
+        conn.execute("ALTER TABLE meetings ADD COLUMN deleted_at TEXT")
+
+    scols = [row[1] for row in conn.execute("PRAGMA table_info(summaries)")]
+    if "discussion" not in scols:
+        conn.execute("ALTER TABLE summaries ADD COLUMN discussion TEXT NOT NULL DEFAULT ''")
+    if "followups" not in scols:
+        conn.execute("ALTER TABLE summaries ADD COLUMN followups TEXT NOT NULL DEFAULT '[]'")
+    if "engine_note" not in scols:
+        conn.execute("ALTER TABLE summaries ADD COLUMN engine_note TEXT")
 
     # org_options CHECK에 'organization' 추가 (SQLite는 CHECK 변경 불가 → 테이블 재생성)
     row = conn.execute(

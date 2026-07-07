@@ -163,7 +163,8 @@ def _summarize_and_store(conn, meeting_id: int) -> None:
     participants = [
         dict(r)
         for r in conn.execute(
-            "SELECT p.id, p.name, p.role, p.color FROM participants p"
+            "SELECT p.id, p.name, p.role, p.department, p.organization, p.color"
+            " FROM participants p"
             " JOIN meeting_participants mp ON mp.participant_id = p.id"
             " WHERE mp.meeting_id = ? ORDER BY p.id ASC",
             (meeting_id,),
@@ -175,13 +176,17 @@ def _summarize_and_store(conn, meeting_id: int) -> None:
     with conn:
         conn.execute(
             "INSERT OR REPLACE INTO summaries"
-            " (meeting_id, key_points, decisions, action_items, minutes_md, engine)"
-            " VALUES (?, ?, ?, ?, ?, ?)",
+            " (meeting_id, key_points, decisions, action_items,"
+            " discussion, followups, engine_note, minutes_md, engine)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 meeting_id,
                 json.dumps(summary["key_points"], ensure_ascii=False),
                 json.dumps(summary["decisions"], ensure_ascii=False),
                 json.dumps(summary["action_items"], ensure_ascii=False),
+                summary["discussion"],
+                json.dumps(summary["followups"], ensure_ascii=False),
+                summary["engine_note"],
                 summary["minutes_md"],
                 summary["engine"],
             ),

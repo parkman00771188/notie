@@ -1,0 +1,46 @@
+/* 확인 팝업 (window.confirm 대체) — Modal과 같은 오버레이/카드 무드 */
+.confirm-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  z-index: 1100;
+  animation: modal-fade 0.15s ease-out;
+}
+
+.confirm-card {
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-pop);
+  width: 400px;
+  max-width: 100%;
+  padding: 22px 24px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  animation: modal-pop 0.18s ease-out;
+}
+
+.confirm-title {
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: -0.2px;
+  color: var(--text);
+}
+
+.confirm-message {
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--text-3);
+  white-space: pre-line;
+}
+
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}

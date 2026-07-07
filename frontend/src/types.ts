@@ -80,6 +80,12 @@ export interface Summary {
   key_points: string[]
   decisions: string[]
   action_items: ActionItem[]
+  /** 회의내용 — 주제별 정리(마크다운) */
+  discussion: string
+  /** 추가 확인 필요 사항 */
+  followups: string[]
+  /** LLM 실패로 폴백됐을 때의 사유 (정상이면 null) */
+  engine_note: string | null
   minutes_md: string
   engine: string
   created_at: string

@@ -1,0 +1,101 @@
+/* ==========================================================================
+   TrashModal — 휴지통 팝업 (trash-*)
+   Modal(width 640) 기반. 색상은 global.css 변수만 사용한다.
+   ========================================================================== */
+
+.trash-error {
+  background: var(--red-soft);
+  color: var(--red);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+
+.trash-loading {
+  display: flex;
+  justify-content: center;
+  padding: 40px 0;
+}
+
+.trash-empty {
+  padding: 34px 8px;
+}
+
+.trash-list {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.trash-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.trash-row:last-child {
+  border-bottom: none;
+}
+
+.trash-row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.trash-row-titleline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.trash-row-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.trash-row-tag {
+  flex-shrink: 0;
+  padding: 1px 9px;
+  border-radius: var(--radius-full);
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.trash-row-meta {
+  font-size: 12.5px;
+  color: var(--text-3);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.trash-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.trash-row-actions .btn {
+  padding: 7px 14px;
+  font-size: 13px;
+}
+
+.trash-hint {
+  margin-top: 14px;
+}

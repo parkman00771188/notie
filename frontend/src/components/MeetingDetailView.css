@@ -246,6 +246,58 @@
   color: var(--primary);
 }
 
+/* LLM 폴백 경고 배너 (연노랑) — global.css에 노란 톤 변수가 없어 여기서 정의 */
+.engine-warn-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 11px 14px;
+  border-radius: var(--radius);
+  background: #fff7e0;
+  border: 1px solid #f3dfa0;
+  color: #92600a;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.engine-warn-link {
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  color: #92600a;
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 0;
+}
+
+.discussion-body {
+  font-size: 14.5px;
+}
+
+.followup-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.followup-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.followup-mark {
+  flex-shrink: 0;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
 .decision-list,
 .todo-list {
   list-style: none;

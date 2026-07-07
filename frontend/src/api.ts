@@ -163,8 +163,24 @@ export const api = {
     })
   },
 
+  /** 휴지통으로 이동 (소프트 삭제) */
   deleteMeeting(id: number): Promise<{ ok: boolean }> {
     return request<{ ok: boolean }>(`/api/meetings/${id}`, { method: 'DELETE' })
+  },
+
+  /** 휴지통 목록 (deleted_at DESC) */
+  listTrash(): Promise<Meeting[]> {
+    return request<Meeting[]>('/api/meetings/trash')
+  },
+
+  /** 휴지통에서 복원 */
+  restoreMeeting(id: number): Promise<Meeting> {
+    return request<Meeting>(`/api/meetings/${id}/restore`, { method: 'POST' })
+  },
+
+  /** 완전 삭제 (복구 불가, 오디오 파일 포함) */
+  purgeMeeting(id: number): Promise<{ ok: boolean }> {
+    return request<{ ok: boolean }>(`/api/meetings/${id}/permanent`, { method: 'DELETE' })
   },
 
   uploadAudio(meetingId: number, blob: Blob, durationSec: number): Promise<Meeting> {

@@ -433,6 +433,51 @@ props: {
   저장은 updateSettings({gemini_model}) — "저장됨 ✓" 패턴. 현재 유효 모델 표시.
 - **설정 탭 순서: [태그 · 프로젝트] → [참석자] → [AI 요약 엔진]**, 기본(첫) 탭 = 태그 · 프로젝트.
 
+## 5차 개선 (K) — 요약 구조 개편 · 휴지통 · 확인 팝업 · 실패 사유 표시
+
+### K1. 요약 구조 개편 (회의내용/핵심내용/결정사항 + 추가 확인 필요)
+- summaries에 discussion(TEXT, 마크다운), followups(TEXT, JSON 배열), engine_note(TEXT|NULL) 컬럼 추가됨(뼈대 완료).
+  types.ts Summary에도 반영됨.
+- **LLM JSON 스키마 변경**: `{discussion: "회의내용 — 주제별로 묶어 마크다운 소제목(###)/불릿으로 정리(시간순 나열 금지)",
+  key_points: ["핵심내용 3~7개 — 요구사항/문제점/검토 필요/주요 의견"], decisions: ["명확하게 결정된 것만"],
+  followups: ["추가 확인 필요 사항"], action_items: [{text, owner, due}]}`.
+  프롬프트에 결정사항 규칙 명시: "명확한 결정이 없으면 decisions는 빈 배열로 두라(논의만 된 내용은 followups로)".
+- summarize() 반환에 discussion(str), followups(list[str]), engine_note(str|None) 추가.
+  **engine_note**: Gemini/Ollama 실패로 폴백했을 때 사유 요약(예: "Gemini 호출 실패(HTTP 404: 모델 없음) → 내장 요약으로 대체").
+  정상이면 None. 실패 시 HTTP 상태/사유를 사람이 읽을 한국어로.
+- 추출 폴백: discussion = 상위 점수 문장 5~8개를 불릿 마크다운으로, followups = `확인 필요|검토|추후|다시 논의|파악` 패턴 문장(최대 5).
+- pipeline: summaries INSERT에 discussion/followups(json)/engine_note 저장. meetings 라우터의 상세 직렬화에 세 필드 포함
+  (레거시 행은 discussion '' / followups '[]' / engine_note NULL).
+- **minutes_md 구조 변경**:
+  `# 제목` / `**일시** · **소요 시간**` / `## 참석자` (없으면 "_(기록된 참석자가 없습니다)_", 있으면 `- 이름 (소속 · 부서 · 직책 — 있는 것만)` 리스트)
+  / `## 회의내용` (discussion 그대로) / `## 핵심내용` 불릿 / `## 결정사항` (`- [x]` 리스트, 비어 있으면 "명확히 확정된 결정사항은 없음")
+  / followups 있으면 `### 추가 확인 필요 사항` `- [ ]` 리스트 / `## 액션 아이템` / `## 타임라인` / (일반 메모 있으면) `## 일반 메모`.
+- MeetingDetailView AI 요약 탭 구조 변경: **[회의내용]**(marked 렌더) → **[핵심내용]** 불릿 → **[결정사항]**(✅ 리스트,
+  비면 muted "명확히 확정된 결정사항은 없음") → **[추가 확인 필요 사항]**(❓ 리스트, 있을 때만) → **[할 일]**(체크박스) → 엔진 표기.
+- engine_note가 있으면 요약 탭 상단에 경고 배너(노란 톤 카드): "⚠ {engine_note}" + "설정 확인" 링크(/settings#ai).
+
+### K2. 휴지통 (소프트 삭제)
+- meetings.deleted_at 컬럼 추가됨(뼈대 완료). api.ts에 listTrash/restoreMeeting/purgeMeeting 추가됨.
+- meetings 라우터:
+  - `DELETE /{meeting_id}` → 소프트 삭제(deleted_at=now, 오디오 파일 유지) → {ok}
+  - `GET /trash` → 삭제된 회의 목록(deleted_at DESC, Meeting 형태 + deleted_at 필드 포함) — **경로 순서 주의: /trash를 /{meeting_id}보다 먼저 선언**
+  - `POST /{meeting_id}/restore` → deleted_at=NULL → Meeting
+  - `DELETE /{meeting_id}/permanent` → 실제 삭제(오디오 파일 포함) → {ok}
+  - 기존 모든 조회(GET 목록/상세/status/audio/북마크 소유 검증 등)는 `deleted_at IS NULL` 조건 추가.
+    get_owned_meeting에 include_deleted 파라미터(restore/permanent만 True).
+- MeetingsPage 헤더에 [🗑 휴지통] btn-ghost → `components/TrashModal.tsx` + css:
+  Modal(width 640): 목록(제목, 태그, 삭제일 formatRelativeDate, 원래 날짜/길이), 행 우측 [복원 btn-soft] [완전 삭제 btn-danger(확인 팝업)],
+  빈 상태("휴지통이 비어 있어요"), 복원/삭제 시 목록 갱신 + 부모 새로고침 콜백. 하단 muted "완전 삭제한 회의는 복구할 수 없어요."
+
+### K3. 확인 팝업 (window.confirm 대체)
+- `components/confirm.tsx` + confirm.css 신규: `ConfirmProvider`(Layout에서 children 감싸기) + `useConfirm()` 훅.
+  `const confirm = useConfirm(); const ok = await confirm({title, message?, confirmLabel?, cancelLabel?, danger?})` — Promise<boolean>.
+  디자인: Modal과 같은 오버레이/카드(width 400), 제목 굵게, 메시지 muted, 우측 하단 [취소 btn-ghost] [확인 btn-primary|btn-danger].
+  ESC/오버레이 클릭 = 취소. danger면 확인 버튼 빨강.
+- 기존 window.confirm 호출 전부 교체: MeetingsPage(회의 삭제→"휴지통으로 이동할까요?" 문구로), MeetingDetailView(삭제/북마크 삭제),
+  SettingsPage(태그/참석자 삭제), ComboBox(옵션 삭제), RecordPage(메모 삭제 등 있으면), RecentMeetingsPanel/TrashModal.
+  (window.prompt 기반 편집은 이번 범위 아님 — 그대로 둠)
+
 ## 디자인 규칙
 - global.css의 CSS 변수/클래스만 색상 소스로 사용. 배경 `--bg`, 카드 흰색 radius 12~16px + `--shadow-card`.
 - 버튼: `.btn .btn-primary|.btn-ghost|.btn-danger|.btn-soft`. 인풋: `.input`. 배지: `.badge .badge-*`. 칩: `.chip`.

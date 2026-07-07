@@ -6,6 +6,7 @@ import { api } from '../api'
 import { AudioPlayerCard } from './AudioPlayerCard'
 import type { AudioPlayerCardHandle } from './AudioPlayerCard'
 import { AvatarStack } from './Avatar'
+import { useConfirm } from './confirm'
 import { ParticipantPicker } from './ParticipantPicker'
 import { StatusBadge } from './StatusBadge'
 import { TagPicker } from './TagPicker'
@@ -44,6 +45,7 @@ export interface MeetingDetailViewProps {
  */
 export function MeetingDetailView({ meetingId, onBack, onDeleted, onChanged }: MeetingDetailViewProps) {
   const navigate = useNavigate()
+  const confirm = useConfirm()
 
   const [meeting, setMeeting] = useState<MeetingDetail | null>(null)
   const [loading, setLoading] = useState(true)
@@ -129,6 +131,13 @@ export function MeetingDetailView({ meetingId, onBack, onDeleted, onChanged }: M
     return marked.parse(md, { async: false }) as string
   }, [meeting?.summary?.minutes_md])
 
+  // 회의내용(주제별 정리) — 레거시 요약에는 discussion이 없을 수 있음
+  const discussionHtml = useMemo(() => {
+    const md = meeting?.summary?.discussion
+    if (!md) return ''
+    return marked.parse(md, { async: false }) as string
+  }, [meeting?.summary?.discussion])
+
   /** 스크립트 세그먼트/메모 시간 칩 클릭 → 플레이어 점프 + 재생 */
   const seekTo = (sec: number) => {
     playerRef.current?.seekTo(sec, true)
@@ -202,10 +211,16 @@ export function MeetingDetailView({ meetingId, onBack, onDeleted, onChanged }: M
     }
   }
 
-  // ----- 삭제 -----
+  // ----- 삭제 (휴지통 이동) -----
   const handleDelete = async () => {
     if (!meeting) return
-    if (!window.confirm('이 회의를 삭제할까요?\n녹음 파일과 기록이 모두 삭제됩니다.')) return
+    const ok = await confirm({
+      title: '휴지통으로 이동할까요?',
+      message: '휴지통에서 복원하거나 완전 삭제할 수 있어요.',
+      confirmLabel: '휴지통으로 이동',
+      danger: true,
+    })
+    if (!ok) return
     try {
       await api.deleteMeeting(meeting.id)
       if (onDeleted) onDeleted()
@@ -274,7 +289,12 @@ export function MeetingDetailView({ meetingId, onBack, onDeleted, onChanged }: M
   }
 
   const handleDeleteBookmark = async (b: Bookmark) => {
-    if (!window.confirm('이 메모를 삭제할까요?')) return
+    const ok = await confirm({
+      title: '이 메모를 삭제할까요?',
+      confirmLabel: '삭제',
+      danger: true,
+    })
+    if (!ok) return
     try {
       await api.deleteBookmark(b.id)
       setMeeting((prev) =>
@@ -476,12 +496,35 @@ export function MeetingDetailView({ meetingId, onBack, onDeleted, onChanged }: M
       </div>
 
       <div className="card tab-panel">
-        {/* AI 요약 */}
+        {/* AI 요약 — K1 구조: 회의내용 / 핵심내용 / 결정사항(+추가 확인 필요) / 할 일 */}
         {tab === 'summary' &&
           (summary ? (
             <div className="summary-panel">
+              {summary.engine_note && (
+                <div className="engine-warn-banner">
+                  <span>⚠ {summary.engine_note}</span>
+                  <button
+                    type="button"
+                    className="engine-warn-link"
+                    onClick={() => navigate('/settings#ai')}
+                  >
+                    설정 확인 →
+                  </button>
+                </div>
+              )}
+
+              {discussionHtml && (
+                <section className="summary-section">
+                  <h3 className="section-title">회의내용</h3>
+                  <div
+                    className="markdown-body discussion-body"
+                    dangerouslySetInnerHTML={{ __html: discussionHtml }}
+                  />
+                </section>
+              )}
+
               <section className="summary-section">
-                <h3 className="section-title">핵심 요약</h3>
+                <h3 className="section-title">핵심내용</h3>
                 {summary.key_points.length > 0 ? (
                   <ul className="kp-list">
                     {summary.key_points.map((p, i) => (
@@ -489,12 +532,12 @@ export function MeetingDetailView({ meetingId, onBack, onDeleted, onChanged }: M
                     ))}
                   </ul>
                 ) : (
-                  <p className="muted">핵심 요약이 없어요.</p>
+                  <p className="muted">핵심내용이 없어요.</p>
                 )}
               </section>
 
               <section className="summary-section">
-                <h3 className="section-title">결정 사항</h3>
+                <h3 className="section-title">결정사항</h3>
                 {summary.decisions.length > 0 ? (
                   <ul className="decision-list">
                     {summary.decisions.map((d, i) => (
@@ -505,9 +548,23 @@ export function MeetingDetailView({ meetingId, onBack, onDeleted, onChanged }: M
                     ))}
                   </ul>
                 ) : (
-                  <p className="muted">기록된 결정 사항이 없어요.</p>
+                  <p className="muted">명확히 확정된 결정사항은 없음</p>
                 )}
               </section>
+
+              {(summary.followups ?? []).length > 0 && (
+                <section className="summary-section">
+                  <h3 className="section-title">추가 확인 필요 사항</h3>
+                  <ul className="followup-list">
+                    {(summary.followups ?? []).map((f, i) => (
+                      <li key={i}>
+                        <span className="followup-mark">❓</span>
+                        <span>{f}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
 
               <section className="summary-section">
                 <h3 className="section-title">할 일</h3>

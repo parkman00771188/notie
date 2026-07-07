@@ -3,6 +3,7 @@ import type { FormEvent } from 'react'
 import { api } from '../api'
 import type { AppSettings } from '../api'
 import ComboBox from './ComboBox'
+import { useConfirm } from './confirm'
 import './AiEngineSettings.css'
 
 /** 모델 목록 로드 실패/키 미등록 시 보여줄 추천 모델 폴백 목록 (최신순) */
@@ -19,6 +20,7 @@ const FALLBACK_GEMINI_MODELS = [
  * 현재 엔진 상태 배지 + Gemini API 키 등록/테스트/삭제 + 모델 선택 + 요약 지시사항(프롬프트) 카드.
  */
 export function AiEngineSettings() {
+  const confirm = useConfirm()
   const [settings, setSettings] = useState<AppSettings | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -202,9 +204,13 @@ export function AiEngineSettings() {
 
   const handleDeleteKey = async () => {
     if (deleting) return
-    if (!window.confirm('저장된 Gemini API 키를 삭제할까요?\n삭제하면 Ollama 또는 내장 추출 요약으로 동작해요.')) {
-      return
-    }
+    const ok = await confirm({
+      title: '저장된 Gemini API 키를 삭제할까요?',
+      message: '삭제하면 Ollama 또는 내장 추출 요약으로 동작해요.',
+      confirmLabel: '삭제',
+      danger: true,
+    })
+    if (!ok) return
     setDeleting(true)
     setError('')
     setTestResult(null)

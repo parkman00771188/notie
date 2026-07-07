@@ -3,7 +3,9 @@ import type { MouseEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api'
 import { AvatarStack } from '../components/Avatar'
+import { useConfirm } from '../components/confirm'
 import { StatusBadge } from '../components/StatusBadge'
+import { TrashModal } from '../components/TrashModal'
 import { UploadModal } from '../components/UploadModal'
 import type { Meeting, Tag } from '../types'
 import { formatClock, formatKoreanDateTime } from '../utils'
@@ -21,9 +23,12 @@ interface MeetingGroup {
 
 export default function MeetingsPage() {
   const navigate = useNavigate()
+  const confirm = useConfirm()
   const [q, setQ] = useState('')
   const [meetings, setMeetings] = useState<Meeting[] | null>(null)
   const [uploadOpen, setUploadOpen] = useState(false)
+  const [trashOpen, setTrashOpen] = useState(false)
+  const [reloadKey, setReloadKey] = useState(0)
   const [tags, setTags] = useState<Tag[]>([])
   const [tagFilter, setTagFilter] = useState<TagFilter>('all')
   const [view, setView] = useState<'list' | 'folder'>('folder')
@@ -57,11 +62,17 @@ export default function MeetingsPage() {
       alive = false
       window.clearTimeout(timer)
     }
-  }, [q, tagFilter])
+  }, [q, tagFilter, reloadKey])
 
   const handleDelete = async (e: MouseEvent, m: Meeting) => {
     e.stopPropagation()
-    if (!window.confirm(`'${m.title}' 회의를 삭제할까요?\n녹음 파일과 기록이 모두 삭제됩니다.`)) return
+    const ok = await confirm({
+      title: `'${m.title}' 회의를 휴지통으로 이동할까요?`,
+      message: '휴지통에서 복원하거나 완전 삭제할 수 있어요.',
+      confirmLabel: '휴지통으로 이동',
+      danger: true,
+    })
+    if (!ok) return
     try {
       await api.deleteMeeting(m.id)
       setMeetings((prev) => (prev ? prev.filter((x) => x.id !== m.id) : prev))
@@ -155,6 +166,9 @@ export default function MeetingsPage() {
           />
           <button type="button" className="btn btn-ghost" onClick={() => setUploadOpen(true)}>
             ⬆ 파일 업로드
+          </button>
+          <button type="button" className="btn btn-ghost" onClick={() => setTrashOpen(true)}>
+            🗑 휴지통
           </button>
         </div>
       </div>
@@ -272,6 +286,11 @@ export default function MeetingsPage() {
       )}
 
       <UploadModal open={uploadOpen} onClose={() => setUploadOpen(false)} />
+      <TrashModal
+        open={trashOpen}
+        onClose={() => setTrashOpen(false)}
+        onChanged={() => setReloadKey((k) => k + 1)}
+      />
     </div>
   )
 }

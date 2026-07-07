@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
+import { useConfirm } from './confirm'
 import './ComboBox.css'
 
 export interface ComboBoxProps {
@@ -27,6 +28,7 @@ export function ComboBox({
   onCreateOption,
   onDeleteOption,
 }: ComboBoxProps) {
+  const confirm = useConfirm()
   const [open, setOpen] = useState(false)
   // 드롭다운을 연 뒤 타이핑했는지 — 타이핑 전에는 전체 목록을 보여준다
   const [filtering, setFiltering] = useState(false)
@@ -191,11 +193,15 @@ export function ComboBox({
                   className="combobox-option-x"
                   aria-label={`${o} 삭제`}
                   title="목록에서 삭제"
-                  onClick={(e) => {
+                  onClick={async (e) => {
                     e.stopPropagation()
-                    if (window.confirm(`'${o}' 항목을 목록에서 삭제할까요?`)) {
-                      onDeleteOption(o)
-                    }
+                    const ok = await confirm({
+                      title: `'${o}' 항목을 삭제할까요?`,
+                      message: '선택 목록에서만 제거되며, 이미 입력된 값에는 영향을 주지 않아요.',
+                      confirmLabel: '삭제',
+                      danger: true,
+                    })
+                    if (ok) onDeleteOption(o)
                   }}
                 >
                   ×

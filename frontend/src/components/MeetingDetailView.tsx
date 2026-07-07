@@ -527,7 +527,7 @@ export function MeetingDetailView({ meetingId, onBack, onDeleted, onChanged }: M
                   메모와 전체 스크립트를 기준으로 다시 요약합니다
                 </span>
                 <button className="btn btn-soft" onClick={handleResummarize}>
-                  🔄 재요약
+                  ✨ AI 요약
                 </button>
               </>
             )}

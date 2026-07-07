@@ -55,8 +55,16 @@ def _run_full_job(meeting_id: int) -> None:
         if not audio_path.exists():
             raise RuntimeError(f"오디오 파일을 찾을 수 없습니다: {audio_filename}")
 
-        # 1) 변환
+        # 0) 파형 피크 미리 계산 (변환 중에도 UI에 파형이 보이도록 — 실패해도 진행)
         _set_status(conn, meeting_id, "transcribing")
+        try:
+            from . import waveform
+
+            waveform.get_peaks(audio_path)
+        except Exception:
+            logger.warning("pipeline: 파형 계산 실패 — 요청 시 재계산됨 (meeting %s)", meeting_id)
+
+        # 1) 변환
         segments = stt.transcribe(str(audio_path))
 
         # 기존 세그먼트 삭제 후 삽입 (무음이면 0개 — 정상 진행)

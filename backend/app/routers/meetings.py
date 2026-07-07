@@ -19,7 +19,7 @@ from pydantic import BaseModel
 
 from .. import config, db
 from ..auth_utils import get_current_user
-from ..services import pipeline
+from ..services import pipeline, waveform
 
 router = APIRouter()
 
@@ -353,6 +353,26 @@ def get_audio(meeting_id: int, user: dict = Depends(get_current_user)) -> FileRe
     ext = path.suffix.lower()
     media_type = _MEDIA_BY_EXT.get(ext) or mimetypes.guess_type(str(path))[0] or "audio/webm"
     return FileResponse(path, media_type=media_type)
+
+
+@router.get("/{meeting_id}/waveform")
+def get_waveform(meeting_id: int, user: dict = Depends(get_current_user)) -> dict:
+    """파형 피크(≤600개) — 서버에서 스트리밍 계산·캐시. 브라우저 디코딩 OOM 방지."""
+    with closing(db.get_conn()) as conn:
+        row = get_owned_meeting(conn, meeting_id, user["id"])
+        audio_filename = row["audio_filename"]
+        duration_sec = row["duration_sec"]
+
+    if not audio_filename:
+        raise HTTPException(status_code=404, detail="오디오 파일이 없습니다")
+    path = config.AUDIO_DIR / audio_filename
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="오디오 파일이 없습니다")
+
+    try:
+        return waveform.get_peaks(path)
+    except Exception:  # 디코드 실패 시 프론트가 균일 점으로 폴백
+        return {"peaks": [], "duration_sec": duration_sec}
 
 
 @router.get("/{meeting_id}/status")

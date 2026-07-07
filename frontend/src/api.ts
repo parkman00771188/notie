@@ -199,6 +199,11 @@ export const api = {
     return request<{ ok: boolean }>(`/api/meetings/${id}/summarize`, { method: 'POST' })
   },
 
+  /** 파형 피크(서버 계산, ≤600개) — 브라우저 전체 디코딩 OOM 방지 */
+  getWaveform(meetingId: number): Promise<{ peaks: number[]; duration_sec: number | null }> {
+    return request(`/api/meetings/${meetingId}/waveform`)
+  },
+
   /** <audio src>용 URL — 헤더를 못 붙이므로 토큰을 쿼리로 전달 */
   audioUrl(meetingId: number): string {
     const token = getToken()

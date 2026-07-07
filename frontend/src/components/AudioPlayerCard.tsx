@@ -8,6 +8,7 @@ import {
   useState,
 } from 'react'
 import type { PointerEvent as ReactPointerEvent } from 'react'
+import { api } from '../api'
 import type { BookmarkKind } from '../types'
 import { formatClock } from '../utils'
 import './AudioPlayerCard.css'
@@ -25,6 +26,8 @@ export interface AudioPlayerCardBookmark {
 
 export interface AudioPlayerCardProps {
   src: string
+  /** 파형 피크를 서버에서 받아올 회의 id — 없으면 균일 점 폴백 */
+  meetingId?: number
   /** webm 등 audio.duration이 Infinity일 때 폴백 */
   durationSec?: number | null
   /** note 제외(시간 있는 memo/mark만) 전달됨 */
@@ -33,8 +36,6 @@ export interface AudioPlayerCardProps {
   onAddMark?: (timeSec: number) => void
 }
 
-/** 다운샘플 버킷 수 (~600) */
-const PEAK_BUCKETS = 600
 /** 점 지름(무음 시 기본 크기) */
 const DOT_SIZE = 4
 const DOT_GAP = 4
@@ -56,38 +57,6 @@ interface Pin {
   kind: BookmarkKind
 }
 
-/** 채널 평균 절대값을 버킷별 피크로 다운샘플 (최대값 기준 정규화) */
-function computePeaks(buffer: AudioBuffer, buckets: number): number[] {
-  const length = buffer.length
-  const channels = buffer.numberOfChannels
-  if (length === 0 || channels === 0) return []
-  const datas: Float32Array[] = []
-  for (let c = 0; c < channels; c++) datas.push(buffer.getChannelData(c))
-
-  const n = Math.min(buckets, length)
-  const peaks = new Array<number>(n).fill(0)
-  const step = length / n
-  for (let i = 0; i < n; i++) {
-    const start = Math.floor(i * step)
-    const end = Math.min(length, Math.max(start + 1, Math.floor((i + 1) * step)))
-    // 긴 오디오 대비 버킷 내부는 건너뛰며 샘플링 (버킷당 최대 ~256 샘플)
-    const stride = Math.max(1, Math.floor((end - start) / 256))
-    let peak = 0
-    for (let j = start; j < end; j += stride) {
-      let sum = 0
-      for (let c = 0; c < channels; c++) sum += Math.abs(datas[c][j])
-      const amp = sum / channels
-      if (amp > peak) peak = amp
-    }
-    peaks[i] = peak
-  }
-
-  let max = 0
-  for (const p of peaks) if (p > max) max = p
-  if (max > 0) for (let i = 0; i < n; i++) peaks[i] = Math.min(1, peaks[i] / max)
-  return peaks
-}
-
 /** 폭 → 점 슬롯 수/점 트랙 폭(첫 점 시작 ~ 마지막 점 끝) */
 function trackMetrics(width: number) {
   const innerW = Math.max(0, width - PAD_X * 2)
@@ -98,13 +67,14 @@ function trackMetrics(width: number) {
 
 /**
  * 레코더 카드 무드의 오디오 재생 UI — 숨긴 <audio> + 점(dot) 파형 패널.
- * - fetch(src) → decodeAudioData → ~600 버킷 피크를 canvas 점 시퀀스로 렌더
+ * - 파형 피크는 서버(GET /api/meetings/{id}/waveform)에서 계산된 ≤600개를 받아 렌더
+ *   (브라우저 decodeAudioData는 장시간 녹음에서 수 GB PCM → OOM이라 사용하지 않음)
  * - 재생된 구간은 진한 파랑, 이후는 연한 파랑, 현재 위치 세로 커서
  * - 파형 클릭/드래그 시크, 북마크 핀(시간 칩) 클릭 시크
  * - ref.seekTo(sec, autoplay)로 외부(스크립트/메모 시간 칩)에서 점프
  */
 export const AudioPlayerCard = forwardRef<AudioPlayerCardHandle, AudioPlayerCardProps>(
-  function AudioPlayerCard({ src, durationSec, bookmarks, onAddMark }, ref) {
+  function AudioPlayerCard({ src, meetingId, durationSec, bookmarks, onAddMark }, ref) {
     const audioRef = useRef<HTMLAudioElement | null>(null)
     const panelRef = useRef<HTMLDivElement | null>(null)
     const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -139,54 +109,40 @@ export const AudioPlayerCard = forwardRef<AudioPlayerCardHandle, AudioPlayerCard
       setMediaDuration(null)
     }, [src])
 
-    // fetch → AudioContext.decodeAudioData → 피크 다운샘플 (언마운트/재디코드 시 컨텍스트 close)
+    // 서버 계산 피크 조회 — 실패/미지정 시 균일 점 폴백 (재생/시크는 <audio>로 정상 동작)
     useEffect(() => {
       setPeaks(null)
       setBufferDuration(null)
       setDecodeFailed(false)
 
-      let cancelled = false
-      const win = window as unknown as {
-        AudioContext?: typeof AudioContext
-        webkitAudioContext?: typeof AudioContext
-      }
-      const Ctor = win.AudioContext ?? win.webkitAudioContext
-      if (!Ctor) {
-        setDecodeFailed(true)
-        return
-      }
-      let ctx: AudioContext | null = null
-      try {
-        ctx = new Ctor()
-      } catch {
+      if (!meetingId) {
         setDecodeFailed(true)
         return
       }
 
-      // src에 token 쿼리가 포함돼 있어 Authorization 헤더 불필요
-      fetch(src)
-        .then((res) => {
-          if (!res.ok) throw new Error(`HTTP ${res.status}`)
-          return res.arrayBuffer()
-        })
-        .then((buf) => ctx!.decodeAudioData(buf))
-        .then((buffer) => {
+      let cancelled = false
+      api
+        .getWaveform(meetingId)
+        .then((data) => {
           if (cancelled) return
-          setPeaks(computePeaks(buffer, PEAK_BUCKETS))
-          if (isFinite(buffer.duration) && buffer.duration > 0) {
-            setBufferDuration(buffer.duration)
+          if (data.peaks.length > 0) setPeaks(data.peaks)
+          else setDecodeFailed(true)
+          if (
+            typeof data.duration_sec === 'number' &&
+            isFinite(data.duration_sec) &&
+            data.duration_sec > 0
+          ) {
+            setBufferDuration(data.duration_sec)
           }
         })
         .catch(() => {
-          // 디코드 실패 → 균일 점 폴백 (재생/시크는 <audio>로 정상 동작)
           if (!cancelled) setDecodeFailed(true)
         })
 
       return () => {
         cancelled = true
-        void ctx?.close().catch(() => {})
       }
-    }, [src])
+    }, [meetingId, src])
 
     // <audio> 이벤트 — 메타데이터/재생 상태/진행(timeupdate → rAF 스로틀)
     useEffect(() => {

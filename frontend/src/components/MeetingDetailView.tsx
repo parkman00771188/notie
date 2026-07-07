@@ -471,6 +471,7 @@ export function MeetingDetailView({ meetingId, onBack, onDeleted, onChanged }: M
         <AudioPlayerCard
           ref={playerRef}
           src={api.audioUrl(meeting.id)}
+          meetingId={meeting.id}
           durationSec={meeting.duration_sec}
           bookmarks={timedBookmarks}
           onAddMark={(timeSec) => void handleAddMark(timeSec)}

@@ -433,9 +433,20 @@ def export_minutes(
         ext = "docx"
         media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
-    # 파일명: [회의록] <제목>.<ext> (윈도우 금지 문자 제거)
-    safe_title = re.sub(r'[\\/:*?"<>|]+', " ", meeting["title"]).strip() or "회의록"
-    filename = f"[회의록] {safe_title}.{ext}"
+    # 파일명: [회의록] 태그 - 제목 (YYYY.MM.DD HH.MM).<ext>
+    # (콜론은 윈도우 파일명 금지 문자라 시간 구분자는 '.'을 사용)
+    def _safe(text: str) -> str:
+        return re.sub(r'[\\/:*?"<>|]+', " ", text).strip()
+
+    safe_title = _safe(meeting["title"]) or "회의록"
+    safe_tag = _safe(meeting["tag"] or "")
+    date_part = ""
+    try:
+        d = datetime.fromisoformat(meeting["started_at"] or "")
+        date_part = f" ({d.year}.{d.month:02d}.{d.day:02d} {d.hour:02d}.{d.minute:02d})"
+    except ValueError:
+        pass
+    filename = f"[회의록] {safe_tag + ' - ' if safe_tag else ''}{safe_title}{date_part}.{ext}"
     return Response(
         content=data,
         media_type=media_type,

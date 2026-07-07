@@ -52,6 +52,13 @@ export function RecentMeetingsPanel({ refreshKey = 0 }: RecentMeetingsPanelProps
       .finally(() => {
         if (!cancelled) setLoading(false)
       })
+    // 태그 사전 — 패널 목록의 태그 칩 색에도 필요하므로 처음부터 로드
+    api
+      .listTags()
+      .then((list) => {
+        if (!cancelled) setTags(list)
+      })
+      .catch(() => {})
     return () => {
       cancelled = true
     }
@@ -65,11 +72,6 @@ export function RecentMeetingsPanel({ refreshKey = 0 }: RecentMeetingsPanelProps
     setCollapsed({})
     setDetailId(null)
     setModalOpen(true)
-    // 태그 사전은 필터 칩/폴더 색에 사용 (실패해도 목록은 동작)
-    api
-      .listTags()
-      .then(setTags)
-      .catch(() => {})
   }
 
   const closeModal = () => {

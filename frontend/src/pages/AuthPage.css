@@ -20,10 +20,10 @@
   gap: 10px;
 }
 
+/* 워드마크형 로고(가로형) — 비율 유지 */
 .auth-logo img {
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
+  height: 34px;
+  width: auto;
   display: block;
 }
 

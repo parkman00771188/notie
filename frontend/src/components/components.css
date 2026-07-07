@@ -30,14 +30,14 @@
 .sidebar-logo {
   display: flex;
   align-items: center;
-  gap: 9px;
+  justify-content: center;
   padding: 22px 20px 18px;
 }
 
+/* 워드마크형 로고(가로형) — 비율 유지: height만 고정, width는 자동 */
 .sidebar-logo img {
-  width: 28px;
-  height: 28px;
-  border-radius: 7px;
+  height: 30px;
+  width: auto;
   display: block;
 }
 

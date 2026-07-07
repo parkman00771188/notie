@@ -72,7 +72,6 @@ export default function AuthPage() {
       <header className="auth-topbar">
         <div className="auth-logo">
           <img src="/logo.png" alt="Notie 로고" />
-          <span>Notie</span>
         </div>
       </header>
 

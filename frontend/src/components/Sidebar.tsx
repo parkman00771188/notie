@@ -105,8 +105,8 @@ export function Sidebar() {
   return (
     <aside className="sidebar">
       <div className="sidebar-logo">
+        {/* 로고에 워드마크(notie)가 포함돼 있어 텍스트는 따로 두지 않는다 */}
         <img src="/logo.png" alt="Notie 로고" />
-        <span className="sidebar-wordmark">Notie</span>
       </div>
 
       <div className="sidebar-new">

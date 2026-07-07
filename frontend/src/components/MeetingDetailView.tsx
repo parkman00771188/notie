@@ -485,6 +485,15 @@ export function MeetingDetailView({
     }
   }
 
+  const handleResummarizeWithConfirm = async () => {
+    const ok = await confirm({
+      title: 'AI 요약을 진행하시겠습니까?',
+      confirmLabel: '진행',
+    })
+    if (!ok) return
+    await handleResummarize()
+  }
+
   // ----- 회의 잠금 -----
   const handleToggleLock = async () => {
     if (!meeting) return
@@ -719,11 +728,11 @@ export function MeetingDetailView({
               <>
                 <button
                   className="btn btn-soft"
-                  onClick={handleResummarize}
+                  onClick={() => void handleResummarizeWithConfirm()}
                   disabled={isLocked}
                   title={isLocked ? lockedActionMessage : resummarizeHint}
                 >
-                  ✨ AI 회의록
+                  ✨ AI 요약
                 </button>
               </>
             )}

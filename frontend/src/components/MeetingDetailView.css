@@ -406,10 +406,28 @@
   color: var(--primary);
 }
 
+.detail-date-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .detail-date-input {
-  width: 215px;
+  width: 145px;
   padding: 4px 8px;
   font-size: 13.5px;
+}
+
+/* 24시간제 시/분 셀렉트 (14시 · 30분) */
+.detail-time-select {
+  width: auto;
+  padding: 4px 6px;
+  font-size: 13.5px;
+}
+
+.detail-date-save {
+  padding: 5px 10px;
+  font-size: 13px;
 }
 
 /* 회의록 참석자 — 소속별 그룹 (라이브 데이터 렌더) */

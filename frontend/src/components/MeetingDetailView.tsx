@@ -62,7 +62,9 @@ export function MeetingDetailView({ meetingId, onBack, onDeleted, onChanged }: M
   const [addingNote, setAddingNote] = useState(false)
   const [tags, setTags] = useState<Tag[]>([])
   const [editingDate, setEditingDate] = useState(false)
-  const [dateDraft, setDateDraft] = useState('')
+  const [dateDraft, setDateDraft] = useState('') // YYYY-MM-DD
+  const [hourDraft, setHourDraft] = useState(9)
+  const [minuteDraft, setMinuteDraft] = useState(0)
 
   // 회의록 헤더의 태그 칩 색 매칭용 (실패해도 기본색으로 표시)
   useEffect(() => {
@@ -200,12 +202,23 @@ export function MeetingDetailView({ meetingId, onBack, onDeleted, onChanged }: M
     playerRef.current?.seekTo(sec, true)
   }
 
-  /** 회의 날짜/시간 변경 (datetime-local → ISO) */
+  /** 날짜 편집 시작 — 기존 일시를 날짜/시(24h)/분으로 분해 */
+  const beginEditDate = () => {
+    if (!meeting) return
+    const iso = meeting.started_at || ''
+    setDateDraft(iso.slice(0, 10))
+    setHourDraft(Number(iso.slice(11, 13)) || 0)
+    setMinuteDraft(Number(iso.slice(14, 16)) || 0)
+    setEditingDate(true)
+  }
+
+  /** 회의 날짜/시간 변경 (날짜 + 24시간제 시/분 → ISO) */
   const commitDate = async () => {
     if (!meeting) return
     setEditingDate(false)
-    const value = dateDraft.trim()
-    if (!value || value === (meeting.started_at || '').slice(0, 16)) return
+    if (!dateDraft.trim()) return
+    const value = `${dateDraft}T${String(hourDraft).padStart(2, '0')}:${String(minuteDraft).padStart(2, '0')}`
+    if (value === (meeting.started_at || '').slice(0, 16)) return
     try {
       const updated = await api.updateMeeting(meeting.id, { started_at: value })
       setMeeting((prev) => (prev ? { ...prev, started_at: updated.started_at } : prev))
@@ -520,27 +533,59 @@ export function MeetingDetailView({ meetingId, onBack, onDeleted, onChanged }: M
 
         <div className="detail-meta">
           {editingDate ? (
-            <input
-              type="datetime-local"
-              className="input detail-date-input"
-              value={dateDraft}
-              autoFocus
-              onChange={(e) => setDateDraft(e.target.value)}
-              onBlur={() => void commitDate()}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') void commitDate()
-                else if (e.key === 'Escape') setEditingDate(false)
-              }}
-            />
+            <span className="detail-date-edit">
+              <input
+                type="date"
+                className="input detail-date-input"
+                value={dateDraft}
+                autoFocus
+                onChange={(e) => setDateDraft(e.target.value)}
+              />
+              <select
+                className="input detail-time-select"
+                aria-label="시"
+                value={hourDraft}
+                onChange={(e) => setHourDraft(Number(e.target.value))}
+              >
+                {Array.from({ length: 24 }, (_, h) => (
+                  <option key={h} value={h}>
+                    {h}시
+                  </option>
+                ))}
+              </select>
+              <select
+                className="input detail-time-select"
+                aria-label="분"
+                value={minuteDraft}
+                onChange={(e) => setMinuteDraft(Number(e.target.value))}
+              >
+                {Array.from({ length: 60 }, (_, m) => (
+                  <option key={m} value={m}>
+                    {String(m).padStart(2, '0')}분
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                className="btn btn-primary detail-date-save"
+                onClick={() => void commitDate()}
+              >
+                저장
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost detail-date-save"
+                onClick={() => setEditingDate(false)}
+              >
+                취소
+              </button>
+            </span>
           ) : (
             <button
               type="button"
               className="detail-date-btn"
               title="회의 날짜/시간 변경"
-              onClick={() => {
-                setDateDraft((meeting.started_at || '').slice(0, 16))
-                setEditingDate(true)
-              }}
+              onClick={beginEditDate}
             >
               {formatKoreanDateTime(meeting.started_at)} ✎
             </button>

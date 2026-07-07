@@ -1,4 +1,4 @@
-# Gimnote 백엔드 실행 스크립트
+# Notie 백엔드 실행 스크립트
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot\backend
 

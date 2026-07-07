@@ -1,4 +1,4 @@
-# Gimnote 프론트엔드 실행 스크립트
+# Notie 프론트엔드 실행 스크립트
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot\frontend
 

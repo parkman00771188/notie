@@ -127,6 +127,9 @@ def _labeled_box(pdf, label: str, render, min_height: float = 0.0) -> None:
         pdf.rect(left, y0, LABEL_W, y1 - y0, style="DF")
         pdf.rect(left + LABEL_W, y0, right_edge - left - LABEL_W, y1 - y0, style="D")
         if pg == start_page:
+            # 글꼴도 캐시가 있어 페이지 이동 후에는 선택 명령이 생략될 수 있다
+            # (→ 다른 글꼴 서브셋으로 그려져 라벨 글자가 깨짐). 캐시를 깨고 다시 지정.
+            pdf.set_font(FONT, "", 8)
             pdf.set_font(FONT, "B", 10.5)
             pdf.set_xy(left, y0 + (y1 - y0) / 2 - 3)
             pdf.cell(LABEL_W, 6, label, align="C")

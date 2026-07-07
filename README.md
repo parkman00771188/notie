@@ -1,4 +1,4 @@
-# Notie — 로컬 AI 회의록 도우미 (구 Gimnote)
+# Notie — 로컬 AI 회의록 도우미
 
 녹음하면, 요약과 회의록이 자동으로 완성됩니다. 모든 처리는 **로컬**에서 이루어집니다.
 
@@ -34,18 +34,18 @@
 
 | 변수 | 기본값 | 설명 |
 | --- | --- | --- |
-| `GIMNOTE_WHISPER_MODEL` | `small` | `tiny`/`base`/`small`/`medium`/`large-v3` — 클수록 정확·느림 |
-| `GIMNOTE_LANGUAGE` | `ko` | STT 언어 |
-| `GIMNOTE_OLLAMA_URL` | `http://127.0.0.1:11434` | Ollama 주소 |
-| `GIMNOTE_OLLAMA_MODEL` | (첫 모델) | 요약에 사용할 Ollama 모델명 |
-| `GIMNOTE_DATA_DIR` | `./data` | DB·오디오 저장 경로 |
+| `NOTIE_WHISPER_MODEL` | `small` | `tiny`/`base`/`small`/`medium`/`large-v3` — 클수록 정확·느림 |
+| `NOTIE_LANGUAGE` | `ko` | STT 언어 |
+| `NOTIE_OLLAMA_URL` | `http://127.0.0.1:11434` | Ollama 주소 |
+| `NOTIE_OLLAMA_MODEL` | (첫 모델) | 요약에 사용할 Ollama 모델명 |
+| `NOTIE_DATA_DIR` | `./data` | DB·오디오 저장 경로 |
 
 ## 구조
 
 ```
 backend/   FastAPI + SQLite + faster-whisper (요약 파이프라인은 백그라운드 스레드)
 frontend/  React + Vite + TypeScript (dev 서버가 /api를 8000 포트로 프록시)
-data/      gimnote.db, audio/  (자동 생성)
+data/      DB·오디오 파일  (자동 생성)
 ```
 
 상세 설계는 [SPEC.md](SPEC.md) 참고.

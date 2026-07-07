@@ -5,15 +5,15 @@
 
   회의록                                         ← 큰 제목
   ┌─────────┬───────────────┬────────┬────────────────┐
-  │ 회의일시 │ 2026년 4월 …  │ 회의명 │ <회의 제목>     │
+  │ 회의일시 │ 2026년 4월 …  │ 회의명 │ <제목> (#태그)  │
   ├─────────┼───────────────┴────────┴────────────────┤
-  │ 참석기관 │ 참석자 소속 목록 (없으면 참석자 이름)      │
+  │ 참석자   │ 이름(소속 · 직책) 콤마 목록               │
   └─────────┴──────────────────────────────────────────┘
   ┌─────────┬──────────────────────────────────────────┐
-  │ 회의내용 │ 내용: 회의내용/핵심내용/결정사항/타임라인… │
+  │ 회의내용 │ 1. 내용 / 핵심 내용 / 결정 사항 / 타임라인… │
   └─────────┴──────────────────────────────────────────┘
   ┌─────────┬──────────────────────────────────────────┐
-  │ 특이사항 │ 일반 메모 (없으면 "내용을 작성하세요.")    │
+  │ 특이사항 │ (빈칸 — 출력 후 직접 작성)                │
   └─────────┴──────────────────────────────────────────┘
 """
 
@@ -178,15 +178,18 @@ def build_minutes_docx(
         meeting_name += f"  (#{tag})"
     _cell_text(t1.cell(0, 3), meeting_name)
 
-    _label_cell(t1.cell(1, 0), "참석기관")
-    orgs: list[str] = []
+    _label_cell(t1.cell(1, 0), "참석자")
+    people: list[str] = []
     for p in participants:
-        org = str(p.get("organization") or "").strip()
-        if org and org not in orgs:
-            orgs.append(org)
-    names = [str(p.get("name") or "").strip() for p in participants if p.get("name")]
+        name = str(p.get("name") or "").strip()
+        if not name:
+            continue
+        extra = " · ".join(
+            v for v in (str(p.get("organization") or "").strip(), str(p.get("role") or "").strip()) if v
+        )
+        people.append(f"{name}({extra})" if extra else name)
     body = t1.cell(1, 1).merge(t1.cell(1, 2)).merge(t1.cell(1, 3))
-    _cell_text(body, ", ".join(orgs) or ", ".join(names) or "-")
+    _cell_text(body, ", ".join(people) or "-")
 
     doc.add_paragraph().paragraph_format.space_after = Pt(2)
 
@@ -198,14 +201,14 @@ def build_minutes_docx(
     _label_cell(t2.cell(0, 0), "회의내용")
 
     content = t2.cell(0, 1)
-    _cell_text(content, "내용", size=10.5, bold=True)
+    content.text = ""
 
     summary = summary or {}
     section_no = 1
 
     discussion = str(summary.get("discussion") or "").strip()
     if discussion:
-        _section(content, section_no, "회의 내용 정리")
+        _section(content, section_no, "내용")
         section_no += 1
         _add_markdown(content, discussion)
 
@@ -254,15 +257,8 @@ def build_minutes_docx(
     t3.cell(0, 0).width = Cm(2.6)
     t3.cell(0, 1).width = Cm(usable_cm - 2.6)
     _label_cell(t3.cell(0, 0), "특이사항")
-    notes = [str(b.get("title") or "").strip() for b in bookmarks if b.get("kind") == "note"]
-    notes = [n for n in notes if n]
-    cell3 = t3.cell(0, 1)
-    if notes:
-        _cell_text(cell3, f"• {notes[0]}")
-        for n in notes[1:]:
-            _add_line(cell3, f"• {n}")
-    else:
-        _cell_text(cell3, "내용을 작성하세요.")
+    # 특이사항은 비워 둔다 — 출력 후 직접 작성 (사용자 요청)
+    _cell_text(t3.cell(0, 1), "")
 
     buf = BytesIO()
     doc.save(buf)

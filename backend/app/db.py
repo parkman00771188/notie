@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 CREATE TABLE IF NOT EXISTS participants (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  source_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
   name TEXT NOT NULL,
   role TEXT,
   department TEXT,
@@ -185,6 +186,11 @@ def _migrate(conn: sqlite3.Connection) -> None:
     for col in ("department", "organization", "email", "phone"):
         if col not in cols:
             conn.execute(f"ALTER TABLE participants ADD COLUMN {col} TEXT")
+    if "source_user_id" not in cols:
+        conn.execute("ALTER TABLE participants ADD COLUMN source_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_participants_source_user ON participants(user_id, source_user_id)"
+    )
 
     bcols = [row[1] for row in conn.execute("PRAGMA table_info(bookmarks)")]
     if "kind" not in bcols:

@@ -28,6 +28,27 @@
 
   --sidebar-width: 248px;
   --panel-width: 380px;
+  --notie-font-scale: 1;
+}
+
+html[data-notie-font-size='very-small'] {
+  --notie-font-scale: 0.88;
+}
+
+html[data-notie-font-size='small'] {
+  --notie-font-scale: 0.94;
+}
+
+html[data-notie-font-size='normal'] {
+  --notie-font-scale: 1;
+}
+
+html[data-notie-font-size='large'] {
+  --notie-font-scale: 1.08;
+}
+
+html[data-notie-font-size='very-large'] {
+  --notie-font-scale: 1.16;
 }
 
 * {
@@ -52,7 +73,7 @@ body {
     sans-serif;
   background: var(--bg);
   color: var(--text);
-  font-size: 15px;
+  font-size: calc(15px * var(--notie-font-scale));
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
 }
@@ -435,4 +456,101 @@ button {
     font-size: 12px;
     border-radius: var(--radius-full);
   }
+}
+
+/* ---------- Font Size Preference ---------- */
+html[data-notie-font-size] body {
+  font-size: calc(15px * var(--notie-font-scale));
+}
+
+html[data-notie-font-size] .page-title {
+  font-size: calc(24px * var(--notie-font-scale));
+}
+
+html[data-notie-font-size] .btn,
+html[data-notie-font-size] .sidebar-user-menu-item,
+html[data-notie-font-size] .mobile-user-menu-item,
+html[data-notie-font-size] .view-toggle-btn {
+  font-size: calc(14px * var(--notie-font-scale));
+}
+
+html[data-notie-font-size] .btn-lg {
+  font-size: calc(16px * var(--notie-font-scale));
+}
+
+html[data-notie-font-size] .input,
+html[data-notie-font-size] .combobox-input,
+html[data-notie-font-size] .meeting-tag-edit-input,
+html[data-notie-font-size] .sp-inline-input {
+  font-size: calc(14px * var(--notie-font-scale));
+}
+
+html[data-notie-font-size] .field-label,
+html[data-notie-font-size] .side-nav-link,
+html[data-notie-font-size] .sp-nav-link,
+html[data-notie-font-size] .meeting-row,
+html[data-notie-font-size] .folder-head,
+html[data-notie-font-size] .recent-item-title,
+html[data-notie-font-size] .project-list-title,
+html[data-notie-font-size] .user-admin-table,
+html[data-notie-font-size] .sp-table,
+html[data-notie-font-size] .calendar-sub,
+html[data-notie-font-size] .day-planner-card-title {
+  font-size: calc(14px * var(--notie-font-scale));
+}
+
+html[data-notie-font-size] .settings-card-title,
+html[data-notie-font-size] .home-section-title,
+html[data-notie-font-size] .calendar-month-title,
+html[data-notie-font-size] .meeting-tag-add-head h3,
+html[data-notie-font-size] .modal-title {
+  font-size: calc(18px * var(--notie-font-scale));
+}
+
+html[data-notie-font-size] .home-greeting {
+  font-size: calc(26px * var(--notie-font-scale));
+}
+
+html[data-notie-font-size] .stat-value {
+  font-size: calc(22px * var(--notie-font-scale));
+}
+
+html[data-notie-font-size] .meeting-card-title,
+html[data-notie-font-size] .row-title,
+html[data-notie-font-size] .tag-filter-option-name,
+html[data-notie-font-size] .project-detail-title,
+html[data-notie-font-size] .user-name-cell strong,
+html[data-notie-font-size] .sp-tag-name,
+html[data-notie-font-size] .sp-group-head {
+  font-size: calc(15px * var(--notie-font-scale));
+}
+
+html[data-notie-font-size] .muted,
+html[data-notie-font-size] .settings-card-desc,
+html[data-notie-font-size] .home-sub,
+html[data-notie-font-size] .home-recent-block-head p,
+html[data-notie-font-size] .meeting-card-meta,
+html[data-notie-font-size] .row-date,
+html[data-notie-font-size] .row-dur,
+html[data-notie-font-size] .calendar-weekday,
+html[data-notie-font-size] .calendar-event-pill,
+html[data-notie-font-size] .project-list-meta,
+html[data-notie-font-size] .user-admin-subtitle,
+html[data-notie-font-size] .sp-subtitle,
+html[data-notie-font-size] .sp-empty,
+html[data-notie-font-size] .sp-hint {
+  font-size: calc(13px * var(--notie-font-scale));
+}
+
+html[data-notie-font-size] .badge,
+html[data-notie-font-size] .tag-pill,
+html[data-notie-font-size] .shared-pill,
+html[data-notie-font-size] .owner-pill,
+html[data-notie-font-size] .home-shared-pill,
+html[data-notie-font-size] .home-owner-pill,
+html[data-notie-font-size] .lock-pill,
+html[data-notie-font-size] .sp-shared-tag,
+html[data-notie-font-size] .sp-private-tag,
+html[data-notie-font-size] .font-preview-meta {
+  font-size: calc(12px * var(--notie-font-scale));
 }

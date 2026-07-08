@@ -48,8 +48,11 @@ class ParticipantUpdate(BaseModel):
 
 
 def _to_participant(row: sqlite3.Row) -> dict:
+    keys = row.keys()
     return {
         "id": row["id"],
+        "source_user_id": row["source_user_id"],
+        "source_username": row["source_username"] if "source_username" in keys else None,
         "name": row["name"],
         "role": row["role"],
         "department": row["department"],
@@ -57,16 +60,76 @@ def _to_participant(row: sqlite3.Row) -> dict:
         "email": row["email"],
         "phone": row["phone"],
         "color": row["color"],
+        "can_delete": row["source_user_id"] is None,
     }
+
+
+def _sync_user_participants(conn: sqlite3.Connection, owner_user_id: int) -> None:
+    """현재 사용자의 참석자 사전에 앱 사용자 계정을 삭제 불가 항목으로 동기화한다."""
+    users = conn.execute(
+        """
+        SELECT id, name, position, department, organization, email, phone
+        FROM users
+        ORDER BY id
+        """
+    ).fetchall()
+    for row in users:
+        existing = conn.execute(
+            """
+            SELECT id
+            FROM participants
+            WHERE user_id = ? AND source_user_id = ?
+            LIMIT 1
+            """,
+            (owner_user_id, row["id"]),
+        ).fetchone()
+        color = COLOR_PALETTE[(row["id"] - 1) % len(COLOR_PALETTE)]
+        values = (
+            row["name"],
+            row["position"],
+            row["department"],
+            row["organization"],
+            row["email"],
+            row["phone"],
+            color,
+        )
+        if existing:
+            conn.execute(
+                """
+                UPDATE participants
+                SET name = ?, role = ?, department = ?, organization = ?, email = ?, phone = ?
+                WHERE id = ?
+                """,
+                (*values[:-1], existing["id"]),
+            )
+        else:
+            conn.execute(
+                """
+                INSERT INTO participants (
+                  user_id, source_user_id, name, role, department, organization, email, phone, color
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (owner_user_id, row["id"], *values),
+            )
 
 
 @router.get("")
 def list_participants(user: dict = Depends(get_current_user)) -> list[dict]:
     conn = db.get_conn()
     try:
+        with conn:
+            _sync_user_participants(conn, user["id"])
         rows = conn.execute(
-            "SELECT id, name, role, department, organization, email, phone, color "
-            "FROM participants WHERE user_id = ? ORDER BY id",
+            """
+            SELECT
+              p.id, p.source_user_id, su.username AS source_username, p.name, p.role,
+              p.department, p.organization, p.email, p.phone, p.color
+            FROM participants p
+            LEFT JOIN users su ON su.id = p.source_user_id
+            WHERE p.user_id = ?
+            ORDER BY p.id
+            """,
             (user["id"],),
         ).fetchall()
     finally:
@@ -115,6 +178,8 @@ def create_participant(
 
     return {
         "id": participant_id,
+        "source_user_id": None,
+        "source_username": None,
         "name": name,
         "role": role,
         "department": department,
@@ -122,6 +187,7 @@ def create_participant(
         "email": email,
         "phone": phone,
         "color": color,
+        "can_delete": True,
     }
 
 
@@ -135,9 +201,11 @@ def update_participant(
     conn = db.get_conn()
     try:
         owned = conn.execute(
-            "SELECT id FROM participants WHERE id = ? AND user_id = ?",
+            "SELECT id, source_user_id FROM participants WHERE id = ? AND user_id = ?",
             (participant_id, user["id"]),
         ).fetchone()
+        if owned is not None and owned["source_user_id"] is not None:
+            raise HTTPException(status_code=400, detail="사용자 계정에서 동기화된 참석자는 수정할 수 없습니다")
         if owned is None:
             raise HTTPException(status_code=404, detail="참석자를 찾을 수 없습니다")
 
@@ -178,7 +246,7 @@ def update_participant(
                 )
 
         row = conn.execute(
-            "SELECT id, name, role, department, organization, email, phone, color "
+            "SELECT id, source_user_id, name, role, department, organization, email, phone, color "
             "FROM participants WHERE id = ?",
             (participant_id,),
         ).fetchone()
@@ -193,6 +261,12 @@ def delete_participant(
 ) -> dict:
     conn = db.get_conn()
     try:
+        protected = conn.execute(
+            "SELECT source_user_id FROM participants WHERE id = ? AND user_id = ?",
+            (participant_id, user["id"]),
+        ).fetchone()
+        if protected is not None and protected["source_user_id"] is not None:
+            raise HTTPException(status_code=400, detail="사용자 계정에서 동기화된 참석자는 삭제할 수 없습니다")
         with conn:
             cur = conn.execute(
                 "DELETE FROM participants WHERE id = ? AND user_id = ?",

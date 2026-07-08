@@ -108,7 +108,14 @@ export default function HomePage() {
     </div>
   )
 
-  const renderRecentSection = (title: string, subtitle: string, items: Meeting[], empty: string, showOwner = false) => (
+  const renderRecentSection = (
+    title: string,
+    subtitle: string,
+    items: Meeting[],
+    empty: string,
+    scope: 'shared' | 'mine',
+    showOwner = false,
+  ) => (
     <section className="home-recent-block" aria-label={title}>
       <div className="home-recent-block-head">
         <div>
@@ -116,7 +123,7 @@ export default function HomePage() {
           <p>{subtitle}</p>
         </div>
         {items.length > 0 && (
-          <button className="btn btn-ghost home-view-all" onClick={() => navigate('/meetings')}>
+          <button className="btn btn-ghost home-view-all" onClick={() => navigate(`/meetings?scope=${scope}`)}>
             전체 보기
           </button>
         )}
@@ -209,6 +216,7 @@ export default function HomePage() {
             '공유된 회의 중 최근 기록을 빠르게 확인하세요.',
             recentShared,
             '아직 공유된 회의가 없어요.',
+            'shared',
             true,
           )}
           {renderRecentSection(
@@ -216,6 +224,7 @@ export default function HomePage() {
             '내가 만든 회의 기록만 따로 모아봤어요.',
             recentMine,
             '아직 내 회의 기록이 없어요.',
+            'mine',
           )}
         </div>
       )}

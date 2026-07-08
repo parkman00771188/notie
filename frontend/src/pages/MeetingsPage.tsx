@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { FormEvent, MouseEvent } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { api } from '../api'
 import { useAuth } from '../App'
 import { AvatarStack } from '../components/Avatar'
@@ -17,6 +17,11 @@ import './MeetingsPage.css'
 /** 태그 필터: 'all'(전체) | 'none'(태그 없음) | { tag: 태그명 } */
 type TagFilter = 'all' | 'none' | { tag: string }
 type MeetingScope = 'shared' | 'mine'
+
+const scopeFromSearch = (search: string): MeetingScope => {
+  const value = new URLSearchParams(search).get('scope')
+  return value === 'shared' ? 'shared' : 'mine'
+}
 
 const TAG_PALETTE = [
   '#16a34a',
@@ -80,6 +85,7 @@ function TagColorPicker({
 
 export default function MeetingsPage() {
   const navigate = useNavigate()
+  const location = useLocation()
   const confirm = useConfirm()
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
@@ -101,7 +107,7 @@ export default function MeetingsPage() {
   const [editTagColor, setEditTagColor] = useState<string | null>(null)
   const [editTagShared, setEditTagShared] = useState(false)
   const [tagSaving, setTagSaving] = useState(false)
-  const [scope, setScope] = useState<MeetingScope>('mine')
+  const [scope, setScope] = useState<MeetingScope>(() => scopeFromSearch(location.search))
   const [view, setView] = useState<'list' | 'folder'>('folder')
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
   const [detailId, setDetailId] = useState<number | null>(null)
@@ -115,6 +121,16 @@ export default function MeetingsPage() {
         /* 태그 사전 없이도 목록은 동작 */
       })
   }, [])
+
+  useEffect(() => {
+    const nextScope = scopeFromSearch(location.search)
+    setScope((current) => (current === nextScope ? current : nextScope))
+  }, [location.search])
+
+  const handleScopeChange = (nextScope: MeetingScope) => {
+    setScope(nextScope)
+    navigate(`/meetings?scope=${nextScope}`)
+  }
 
   // 검색어/태그 필터 300ms 디바운스 후 목록 조회
   useEffect(() => {
@@ -464,7 +480,7 @@ export default function MeetingsPage() {
           className={`meetings-scope-tab${scope === 'shared' ? ' active' : ''}`}
           role="tab"
           aria-selected={scope === 'shared'}
-          onClick={() => setScope('shared')}
+          onClick={() => handleScopeChange('shared')}
         >
           <span className="meetings-scope-icon" aria-hidden="true">
             <svg viewBox="0 0 24 24" focusable="false">
@@ -479,7 +495,7 @@ export default function MeetingsPage() {
           className={`meetings-scope-tab${scope === 'mine' ? ' active' : ''}`}
           role="tab"
           aria-selected={scope === 'mine'}
-          onClick={() => setScope('mine')}
+          onClick={() => handleScopeChange('mine')}
         >
           <span className="meetings-scope-icon" aria-hidden="true">
             <svg viewBox="0 0 24 24" focusable="false">

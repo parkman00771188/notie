@@ -233,6 +233,23 @@ def update_user(
             """,
             (user_id,),
         ).fetchone()
+        with conn:
+            conn.execute(
+                """
+                UPDATE participants
+                SET name = ?, role = ?, department = ?, organization = ?, email = ?, phone = ?
+                WHERE source_user_id = ?
+                """,
+                (
+                    updated["name"],
+                    updated["position"],
+                    updated["department"],
+                    updated["organization"],
+                    updated["email"],
+                    updated["phone"],
+                    user_id,
+                ),
+            )
     finally:
         conn.close()
     return _to_admin_user(updated)
@@ -256,6 +273,7 @@ def delete_user(user_id: int, current: dict = Depends(get_current_user)) -> dict
             raise HTTPException(status_code=400, detail="마지막 관리자는 삭제할 수 없습니다")
 
         with conn:
+            conn.execute("DELETE FROM participants WHERE source_user_id = ?", (user_id,))
             conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
     finally:
         conn.close()

@@ -7,6 +7,7 @@ import CalendarPage from './pages/CalendarPage'
 import HomePage from './pages/HomePage'
 import MeetingDetailPage from './pages/MeetingDetailPage'
 import MeetingsPage from './pages/MeetingsPage'
+import ParticipantManagementPage from './pages/ParticipantManagementPage'
 import ProjectManagementPage from './pages/ProjectManagementPage'
 import RecordPage from './pages/RecordPage'
 import SettingsPage from './pages/SettingsPage'
@@ -73,6 +74,7 @@ export default function App() {
               <Route path="/calendar" element={<CalendarPage />} />
               <Route path="/users" element={<UserManagementPage />} />
               <Route path="/projects" element={<ProjectManagementPage />} />
+              <Route path="/participants" element={<ParticipantManagementPage />} />
               <Route path="/settings" element={<SettingsPage />} />
             </Route>
           ) : (

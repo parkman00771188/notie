@@ -207,16 +207,17 @@ export function Sidebar() {
   const mobileUserAreaRef = useRef<HTMLDivElement>(null)
   const adminNavItem: NavItem = { to: '/users', label: '사용자 관리', icon: <UsersIcon />, end: false }
   const projectNavItem: NavItem = { to: '/projects', label: '프로젝트 관리', icon: <ProjectIcon />, end: false }
+  const participantNavItem: NavItem = { to: '/participants', label: '참여자 관리', icon: <UsersIcon />, end: false }
   const isAdmin = user?.role === 'admin'
   const navItems: NavItem[] = isAdmin
-    ? [...NAV_ITEMS.slice(0, 4), adminNavItem, projectNavItem, NAV_ITEMS[4]]
-    : [...NAV_ITEMS.slice(0, 4), projectNavItem, NAV_ITEMS[4]]
+    ? [...NAV_ITEMS.slice(0, 4), adminNavItem, projectNavItem, participantNavItem, NAV_ITEMS[4]]
+    : [...NAV_ITEMS.slice(0, 4), projectNavItem, participantNavItem, NAV_ITEMS[4]]
   const mobileNavItems: NavItem[] = MOBILE_NAV_ITEMS.slice(0, 4)
   const mobileMoreItems: NavItem[] = navItems
   const hasMobileMore = mobileMoreItems.length > mobileNavItems.length
   const mobileMoreActive =
     mobileMoreOpen ||
-    ['/users', '/projects', '/settings'].some((path) => location.pathname.startsWith(path))
+    ['/users', '/projects', '/participants', '/settings'].some((path) => location.pathname.startsWith(path))
 
   useEffect(() => {
     if (!menuOpen) return

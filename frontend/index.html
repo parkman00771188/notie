@@ -11,6 +11,19 @@
     />
   </head>
   <body>
+    <script>
+      ;(() => {
+        try {
+          const value = window.localStorage.getItem('notie_font_size')
+          const allowed = ['very-small', 'small', 'normal', 'large', 'very-large']
+          if (allowed.includes(value)) {
+            document.documentElement.dataset.notieFontSize = value
+          }
+        } catch {
+          // Ignore storage errors and keep the default font size.
+        }
+      })()
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

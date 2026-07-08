@@ -25,12 +25,28 @@ const TAG_PALETTE = [
 const SECTIONS = [
   { id: 'tags', label: '태그 · 프로젝트', icon: '🏷️' },
   { id: 'people', label: '참석자', icon: '👥' },
+  { id: 'font', label: '글꼴 설정', icon: 'Aa' },
   { id: 'ai', label: 'AI 요약 엔진', icon: '✨' },
 ] as const
 
 type SectionId = (typeof SECTIONS)[number]['id']
 
 const isSectionId = (id: string): id is SectionId => SECTIONS.some((s) => s.id === id)
+
+const FONT_SIZE_STORAGE_KEY = 'notie_font_size'
+
+const FONT_SIZE_OPTIONS = [
+  { id: 'very-small', label: '아주 작게', scale: '0.88', sample: '가' },
+  { id: 'small', label: '작게', scale: '0.94', sample: '가' },
+  { id: 'normal', label: '보통', scale: '1', sample: '가' },
+  { id: 'large', label: '크게', scale: '1.08', sample: '가' },
+  { id: 'very-large', label: '아주 크게', scale: '1.16', sample: '가' },
+] as const
+
+type FontSizeId = (typeof FONT_SIZE_OPTIONS)[number]['id']
+
+const isFontSizeId = (value: string | null): value is FontSizeId =>
+  FONT_SIZE_OPTIONS.some((option) => option.id === value)
 
 const errMsg = (e: unknown, fallback: string) => (e instanceof Error ? e.message : fallback)
 
@@ -112,13 +128,21 @@ export default function SettingsPage() {
   const isAdmin = user?.role === 'admin'
   const visibleSections = isAdmin ? SECTIONS : SECTIONS.filter((s) => s.id !== 'ai')
   const settingsSubtitle = isAdmin
-    ? '태그 · 프로젝트와 참석자 디렉터리, 모든 사용자에게 적용되는 AI 요약 엔진을 관리합니다.'
-    : '태그 · 프로젝트와 참석자 디렉터리를 관리합니다.'
+    ? '태그 · 프로젝트와 참석자 디렉터리, 글꼴 설정, 모든 사용자에게 적용되는 AI 요약 엔진을 관리합니다.'
+    : '태그 · 프로젝트와 참석자 디렉터리, 글꼴 설정을 관리합니다.'
 
-  // 탭 — URL 해시(#tags/#people/#ai)와 동기화
+  // 탭 — URL 해시(#tags/#people/#font/#ai)와 동기화
   const [activeSection, setActiveSection] = useState<SectionId>(() => {
     const id = window.location.hash.slice(1)
     return isSectionId(id) ? id : 'tags'
+  })
+  const [fontSize, setFontSize] = useState<FontSizeId>(() => {
+    try {
+      const saved = window.localStorage.getItem(FONT_SIZE_STORAGE_KEY)
+      return isFontSizeId(saved) ? saved : 'normal'
+    } catch {
+      return 'normal'
+    }
   })
 
   // 태그 · 프로젝트
@@ -204,6 +228,18 @@ export default function SettingsPage() {
       window.history.replaceState(null, '', '#tags')
     }
   }, [activeSection, isAdmin])
+
+  useEffect(() => {
+    const selected = FONT_SIZE_OPTIONS.find((option) => option.id === fontSize) ?? FONT_SIZE_OPTIONS[2]
+    document.documentElement.dataset.notieFontSize = selected.id
+    document.documentElement.style.setProperty('--notie-font-scale', selected.scale)
+
+    try {
+      window.localStorage.setItem(FONT_SIZE_STORAGE_KEY, selected.id)
+    } catch {
+      // 브라우저 저장소를 사용할 수 없어도 현재 화면에는 적용됩니다.
+    }
+  }, [fontSize])
 
   const goToSection = (id: SectionId) => {
     setActiveSection(id)
@@ -424,6 +460,7 @@ export default function SettingsPage() {
   }
 
   const startEdit = (p: Participant) => {
+    if (p.source_user_id !== null && p.source_user_id !== undefined) return
     setEditingId(p.id)
     setEdit({
       name: p.name,
@@ -493,6 +530,52 @@ export default function SettingsPage() {
   }
 
   /* ----- 렌더 ----- */
+
+  const renderFontSection = () => {
+    const selected = FONT_SIZE_OPTIONS.find((option) => option.id === fontSize) ?? FONT_SIZE_OPTIONS[2]
+
+    return (
+      <section className="card settings-card font-settings-card">
+        <div className="settings-card-head">
+          <h2 className="settings-card-title">
+            <span className="font-title-icon" aria-hidden="true">
+              Aa
+            </span>
+            글꼴 설정
+          </h2>
+          <p className="settings-card-desc">
+            화면에 표시되는 글자 크기를 조정합니다. 보통은 현재 기본 크기입니다.
+          </p>
+        </div>
+
+        <div className="font-size-options" role="radiogroup" aria-label="글자 크기 선택">
+          {FONT_SIZE_OPTIONS.map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              role="radio"
+              aria-checked={fontSize === option.id}
+              className={`font-size-option${fontSize === option.id ? ' active' : ''}`}
+              onClick={() => setFontSize(option.id)}
+            >
+              <span className="font-option-sample" style={{ fontSize: `calc(18px * ${option.scale})` }}>
+                {option.sample}
+              </span>
+              <span className="font-option-label">{option.label}</span>
+            </button>
+          ))}
+        </div>
+
+        <div className="font-preview-box">
+          <div className="font-preview-meta">현재 선택: {selected.label}</div>
+          <div className="font-preview-title">회의 내용을 편안한 크기로 읽을 수 있어요.</div>
+          <p className="font-preview-text">
+            글꼴 크기는 이 브라우저에 저장되며, 새로고침 후에도 같은 설정으로 유지됩니다.
+          </p>
+        </div>
+      </section>
+    )
+  }
 
   const renderTagsSection = () => (
     <section className="card settings-card">
@@ -632,8 +715,10 @@ export default function SettingsPage() {
     </section>
   )
 
-  const renderPersonRow = (p: Participant) =>
-    editingId === p.id ? (
+  const renderPersonRow = (p: Participant) => {
+    const synced = p.source_user_id !== null && p.source_user_id !== undefined
+
+    return editingId === p.id ? (
       <tr key={p.id} className="sp-row-editing">
         <td colSpan={6}>
           <div className="sp-edit-form">
@@ -739,6 +824,7 @@ export default function SettingsPage() {
           <button
             type="button"
             className="btn-icon"
+            disabled={synced}
             title="수정"
             aria-label={`${p.name} 수정`}
             onClick={(e) => {
@@ -751,6 +837,7 @@ export default function SettingsPage() {
           <button
             type="button"
             className="btn-icon sp-icon-danger"
+            disabled={synced}
             title="삭제"
             aria-label={`${p.name} 삭제`}
             onClick={(e) => handleDeleteParticipant(p, e)}
@@ -760,6 +847,7 @@ export default function SettingsPage() {
         </td>
       </tr>
     )
+  }
 
   const renderPeopleSection = () => (
     <section className="card settings-card">
@@ -985,6 +1073,7 @@ export default function SettingsPage() {
         <div className="sp-sections">
           {activeSection === 'tags' && renderTagsSection()}
           {activeSection === 'people' && renderPeopleSection()}
+          {activeSection === 'font' && renderFontSection()}
           {activeSection === 'ai' && isAdmin && <AiEngineSettings />}
         </div>
       </div>

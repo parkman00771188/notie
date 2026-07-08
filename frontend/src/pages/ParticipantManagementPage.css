@@ -1,0 +1,123 @@
+.participant-admin-page .user-admin-stats {
+  max-width: 620px;
+}
+
+.participant-admin-table {
+  min-width: 1420px;
+}
+
+.participant-col-index {
+  width: 64px;
+}
+
+.participant-col-source {
+  width: 142px;
+}
+
+.participant-col-name {
+  width: 140px;
+}
+
+.participant-col-username {
+  width: 150px;
+}
+
+.participant-col-organization {
+  width: 170px;
+}
+
+.participant-col-department {
+  width: 170px;
+}
+
+.participant-col-role {
+  width: 130px;
+}
+
+.participant-col-phone {
+  width: 150px;
+}
+
+.participant-col-email {
+  width: 220px;
+}
+
+.participant-col-actions {
+  width: 150px;
+}
+
+.participant-admin-table th:nth-child(2),
+.participant-admin-table th:nth-child(10),
+.participant-admin-table td:nth-child(2),
+.participant-admin-table td:nth-child(10) {
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.participant-source-pill {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 13px;
+  border-radius: var(--radius-full);
+  font-size: 13px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.participant-source-pill.synced {
+  border: 1.5px solid #d9d2ff;
+  background: #f4f1ff;
+  color: #6f5cff;
+}
+
+.participant-source-pill.custom {
+  border: 1.5px solid var(--primary-soft-2);
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.participant-source-icon {
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+
+.participant-source-icon svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.participant-row-actions {
+  justify-content: flex-start;
+}
+
+.participant-row-actions .btn:disabled {
+  opacity: 0.45;
+}
+
+.participant-row-actions .user-delete-btn svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+@media (max-width: 768px) {
+  .participant-admin-table {
+    min-width: 1180px;
+  }
+}

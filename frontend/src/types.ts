@@ -19,6 +19,8 @@ export interface AdminUser extends User {
 
 export interface Participant {
   id: number
+  source_user_id?: number | null
+  source_username?: string | null
   name: string
   role: string | null
   department: string | null
@@ -26,6 +28,7 @@ export interface Participant {
   email: string | null
   phone: string | null
   color: string
+  can_delete?: boolean
 }
 
 export interface Tag {

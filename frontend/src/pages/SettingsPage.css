@@ -205,6 +205,108 @@
   border: 0;
 }
 
+/* ---------- 글꼴 설정 ---------- */
+.font-settings-card {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.font-title-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.font-size-options {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.font-size-option {
+  min-height: 82px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 14px 10px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: #fafbfe;
+  color: var(--text-2);
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    background 0.15s,
+    box-shadow 0.15s,
+    transform 0.08s;
+}
+
+.font-size-option:hover {
+  border-color: var(--primary-soft-2);
+  background: var(--surface);
+  transform: translateY(-1px);
+}
+
+.font-size-option.active {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.font-option-sample {
+  font-weight: 900;
+  line-height: 1;
+}
+
+.font-option-label {
+  font-size: 13px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.font-preview-box {
+  padding: 18px 20px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+}
+
+.font-preview-meta {
+  display: inline-flex;
+  margin-bottom: 10px;
+  padding: 3px 9px;
+  border-radius: var(--radius-full);
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.font-preview-title {
+  color: var(--text);
+  font-size: calc(18px * var(--notie-font-scale, 1));
+  font-weight: 900;
+}
+
+.font-preview-text {
+  margin-top: 7px;
+  color: var(--text-3);
+  font-size: calc(13.5px * var(--notie-font-scale, 1));
+  line-height: 1.65;
+}
+
 /* ---------- 태그 · 프로젝트 ---------- */
 .sp-tag-add {
   display: flex;
@@ -757,6 +859,11 @@
   opacity: 1;
 }
 
+.sp-td-actions .btn-icon:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
 /* 참석자 인라인 수정 폼 (행 전체 확장) */
 .sp-edit-form {
   display: flex;
@@ -825,6 +932,10 @@
     justify-content: center;
     border-radius: 22px;
   }
+
+  .font-size-options {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 768px) {
@@ -883,6 +994,15 @@
     width: 100%;
     max-width: none;
     gap: 18px;
+  }
+
+  .font-size-options {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .font-size-option {
+    min-height: 74px;
+    padding: 12px 8px;
   }
 
   .sp-tag-add {

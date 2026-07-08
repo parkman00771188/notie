@@ -7,8 +7,10 @@ import CalendarPage from './pages/CalendarPage'
 import HomePage from './pages/HomePage'
 import MeetingDetailPage from './pages/MeetingDetailPage'
 import MeetingsPage from './pages/MeetingsPage'
+import ProjectManagementPage from './pages/ProjectManagementPage'
 import RecordPage from './pages/RecordPage'
 import SettingsPage from './pages/SettingsPage'
+import UserManagementPage from './pages/UserManagementPage'
 import type { User } from './types'
 
 interface AuthContextValue {
@@ -69,6 +71,8 @@ export default function App() {
               <Route path="/meetings/:id" element={<MeetingDetailPage />} />
               <Route path="/record" element={<RecordPage />} />
               <Route path="/calendar" element={<CalendarPage />} />
+              <Route path="/users" element={<UserManagementPage />} />
+              <Route path="/projects" element={<ProjectManagementPage />} />
               <Route path="/settings" element={<SettingsPage />} />
             </Route>
           ) : (

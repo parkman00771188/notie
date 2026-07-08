@@ -10,7 +10,7 @@
 
 /* ---------- 상단 로고 ---------- */
 .auth-topbar {
-  display: flex;
+  display: none;
   width: 100%;
   max-width: 1100px;
   margin: 0 auto;
@@ -49,6 +49,10 @@
   font-weight: 800;
   letter-spacing: -0.3px;
   color: var(--text);
+}
+
+.auth-hero-logo {
+  margin-bottom: 38px;
 }
 
 /* ---------- 2컬럼 컨테이너 ---------- */
@@ -590,6 +594,7 @@
   }
 
   .auth-topbar {
+    display: flex;
     width: 100%;
     max-width: 430px;
     margin: 0 auto 26px;

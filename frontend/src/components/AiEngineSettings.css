@@ -194,11 +194,50 @@
 }
 
 /* ---------- 음성 변환(STT) 엔진 카드 ---------- */
-.stt-saved {
-  margin-left: 8px;
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--green);
+.stt-fixed-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 13px;
+  padding: 15px 16px;
+  border: 1.5px solid var(--primary-soft-2);
+  border-radius: 12px;
+  background: var(--primary-soft);
+}
+
+.stt-fixed-card.warning {
+  border-color: #fed7aa;
+  background: #fff7ed;
+}
+
+.stt-fixed-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: var(--primary);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 800;
+  flex: 0 0 auto;
+}
+
+.stt-fixed-body {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.stt-fixed-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--text);
 }
 
 .stt-options {

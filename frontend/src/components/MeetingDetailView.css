@@ -28,11 +28,11 @@
   border: none;
   background: transparent;
   padding: 0;
-  margin-bottom: 14px;
   font-size: 13.5px;
   font-weight: 600;
   color: var(--text-3);
   cursor: pointer;
+  flex-shrink: 0;
 }
 
 .detail-back:hover {
@@ -40,6 +40,14 @@
 }
 
 /* 헤더 */
+.detail-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
 .detail-header {
   display: flex;
   flex-direction: column;
@@ -62,6 +70,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  flex: 0 1 auto;
   min-width: 0;
   max-width: 100%;
 }
@@ -74,6 +83,8 @@
 }
 
 .detail-title-input {
+  flex: 1 1 420px;
+  min-width: 0;
   max-width: 420px;
   font-size: 18px;
   font-weight: 700;
@@ -81,15 +92,26 @@
 }
 
 .detail-actions {
-  margin-left: auto;
   display: flex;
   align-items: center;
   gap: 8px;
   flex-shrink: 0;
+  justify-content: flex-end;
+  flex-wrap: wrap;
 }
 
 .detail-lock-btn {
   flex-shrink: 0;
+}
+
+.detail-share-btn {
+  flex-shrink: 0;
+}
+
+.detail-share-btn.active {
+  border-color: color-mix(in srgb, var(--primary) 35%, transparent);
+  background: var(--primary-soft);
+  color: var(--primary);
 }
 
 .detail-lock-btn.locked {
@@ -153,10 +175,39 @@
   margin-bottom: 16px;
 }
 
+.progress-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+}
+
 .progress-text {
   font-size: 14px;
   font-weight: 600;
   color: var(--primary);
+}
+
+.progress-subtext {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.progress-cancel-btn {
+  min-height: 34px;
+  padding: 7px 12px;
+  border-color: #f6c6c6;
+  background: rgba(255, 255, 255, 0.68);
+  color: #b91c1c;
+  font-size: 13px;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+
+.progress-cancel-btn:hover {
+  background: var(--red-soft);
+  color: var(--red);
 }
 
 /* 실패 배너 */
@@ -169,6 +220,11 @@
   background: var(--red-soft);
   border: 1px solid #f6c6c6;
   margin-bottom: 16px;
+}
+
+.failed-banner.temp-audio {
+  background: #fff7ed;
+  border-color: #fed7aa;
 }
 
 .failed-emoji {
@@ -187,6 +243,13 @@
   font-size: 13px;
   color: #b91c1c;
   word-break: break-all;
+}
+
+.failed-help {
+  margin-top: 4px;
+  color: #9a3412;
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 /* 오디오 플레이어 (AudioPlayerCard) */
@@ -849,8 +912,13 @@
 
 @media (max-width: 768px) {
   .detail-back {
-    margin-bottom: 18px;
     font-size: 16px;
+  }
+
+  .detail-topbar {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    margin-bottom: 18px;
   }
 
   .detail-header {
@@ -880,13 +948,15 @@
   }
 
   .detail-actions {
-    width: 100%;
-    margin-left: 0;
+    width: auto;
+    max-width: 100%;
+    margin-left: auto;
     flex-wrap: wrap;
+    justify-content: flex-end;
   }
 
   .detail-actions .btn {
-    flex: 1 1 auto;
+    flex: 0 0 auto;
   }
 
   .detail-lock-banner {
@@ -906,6 +976,10 @@
   .engine-warn-banner {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .progress-cancel-btn {
+    width: 100%;
   }
 
   .detail-tabs {

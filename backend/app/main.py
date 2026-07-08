@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from . import config, db
-from .routers import auth, bookmarks, meetings, org, participants, settings
+from .routers import admin_users, auth, bookmarks, meetings, org, participants, projects, settings
 
 app = FastAPI(title="Notie", version="0.1.0")
 
@@ -24,6 +24,10 @@ def _startup() -> None:
 
 
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
+app.include_router(admin_users.router, prefix="/api/admin/users", tags=["admin-users"])
+app.include_router(projects.router, prefix="/api/projects", tags=["projects"])
+# Backward compatibility for older frontend bundles that still call the admin-prefixed URL.
+app.include_router(projects.router, prefix="/api/admin/projects", tags=["projects-compat"])
 app.include_router(participants.router, prefix="/api/participants", tags=["participants"])
 app.include_router(meetings.router, prefix="/api/meetings", tags=["meetings"])
 app.include_router(bookmarks.router, prefix="/api", tags=["bookmarks"])
@@ -33,12 +37,10 @@ app.include_router(org.router, prefix="/api", tags=["org"])
 
 @app.get("/api/health")
 def health() -> dict:
-    from .services import gemini_stt, stt
+    from .services import gemini_stt
 
     return {
         "ok": True,
-        "whisper_model": config.WHISPER_MODEL,
-        "whisper_device": stt.get_device_info(),
         "stt_engine": gemini_stt.get_engine(),
     }
 

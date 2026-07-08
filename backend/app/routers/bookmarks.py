@@ -13,7 +13,7 @@ from pydantic import BaseModel
 
 from .. import db
 from ..auth_utils import get_current_user
-from .meetings import get_owned_meeting, payload_fields
+from .meetings import get_owned_meeting, get_readable_meeting, payload_fields
 
 router = APIRouter()
 
@@ -79,7 +79,7 @@ def create_bookmark(
 @router.get("/meetings/{meeting_id}/bookmarks")
 def list_bookmarks(meeting_id: int, user: dict = Depends(get_current_user)) -> list:
     with closing(db.get_conn()) as conn:
-        get_owned_meeting(conn, meeting_id, user["id"])
+        get_readable_meeting(conn, meeting_id, user["id"], user.get("role") or "user")
         rows = conn.execute(
             "SELECT * FROM bookmarks WHERE meeting_id = ? ORDER BY time_sec ASC, id ASC",
             (meeting_id,),

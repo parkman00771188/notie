@@ -36,5 +36,10 @@ GEMINI_ATTACH_THRESHOLD = int(_env("GEMINI_ATTACH_THRESHOLD", "20000"))
 OLLAMA_URL = _env("OLLAMA_URL", "http://127.0.0.1:11434")
 OLLAMA_MODEL = _env("OLLAMA_MODEL", "")  # 빈 값이면 설치된 첫 모델 사용
 
+SUPERADMIN_USERNAME = _env("SUPERADMIN_USERNAME", "admin")
+SUPERADMIN_PASSWORD = _env("SUPERADMIN_PASSWORD", "admin123!@#")
+SUPERADMIN_NAME = _env("SUPERADMIN_NAME", "관리자")
+SUPERADMIN_EMAIL = _env("SUPERADMIN_EMAIL", "admin@notie.local")
+
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 AUDIO_DIR.mkdir(parents=True, exist_ok=True)

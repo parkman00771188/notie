@@ -1,7 +1,7 @@
 """Gemini 오디오 전사(STT) — 등록된 Gemini API 키로 음성→텍스트 변환.
 
-로컬 Whisper 대신 선택할 수 있는 클라우드 STT 엔진. 별도 키 없이
-summarizer와 같은 Gemini 키를 재사용한다 (app_settings 'stt_engine' == 'gemini').
+Notie의 STT는 Gemini 전용으로 동작한다. 별도 키 없이 summarizer와 같은
+Gemini 키를 재사용한다.
 
 동작:
 1) 어떤 입력 포맷이든(webm/m4a/mp3/...) PyAV로 16kHz 모노 WAV로 변환 (Gemini가 확실히 지원)
@@ -9,7 +9,7 @@ summarizer와 같은 Gemini 키를 재사용한다 (app_settings 'stt_engine' ==
 3) generateContent(JSON 강제)로 "[{start, end, text}]" 세그먼트 전사 요청
 4) 방어적 파싱(MM:SS/H:MM:SS → 초), 업로드 파일은 사용 후 삭제(베스트 에포트)
 
-실패 시 한국어 RuntimeError — pipeline이 잡아서 로컬 Whisper로 폴백한다.
+실패 시 한국어 RuntimeError — pipeline이 실패 상태로 남겨 임시저장 음성을 재시도할 수 있게 한다.
 """
 
 import base64
@@ -20,12 +20,10 @@ import tempfile
 import wave
 from pathlib import Path
 
-from .. import config, db
+from .. import config
 from .summarizer import extract_first_json, get_gemini_key, get_gemini_model
 
 logger = logging.getLogger("gimnote.gemini_stt")
-
-STT_ENGINE_SETTING = "stt_engine"
 
 # 이 크기 이하면 Files API 대신 요청에 인라인(base64) 첨부 (요청 한도 ~20MB)
 _INLINE_LIMIT_BYTES = 15 * 1024 * 1024
@@ -41,20 +39,8 @@ _TS_RE = re.compile(r"^\s*(?:(\d+):)?(\d{1,2}):(\d{2}(?:\.\d+)?)\s*$")
 
 
 def get_engine() -> str:
-    """현재 STT 엔진 설정 — 'local'(기본) | 'gemini'."""
-    try:
-        conn = db.get_conn()
-        try:
-            row = conn.execute(
-                "SELECT value FROM app_settings WHERE key = ?", (STT_ENGINE_SETTING,)
-            ).fetchone()
-        finally:
-            conn.close()
-        if row is not None and str(row["value"]).strip() == "gemini":
-            return "gemini"
-    except Exception as exc:
-        logger.warning("gemini_stt: stt_engine 조회 실패 — local 사용: %s", exc)
-    return "local"
+    """현재 STT 엔진. Gemini 전용으로 고정한다."""
+    return "gemini"
 
 
 def _root_url() -> str:

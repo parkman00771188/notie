@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent, KeyboardEvent, MouseEvent } from 'react'
 import { api } from '../api'
+import { useAuth } from '../App'
 import AiEngineSettings from '../components/AiEngineSettings'
 import { Avatar } from '../components/Avatar'
 import ComboBox from '../components/ComboBox'
@@ -107,6 +108,12 @@ function ColorPalettePicker({ value, onChange, allowClear = false }: ColorPalett
 
 export default function SettingsPage() {
   const confirm = useConfirm()
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
+  const visibleSections = isAdmin ? SECTIONS : SECTIONS.filter((s) => s.id !== 'ai')
+  const settingsSubtitle = isAdmin
+    ? '태그 · 프로젝트와 참석자 디렉터리, 모든 사용자에게 적용되는 AI 요약 엔진을 관리합니다.'
+    : '태그 · 프로젝트와 참석자 디렉터리를 관리합니다.'
 
   // 탭 — URL 해시(#tags/#people/#ai)와 동기화
   const [activeSection, setActiveSection] = useState<SectionId>(() => {
@@ -119,10 +126,12 @@ export default function SettingsPage() {
   const [tagError, setTagError] = useState('')
   const [tagName, setTagName] = useState('')
   const [tagColor, setTagColor] = useState<string | null>(null)
+  const [tagShared, setTagShared] = useState(false)
   const [tagAdding, setTagAdding] = useState(false)
   const [editingTagId, setEditingTagId] = useState<number | null>(null)
   const [editTagName, setEditTagName] = useState('')
   const [editTagColor, setEditTagColor] = useState<string | null>(null)
+  const [editTagShared, setEditTagShared] = useState(false)
   const [tagSaving, setTagSaving] = useState(false)
 
   // 소속/부서/직책 사전 (참석자 콤보박스 제안 목록)
@@ -189,6 +198,13 @@ export default function SettingsPage() {
     return () => window.removeEventListener('hashchange', onHashChange)
   }, [])
 
+  useEffect(() => {
+    if (!isAdmin && activeSection === 'ai') {
+      setActiveSection('tags')
+      window.history.replaceState(null, '', '#tags')
+    }
+  }, [activeSection, isAdmin])
+
   const goToSection = (id: SectionId) => {
     setActiveSection(id)
     window.history.replaceState(null, '', `#${id}`)
@@ -203,10 +219,14 @@ export default function SettingsPage() {
     setTagAdding(true)
     setTagError('')
     try {
-      const created = await api.createTag(tagColor ? { name, color: tagColor } : { name })
+      const data: { name: string; color?: string; is_global?: boolean } = { name }
+      if (tagColor) data.color = tagColor
+      if (isAdmin) data.is_global = tagShared
+      const created = await api.createTag(data)
       setTags((prev) => sortTags([...(prev ?? []), created]))
       setTagName('')
       setTagColor(null)
+      setTagShared(false)
     } catch (err: unknown) {
       setTagError(errMsg(err, '태그를 추가하지 못했어요'))
     } finally {
@@ -218,6 +238,7 @@ export default function SettingsPage() {
     setEditingTagId(t.id)
     setEditTagName(t.name)
     setEditTagColor(t.color)
+    setEditTagShared(t.is_global)
   }
 
   const handleTagEditSubmit = async (e: FormEvent) => {
@@ -226,9 +247,10 @@ export default function SettingsPage() {
     const name = editTagName.trim()
     if (!name) return
     const current = (tags ?? []).find((t) => t.id === editingTagId)
-    const data: { name?: string; color?: string } = {}
+    const data: { name?: string; color?: string; is_global?: boolean } = {}
     if (!current || current.name !== name) data.name = name
     if (editTagColor && (!current || current.color !== editTagColor)) data.color = editTagColor
+    if (isAdmin && current && current.is_global !== editTagShared) data.is_global = editTagShared
     if (Object.keys(data).length === 0) {
       setEditingTagId(null)
       return
@@ -493,6 +515,16 @@ export default function SettingsPage() {
           onChange={(e) => setTagName(e.target.value)}
         />
         <ColorPalettePicker value={tagColor} onChange={setTagColor} allowClear />
+        {isAdmin && (
+          <label className="sp-check-option">
+            <input
+              type="checkbox"
+              checked={tagShared}
+              onChange={(e) => setTagShared(e.target.checked)}
+            />
+            <span>공유</span>
+          </label>
+        )}
         <button type="submit" className="btn btn-primary" disabled={!tagName.trim() || tagAdding}>
           {tagAdding ? '추가 중...' : '추가'}
         </button>
@@ -510,8 +542,19 @@ export default function SettingsPage() {
         <p className="sp-empty">등록된 태그가 없어요. 위에서 첫 태그를 만들어보세요.</p>
       ) : (
         <ul className="sp-tag-list">
-          {tags.map((t) => (
-            <li key={t.id} className="sp-tag-row">
+          {tags.map((t) => {
+            const canManageTag = t.can_manage !== false
+            const isProjectDeleteLocked = !isAdmin && Boolean(t.is_project_tag)
+            const isReadonly = !canManageTag || (t.is_global && !isAdmin)
+            const deleteDisabled = isReadonly || isProjectDeleteLocked
+            const editTitle = isReadonly ? '이 태그는 수정 권한이 없습니다' : '이름/색 수정'
+            const deleteTitle = isProjectDeleteLocked
+              ? '프로젝트에 연결된 태그는 프로젝트 관리에서만 관리할 수 있습니다'
+              : isReadonly
+                ? '이 태그는 삭제 권한이 없습니다'
+                : '삭제'
+            return (
+            <li key={t.id} className={`sp-tag-row${isReadonly ? ' readonly' : ''}`}>
               <span
                 className="sp-dot"
                 style={{ background: editingTagId === t.id ? (editTagColor ?? t.color) : t.color }}
@@ -528,6 +571,16 @@ export default function SettingsPage() {
                     }}
                   />
                   <ColorPalettePicker value={editTagColor} onChange={setEditTagColor} />
+                  {isAdmin && (
+                    <label className="sp-check-option sp-check-option-inline">
+                      <input
+                        type="checkbox"
+                        checked={editTagShared}
+                        onChange={(e) => setEditTagShared(e.target.checked)}
+                      />
+                      <span>공유</span>
+                    </label>
+                  )}
                   <button
                     type="submit"
                     className="btn btn-soft"
@@ -542,11 +595,17 @@ export default function SettingsPage() {
               ) : (
                 <>
                   <span className="sp-tag-name">{t.name}</span>
+                  {t.is_global ? (
+                    <span className="sp-shared-tag">공유</span>
+                  ) : (
+                    isAdmin && <span className="sp-private-tag">개인</span>
+                  )}
                   <div className="sp-row-actions">
                     <button
                       type="button"
                       className="btn-icon"
-                      title="이름/색 수정"
+                      disabled={isReadonly}
+                      title={editTitle}
                       aria-label={`${t.name} 수정`}
                       onClick={() => startTagEdit(t)}
                     >
@@ -555,7 +614,8 @@ export default function SettingsPage() {
                     <button
                       type="button"
                       className="btn-icon sp-icon-danger"
-                      title="삭제"
+                      disabled={deleteDisabled}
+                      title={deleteTitle}
                       aria-label={`${t.name} 삭제`}
                       onClick={(e) => handleDeleteTag(t, e)}
                     >
@@ -565,7 +625,8 @@ export default function SettingsPage() {
                 </>
               )}
             </li>
-          ))}
+            )
+          })}
         </ul>
       )}
     </section>
@@ -895,12 +956,12 @@ export default function SettingsPage() {
   return (
     <div className="page settings-page">
       <h1 className="page-title">설정</h1>
-      <p className="sp-subtitle">태그 · 프로젝트와 참석자 디렉터리, AI 요약 엔진을 관리합니다.</p>
+      <p className="sp-subtitle">{settingsSubtitle}</p>
 
       <div className="sp-layout">
         {/* 좌측 탭 네비 */}
         <nav className="sp-nav" role="tablist" aria-label="설정 섹션">
-          {SECTIONS.map((s) => (
+          {visibleSections.map((s) => (
             <button
               key={s.id}
               type="button"
@@ -912,7 +973,10 @@ export default function SettingsPage() {
               <span className="sp-nav-icon" aria-hidden="true">
                 {s.icon}
               </span>
-              {s.label}
+              <span className="sp-nav-label">
+                {s.label}
+                {s.id === 'ai' && <span className="sp-nav-admin-badge">관리자</span>}
+              </span>
             </button>
           ))}
         </nav>
@@ -921,7 +985,7 @@ export default function SettingsPage() {
         <div className="sp-sections">
           {activeSection === 'tags' && renderTagsSection()}
           {activeSection === 'people' && renderPeopleSection()}
-          {activeSection === 'ai' && <AiEngineSettings />}
+          {activeSection === 'ai' && isAdmin && <AiEngineSettings />}
         </div>
       </div>
     </div>

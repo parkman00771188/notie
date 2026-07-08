@@ -1,8 +1,20 @@
 export interface User {
   id: number
+  username: string
   email: string
   name: string
   team: string | null
+  organization: string | null
+  department: string | null
+  position: string | null
+  phone: string | null
+  role: 'admin' | 'user'
+  active: boolean
+}
+
+export interface AdminUser extends User {
+  meeting_count: number
+  created_at: string
 }
 
 export interface Participant {
@@ -20,6 +32,29 @@ export interface Tag {
   id: number
   name: string
   color: string
+  is_global: boolean
+  is_project_tag?: boolean
+  can_manage?: boolean
+  allowed_user_ids: number[]
+}
+
+export interface Project {
+  id: number
+  task_number: string | null
+  task_title: string | null
+  principal_investigator: string | null
+  research_institution: string | null
+  title: string
+  color: string
+  active: boolean
+  period_start: string | null
+  period_end: string | null
+  created_by: number
+  created_by_name: string | null
+  created_at: string
+  updated_at: string
+  tags: Tag[]
+  members: User[]
 }
 
 export type OrgKind = 'department' | 'role' | 'organization'
@@ -43,6 +78,7 @@ export type MeetingStatus =
 
 export interface Meeting {
   id: number
+  user_id: number
   title: string
   tag: string | null
   status: MeetingStatus
@@ -50,6 +86,8 @@ export interface Meeting {
   duration_sec: number | null
   audio_filename: string | null
   locked: boolean
+  is_shared: boolean
+  owner_name: string | null
   created_at: string
   participants: Participant[]
 }

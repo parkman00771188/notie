@@ -72,6 +72,46 @@
   gap: 6px;
 }
 
+.record-date-btn {
+  appearance: none;
+  border: none;
+  background: transparent;
+  padding: 0;
+  color: var(--text-2);
+  font: inherit;
+  cursor: pointer;
+}
+
+.record-date-btn:hover {
+  color: var(--primary);
+}
+
+.record-date-edit {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.record-date-input {
+  width: 145px;
+  padding: 7px 10px;
+  font-size: 13px;
+}
+
+.record-time-select {
+  width: 78px;
+  padding: 7px 10px;
+  font-size: 13px;
+}
+
+.record-date-save {
+  min-height: 32px;
+  padding: 6px 11px;
+  border-radius: 10px;
+  font-size: 13px;
+}
+
 .record-meta-item b {
   font-variant-numeric: tabular-nums;
   color: var(--text);

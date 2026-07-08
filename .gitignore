@@ -3,5 +3,7 @@ dist/
 .venv/
 __pycache__/
 *.pyc
+*.log
+.certs/
 data/
 .DS_Store

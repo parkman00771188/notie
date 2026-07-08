@@ -1,4 +1,4 @@
-"""인증 유틸리티 — 비밀번호 해싱(PBKDF2), 세션 토큰 생성, 현재 사용자 조회."""
+"""Authentication helpers: password hashing, sessions, and role checks."""
 
 import hashlib
 import hmac
@@ -10,20 +10,16 @@ from fastapi import HTTPException, Request
 from . import db
 
 PBKDF2_ITERATIONS = 100_000
+INACTIVE_ACCOUNT_MESSAGE = "비활성화 되었습니다. 관리자에게 문의하세요"
 
 
 def hash_password(pw: str) -> str:
-    """비밀번호를 PBKDF2-HMAC-SHA256으로 해싱한다.
-
-    포맷: ``pbkdf2$<iter>$<salt_hex>$<hash_hex>``
-    """
     salt = secrets.token_bytes(16)
     digest = hashlib.pbkdf2_hmac("sha256", pw.encode("utf-8"), salt, PBKDF2_ITERATIONS)
     return f"pbkdf2${PBKDF2_ITERATIONS}${salt.hex()}${digest.hex()}"
 
 
 def verify_password(pw: str, h: str) -> bool:
-    """저장된 해시 문자열과 비밀번호를 비교한다."""
     try:
         scheme, iter_str, salt_hex, hash_hex = h.split("$")
         if scheme != "pbkdf2":
@@ -38,17 +34,12 @@ def verify_password(pw: str, h: str) -> bool:
 
 
 def create_session(conn: sqlite3.Connection, user_id: int) -> str:
-    """세션 토큰을 생성해 sessions 테이블에 삽입하고 토큰을 반환한다."""
     token = secrets.token_hex(24)
-    conn.execute(
-        "INSERT INTO sessions (token, user_id) VALUES (?, ?)",
-        (token, user_id),
-    )
+    conn.execute("INSERT INTO sessions (token, user_id) VALUES (?, ?)", (token, user_id))
     return token
 
 
 def extract_token(request: Request) -> str | None:
-    """요청에서 인증 토큰 추출 — Bearer 헤더 우선, 없으면 ``token`` 쿼리 파라미터."""
     auth = request.headers.get("Authorization", "")
     if auth.startswith("Bearer "):
         token = auth[len("Bearer "):].strip()
@@ -58,11 +49,23 @@ def extract_token(request: Request) -> str | None:
     return token or None
 
 
-def get_current_user(request: Request) -> dict:
-    """FastAPI Depends용 — 세션 토큰으로 현재 사용자 조회.
+def serialize_user(row: sqlite3.Row) -> dict:
+    return {
+        "id": row["id"],
+        "username": row["username"],
+        "email": row["email"],
+        "name": row["name"],
+        "team": row["team"],
+        "organization": row["organization"],
+        "department": row["department"],
+        "position": row["position"],
+        "phone": row["phone"],
+        "role": row["role"],
+        "active": bool(row["active"]),
+    }
 
-    반환: ``{id, email, name, team}``. 실패 시 401 HTTPException.
-    """
+
+def get_current_user(request: Request) -> dict:
     token = extract_token(request)
     if not token:
         raise HTTPException(status_code=401, detail="로그인이 필요합니다")
@@ -70,7 +73,9 @@ def get_current_user(request: Request) -> dict:
     try:
         row = conn.execute(
             """
-            SELECT u.id, u.email, u.name, u.team
+            SELECT
+              u.id, u.username, u.email, u.name, u.team, u.organization,
+              u.department, u.position, u.phone, u.role, u.active
             FROM sessions s
             JOIN users u ON u.id = s.user_id
             WHERE s.token = ?
@@ -81,9 +86,12 @@ def get_current_user(request: Request) -> dict:
         conn.close()
     if row is None:
         raise HTTPException(status_code=401, detail="세션이 만료되었거나 유효하지 않습니다")
-    return {
-        "id": row["id"],
-        "email": row["email"],
-        "name": row["name"],
-        "team": row["team"],
-    }
+    if not row["active"]:
+        raise HTTPException(status_code=403, detail=INACTIVE_ACCOUNT_MESSAGE)
+    return serialize_user(row)
+
+
+def require_admin(user: dict) -> dict:
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="관리자 권한이 필요합니다")
+    return user

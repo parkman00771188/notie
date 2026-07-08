@@ -84,6 +84,30 @@
   color: var(--primary);
 }
 
+.sp-nav-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  flex: 1;
+  white-space: nowrap;
+}
+
+.sp-nav-admin-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 2px 7px;
+  border: 1px solid #ffc9d6;
+  border-radius: var(--radius-full);
+  background: #fff0f4;
+  color: #d6336c;
+  font-size: 10.5px;
+  font-weight: 900;
+  line-height: 1.25;
+}
+
 /* ---------- 우측 콘텐츠 ---------- */
 .sp-sections {
   flex: 1;
@@ -194,6 +218,36 @@
   min-width: 180px;
 }
 
+.sp-check-option {
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: 13.5px;
+  font-weight: 800;
+  cursor: pointer;
+  user-select: none;
+}
+
+.sp-check-option input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--primary);
+}
+
+.sp-check-option-inline {
+  min-height: 34px;
+  padding: 6px 10px;
+  font-size: 13px;
+}
+
 .sp-palette {
   display: flex;
   align-items: center;
@@ -274,6 +328,15 @@
   background: var(--bg);
 }
 
+.sp-tag-row.readonly {
+  background: #fafbfe;
+}
+
+.sp-tag-row.readonly .btn-icon:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
 /* 태그 인라인 수정 폼 — 팔레트가 길어 줄바꿈 허용 */
 .sp-tag-edit-form {
   flex-wrap: wrap;
@@ -299,6 +362,28 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.sp-shared-tag {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border: 1px solid var(--primary-soft-2);
+  border-radius: var(--radius-full);
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-size: 11.5px;
+  font-weight: 900;
+}
+
+.sp-private-tag {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-full);
+  background: var(--gray-soft);
+  color: var(--text-2);
+  font-size: 11.5px;
+  font-weight: 900;
 }
 
 .sp-row-actions {

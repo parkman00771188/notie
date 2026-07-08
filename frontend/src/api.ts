@@ -1,4 +1,5 @@
 import type {
+  AdminUser,
   Bookmark,
   BookmarkKind,
   Meeting,
@@ -7,6 +8,7 @@ import type {
   OrgKind,
   OrgOption,
   Participant,
+  Project,
   Summary,
   Tag,
   TranscriptSegment,
@@ -58,8 +60,36 @@ export interface AppSettings {
   gemini_model: string
   ollama_available: boolean
   summary_prompt: string
-  /** 음성 변환 엔진 — local(Whisper) | gemini(클라우드 전사) */
-  stt_engine: 'local' | 'gemini'
+  /** 음성 변환 엔진 — Gemini 전용 */
+  stt_engine: 'gemini'
+}
+
+export interface AdminUserInput {
+  username?: string
+  password?: string
+  name: string
+  role: 'admin' | 'user'
+  email?: string
+  organization?: string
+  department?: string
+  position?: string
+  phone?: string
+  team?: string
+  active?: boolean
+}
+
+export interface ProjectInput {
+  title: string
+  task_number?: string
+  task_title?: string
+  principal_investigator?: string
+  research_institution?: string
+  period_start?: string
+  period_end?: string
+  color?: string
+  tag_ids?: number[]
+  member_user_ids?: number[]
+  active?: boolean
 }
 
 export const api = {
@@ -82,8 +112,61 @@ export const api = {
     return res
   },
 
+  // ---- admin users ----
+  listAdminUsers(): Promise<AdminUser[]> {
+    return request<AdminUser[]>('/api/admin/users')
+  },
+
+  createAdminUser(data: AdminUserInput & { username: string; password: string }): Promise<AdminUser> {
+    return request<AdminUser>('/api/admin/users', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  },
+
+  updateAdminUser(id: number, data: Partial<AdminUserInput>): Promise<AdminUser> {
+    return request<AdminUser>(`/api/admin/users/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    })
+  },
+
+  deleteAdminUser(id: number): Promise<{ ok: boolean }> {
+    return request<{ ok: boolean }>(`/api/admin/users/${id}`, { method: 'DELETE' })
+  },
+
+  // ---- projects ----
+  listProjects(q?: string): Promise<Project[]> {
+    const params = new URLSearchParams()
+    if (q?.trim()) params.set('q', q.trim())
+    const qs = params.toString()
+    return request<Project[]>(`/api/projects${qs ? `?${qs}` : ''}`)
+  },
+
+  createProject(data: ProjectInput): Promise<Project> {
+    return request<Project>('/api/projects', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  },
+
+  updateProject(id: number, data: Partial<ProjectInput>): Promise<Project> {
+    return request<Project>(`/api/projects/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    })
+  },
+
+  deleteProject(id: number): Promise<{ ok: boolean }> {
+    return request<{ ok: boolean }>(`/api/projects/${id}`, { method: 'DELETE' })
+  },
+
   me(): Promise<User> {
     return request<User>('/api/auth/me')
+  },
+
+  listUserDirectory(): Promise<User[]> {
+    return request<User[]>('/api/users/directory')
   },
 
   async logout(): Promise<void> {
@@ -140,6 +223,7 @@ export const api = {
   createMeeting(data: {
     title: string
     tag?: string
+    started_at?: string
     participant_ids?: number[]
   }): Promise<Meeting> {
     return request<Meeting>('/api/meetings', { method: 'POST', body: JSON.stringify(data) })
@@ -177,6 +261,7 @@ export const api = {
       started_at?: string
       participant_ids?: number[]
       locked?: boolean
+      is_shared?: boolean
     },
   ): Promise<Meeting> {
     return request<Meeting>(`/api/meetings/${id}`, {
@@ -219,6 +304,16 @@ export const api = {
 
   resummarize(id: number): Promise<{ ok: boolean }> {
     return request<{ ok: boolean }>(`/api/meetings/${id}/summarize`, { method: 'POST' })
+  },
+
+  retryAudioProcessing(id: number): Promise<{ ok: boolean }> {
+    return request<{ ok: boolean }>(`/api/meetings/${id}/retry-audio`, { method: 'POST' })
+  },
+
+  cancelProcessing(id: number): Promise<{ ok: boolean; message: string }> {
+    return request<{ ok: boolean; message: string }>(`/api/meetings/${id}/cancel-processing`, {
+      method: 'POST',
+    })
   },
 
   /** 요약 내용 직접 수정 — 회의록도 함께 재생성됨. 보낸 필드만 반영 */
@@ -274,11 +369,19 @@ export const api = {
     return request<Tag[]>('/api/tags')
   },
 
-  createTag(data: { name: string; color?: string }): Promise<Tag> {
+  createTag(data: {
+    name: string
+    color?: string
+    is_global?: boolean
+    allowed_user_ids?: number[]
+  }): Promise<Tag> {
     return request<Tag>('/api/tags', { method: 'POST', body: JSON.stringify(data) })
   },
 
-  updateTag(id: number, data: { name?: string; color?: string }): Promise<Tag> {
+  updateTag(
+    id: number,
+    data: { name?: string; color?: string; is_global?: boolean; allowed_user_ids?: number[] },
+  ): Promise<Tag> {
     return request<Tag>(`/api/tags/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
   },
 
@@ -292,12 +395,12 @@ export const api = {
     return request<OrgOption[]>(`/api/org-options${qs}`)
   },
 
-  createOrgOption(data: { kind: OrgKind; name: string }): Promise<OrgOption> {
+  createOrgOption(data: { kind: OrgKind; name: string; color?: string }): Promise<OrgOption> {
     return request<OrgOption>('/api/org-options', { method: 'POST', body: JSON.stringify(data) })
   },
 
   /** 소속 색 지정 — 빈 문자열이면 색 해제 */
-  updateOrgOption(id: number, data: { color?: string }): Promise<OrgOption> {
+  updateOrgOption(id: number, data: { name?: string; color?: string }): Promise<OrgOption> {
     return request<OrgOption>(`/api/org-options/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(data),
@@ -318,7 +421,7 @@ export const api = {
     gemini_api_key?: string
     summary_prompt?: string
     gemini_model?: string
-    stt_engine?: 'local' | 'gemini'
+    stt_engine?: 'gemini'
   }): Promise<AppSettings> {
     return request<AppSettings>('/api/settings', {
       method: 'PUT',

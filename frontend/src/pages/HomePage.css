@@ -2,6 +2,7 @@
 
 .home-page {
   width: 100%;
+  min-height: 100%;
 }
 
 .home-hero {
@@ -33,9 +34,9 @@
 /* 통계 카드 */
 .stat-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 16px;
-  margin-bottom: 36px;
+  grid-template-columns: repeat(3, minmax(220px, 1fr));
+  gap: clamp(14px, 1.2vw, 22px);
+  margin-bottom: clamp(32px, 2.4vw, 44px);
 }
 
 .stat-card {
@@ -105,6 +106,52 @@
   font-size: 13px;
 }
 
+.home-recent-layout {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: clamp(20px, 1.6vw, 28px);
+  align-items: start;
+}
+
+.home-recent-block {
+  min-width: 0;
+}
+
+.home-recent-block-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  min-height: 42px;
+  margin-bottom: 14px;
+}
+
+.home-recent-block-head p {
+  margin-top: 4px;
+  color: var(--text-3);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.home-recent-card-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+}
+
+.home-recent-empty {
+  display: flex;
+  min-height: 116px;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.52);
+  color: var(--text-3);
+  font-size: 13px;
+  font-weight: 800;
+  text-align: center;
+}
+
 .home-loading {
   display: flex;
   justify-content: center;
@@ -125,8 +172,18 @@
 /* 회의 카드 그리드 */
 .meeting-card-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+  gap: clamp(14px, 1.2vw, 22px);
+}
+
+@media (min-width: 1700px) {
+  .meeting-card-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .home-recent-card-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .meeting-card {
@@ -165,6 +222,32 @@
 /* 제목 왼쪽 태그 칩 — 색상은 인라인 style(태그색) */
 .meeting-card-tagpill {
   flex-shrink: 0;
+}
+
+.home-shared-pill,
+.home-owner-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 24px;
+  padding: 2px 8px;
+  border: 1px solid var(--primary-soft-2);
+  border-radius: var(--radius-full);
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-size: 11.5px;
+  font-weight: 900;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.home-owner-pill {
+  max-width: 110px;
+  overflow: hidden;
+  border-color: var(--border);
+  background: #f8fafc;
+  color: var(--text-2);
+  text-overflow: ellipsis;
 }
 
 .meeting-card-meta {
@@ -212,10 +295,28 @@
   .meeting-card-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .home-recent-card-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 1080px) {
+  .home-recent-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .home-recent-card-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 900px) {
   .meeting-card-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .home-recent-card-grid {
     grid-template-columns: 1fr;
   }
 }
@@ -367,6 +468,22 @@
     margin-bottom: 14px;
   }
 
+  .home-recent-layout {
+    gap: 28px;
+  }
+
+  .home-recent-block-head {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 12px;
+  }
+
+  .home-recent-block-head p {
+    font-size: 14px;
+    line-height: 1.45;
+  }
+
   .home-section-title {
     font-size: 21px;
     font-weight: 900;
@@ -415,6 +532,10 @@
   }
 
   .meeting-card-top .lock-pill {
+    order: 3;
+  }
+
+  .home-shared-pill {
     order: 3;
   }
 

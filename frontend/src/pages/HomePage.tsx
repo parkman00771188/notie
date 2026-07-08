@@ -46,7 +46,90 @@ export default function HomePage() {
   const totalCount = recordedList.length
   const doneCount = recordedList.filter((m) => m.status === 'done').length
   const totalSec = recordedList.reduce((acc, m) => acc + (m.duration_sec ?? 0), 0)
-  const recent = recordedList.slice(0, 6)
+  const recentShared = recordedList.filter((m) => m.is_shared).slice(0, 6)
+  const recentMine = recordedList.filter((m) => m.user_id === user?.id).slice(0, 6)
+
+  const tagColor = (name: string) => tags.find((t) => t.name === name)?.color ?? '#16a34a'
+
+  const renderMeetingCard = (m: Meeting, options?: { showOwner?: boolean }) => (
+    <div
+      key={m.id}
+      className="card meeting-card"
+      role="button"
+      tabIndex={0}
+      onClick={() => setDetailId(m.id)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') setDetailId(m.id)
+      }}
+    >
+      <div className="meeting-card-top">
+        {m.tag &&
+          (() => {
+            const c = tagColor(m.tag)
+            return (
+              <span
+                className="tag-pill meeting-card-tagpill"
+                style={{
+                  color: c,
+                  borderColor: c,
+                  background: `color-mix(in srgb, ${c} 10%, transparent)`,
+                }}
+              >
+                #{m.tag}
+              </span>
+            )
+          })()}
+        <span className="meeting-card-title" title={m.title}>
+          {m.title}
+        </span>
+        {m.locked && (
+          <span className="lock-pill lock-pill-icon" title="잠금됨" aria-label="잠금됨">
+            🔒
+          </span>
+        )}
+        {m.is_shared && <span className="home-shared-pill">공유</span>}
+        <StatusBadge status={m.status} />
+      </div>
+      <div className="meeting-card-meta">
+        <span>{formatKoreanDateTime(m.started_at)}</span>
+        <span className="meta-dot">·</span>
+        <span>{formatClock(m.duration_sec)}</span>
+      </div>
+      <div className="meeting-card-foot">
+        {m.participants.length > 0 ? (
+          <AvatarStack participants={m.participants} max={4} />
+        ) : (
+          <span className="muted">참석자 없음</span>
+        )}
+        {options?.showOwner && m.owner_name && (
+          <span className="home-owner-pill">{m.user_id === user?.id ? '내 회의' : m.owner_name}</span>
+        )}
+      </div>
+    </div>
+  )
+
+  const renderRecentSection = (title: string, subtitle: string, items: Meeting[], empty: string, showOwner = false) => (
+    <section className="home-recent-block" aria-label={title}>
+      <div className="home-recent-block-head">
+        <div>
+          <h2 className="home-section-title">{title}</h2>
+          <p>{subtitle}</p>
+        </div>
+        {items.length > 0 && (
+          <button className="btn btn-ghost home-view-all" onClick={() => navigate('/meetings')}>
+            전체 보기
+          </button>
+        )}
+      </div>
+      {items.length === 0 ? (
+        <div className="home-recent-empty">{empty}</div>
+      ) : (
+        <div className="meeting-card-grid home-recent-card-grid">
+          {items.map((m) => renderMeetingCard(m, { showOwner }))}
+        </div>
+      )}
+    </section>
+  )
 
   return (
     <div className="page home-page">
@@ -104,20 +187,11 @@ export default function HomePage() {
         </div>
       </div>
 
-      <div className="home-section-head">
-        <h2 className="home-section-title">최근 회의</h2>
-        {totalCount > 0 && (
-          <button className="btn btn-ghost home-view-all" onClick={() => navigate('/meetings')}>
-            전체 보기
-          </button>
-        )}
-      </div>
-
       {loading ? (
         <div className="home-loading">
           <span className="spinner" />
         </div>
-      ) : recent.length === 0 ? (
+      ) : recordedList.length === 0 ? (
         <div className="card home-empty">
           <div className="empty-state">
             <div className="emoji">🎙️</div>
@@ -129,59 +203,20 @@ export default function HomePage() {
           </div>
         </div>
       ) : (
-        <div className="meeting-card-grid">
-          {recent.map((m) => (
-            <div
-              key={m.id}
-              className="card meeting-card"
-              role="button"
-              tabIndex={0}
-              onClick={() => setDetailId(m.id)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') setDetailId(m.id)
-              }}
-            >
-              <div className="meeting-card-top">
-                {m.tag &&
-                  (() => {
-                    const c = tags.find((t) => t.name === m.tag)?.color ?? '#16a34a'
-                    return (
-                      <span
-                        className="tag-pill meeting-card-tagpill"
-                        style={{
-                          color: c,
-                          borderColor: c,
-                          background: `color-mix(in srgb, ${c} 10%, transparent)`,
-                        }}
-                      >
-                        #{m.tag}
-                      </span>
-                    )
-                  })()}
-                <span className="meeting-card-title" title={m.title}>
-                  {m.title}
-                </span>
-                {m.locked && (
-                  <span className="lock-pill lock-pill-icon" title="잠금됨" aria-label="잠금됨">
-                    🔒
-                  </span>
-                )}
-                <StatusBadge status={m.status} />
-              </div>
-              <div className="meeting-card-meta">
-                <span>{formatKoreanDateTime(m.started_at)}</span>
-                <span className="meta-dot">·</span>
-                <span>{formatClock(m.duration_sec)}</span>
-              </div>
-              <div className="meeting-card-foot">
-                {m.participants.length > 0 ? (
-                  <AvatarStack participants={m.participants} max={4} />
-                ) : (
-                  <span className="muted">참석자 없음</span>
-                )}
-              </div>
-            </div>
-          ))}
+        <div className="home-recent-layout">
+          {renderRecentSection(
+            '최근 공유된 회의',
+            '공유된 회의 중 최근 기록을 빠르게 확인하세요.',
+            recentShared,
+            '아직 공유된 회의가 없어요.',
+            true,
+          )}
+          {renderRecentSection(
+            '최근 내 회의',
+            '내가 만든 회의 기록만 따로 모아봤어요.',
+            recentMine,
+            '아직 내 회의 기록이 없어요.',
+          )}
         </div>
       )}
 

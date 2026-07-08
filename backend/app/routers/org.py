@@ -1,9 +1,4 @@
-"""org 라우터 — 태그(프로젝트) 사전 + 소속/직책(org-options) 사전 CRUD.
-
-main.py에서 prefix="/api"로 include된다 → 실제 경로는
-/api/tags, /api/tags/{tag_id}, /api/org-options, /api/org-options/{option_id}.
-모든 조회/변경은 현재 로그인 user_id로 스코프한다.
-"""
+"""Tag/project and organization-option routes."""
 
 import sqlite3
 from typing import Literal
@@ -16,7 +11,6 @@ from ..auth_utils import get_current_user
 
 router = APIRouter()
 
-# 태그 색 팔레트 — color 미지정 시 순환 자동 배정 (SPEC.md 고정 값)
 TAG_COLOR_PALETTE = [
     "#16a34a",
     "#2563eb",
@@ -29,36 +23,100 @@ TAG_COLOR_PALETTE = [
 ]
 
 ORG_KINDS = ("department", "role", "organization")
+ORG_USER_COLUMNS = {
+    "organization": "organization",
+    "department": "department",
+    "role": "position",
+}
 
 
 class TagCreate(BaseModel):
     name: str = Field(min_length=1)
     color: str | None = None
+    is_global: bool | None = None
+    allowed_user_ids: list[int] | None = None
 
 
 class TagUpdate(BaseModel):
     name: str | None = None
     color: str | None = None
+    is_global: bool | None = None
+    allowed_user_ids: list[int] | None = None
 
 
 class OrgOptionCreate(BaseModel):
     kind: Literal["department", "role", "organization"]
     name: str = Field(min_length=1)
-
-
-class OrgOptionUpdate(BaseModel):
     color: str | None = None
 
 
-def _to_tag(row: sqlite3.Row) -> dict:
-    return {"id": row["id"], "name": row["name"], "color": row["color"]}
+class OrgOptionUpdate(BaseModel):
+    name: str | None = None
+    color: str | None = None
+
+
+def _tag_permission_user_ids(conn: sqlite3.Connection, tag_id: int) -> list[int]:
+    rows = conn.execute(
+        "SELECT user_id FROM tag_permissions WHERE tag_id = ? ORDER BY user_id",
+        (tag_id,),
+    ).fetchall()
+    return [row["user_id"] for row in rows]
+
+
+def _replace_tag_permissions(
+    conn: sqlite3.Connection, tag_id: int, user_ids: list[int] | None
+) -> None:
+    conn.execute("DELETE FROM tag_permissions WHERE tag_id = ?", (tag_id,))
+    if not user_ids:
+        return
+    normalized = sorted({int(user_id) for user_id in user_ids if int(user_id) > 0})
+    for user_id in normalized:
+        exists = conn.execute(
+            "SELECT id FROM users WHERE id = ? AND active = 1",
+            (user_id,),
+        ).fetchone()
+        if exists is not None:
+            conn.execute(
+                "INSERT OR IGNORE INTO tag_permissions (tag_id, user_id) VALUES (?, ?)",
+                (tag_id, user_id),
+            )
+
+
+def _is_project_tag(conn: sqlite3.Connection, tag_id: int) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM project_tags WHERE tag_id = ? LIMIT 1",
+        (tag_id,),
+    ).fetchone()
+    return row is not None
+
+
+def _to_tag(
+    row: sqlite3.Row,
+    conn: sqlite3.Connection | None = None,
+    user: dict | None = None,
+) -> dict:
+    is_project_tag = _is_project_tag(conn, row["id"]) if conn else False
+    data = {
+        "id": row["id"],
+        "name": row["name"],
+        "color": row["color"],
+        "is_global": bool(row["is_global"]),
+        "is_project_tag": is_project_tag,
+    }
+    data["allowed_user_ids"] = _tag_permission_user_ids(conn, row["id"]) if conn else []
+    if user is not None:
+        data["can_manage"] = _can_manage_tag(row, user)
+    return data
 
 
 def _to_org_option(row: sqlite3.Row) -> dict:
     return {"id": row["id"], "kind": row["kind"], "name": row["name"], "color": row["color"]}
 
 
-# ---------------------------------------------------------------- tags
+def _can_manage_tag(row: sqlite3.Row, user: dict) -> bool:
+    if row["is_global"]:
+        return user.get("role") == "admin"
+    return row["user_id"] == user["id"]
 
 
 @router.get("/tags")
@@ -66,12 +124,64 @@ def list_tags(user: dict = Depends(get_current_user)) -> list[dict]:
     conn = db.get_conn()
     try:
         rows = conn.execute(
-            "SELECT id, name, color FROM tags WHERE user_id = ? ORDER BY name ASC",
-            (user["id"],),
+            """
+            SELECT DISTINCT t.id, t.user_id, t.name, t.color, t.is_global
+            FROM tags t
+            LEFT JOIN tag_permissions mine
+              ON mine.tag_id = t.id AND mine.user_id = ?
+            WHERE
+              t.user_id = ?
+              OR mine.user_id IS NOT NULL
+              OR (
+                t.is_global = 1
+                AND (
+                  ? = 'admin'
+                  OR NOT EXISTS (
+                    SELECT 1 FROM tag_permissions p WHERE p.tag_id = t.id
+                  )
+                )
+              )
+            ORDER BY t.is_global DESC, t.name ASC
+            """,
+            (user["id"], user["id"], user.get("role") or "user"),
+        ).fetchall()
+        result = [_to_tag(row, conn, user) for row in rows]
+    finally:
+        conn.close()
+    return result
+
+
+@router.get("/users/directory")
+def list_user_directory(user: dict = Depends(get_current_user)) -> list[dict]:
+    conn = db.get_conn()
+    try:
+        rows = conn.execute(
+            """
+            SELECT id, username, email, name, team, organization, department,
+                   position, phone, role, active
+            FROM users
+            WHERE active = 1
+            ORDER BY lower(name), lower(username), id
+            """
         ).fetchall()
     finally:
         conn.close()
-    return [_to_tag(r) for r in rows]
+    return [
+        {
+            "id": row["id"],
+            "username": row["username"],
+            "email": row["email"],
+            "name": row["name"],
+            "team": row["team"],
+            "organization": row["organization"],
+            "department": row["department"],
+            "position": row["position"],
+            "phone": row["phone"],
+            "role": row["role"],
+            "active": bool(row["active"]),
+        }
+        for row in rows
+    ]
 
 
 @router.post("/tags")
@@ -80,6 +190,7 @@ def create_tag(body: TagCreate, user: dict = Depends(get_current_user)) -> dict:
     if not name:
         raise HTTPException(status_code=400, detail="태그 이름을 입력해주세요")
     color = body.color.strip() if body.color and body.color.strip() else None
+    is_global = 1 if user.get("role") == "admin" and body.is_global is True else 0
 
     conn = db.get_conn()
     try:
@@ -90,18 +201,32 @@ def create_tag(body: TagCreate, user: dict = Depends(get_current_user)) -> dict:
                     (user["id"],),
                 ).fetchone()[0]
                 color = TAG_COLOR_PALETTE[count % len(TAG_COLOR_PALETTE)]
+            if is_global:
+                exists = conn.execute(
+                    "SELECT id FROM tags WHERE is_global = 1 AND name = ?",
+                    (name,),
+                ).fetchone()
+                if exists is not None:
+                    raise HTTPException(status_code=400, detail="이미 있는 공유 태그입니다")
             try:
                 cur = conn.execute(
-                    "INSERT INTO tags (user_id, name, color) VALUES (?, ?, ?)",
-                    (user["id"], name, color),
+                    "INSERT INTO tags (user_id, name, color, is_global) VALUES (?, ?, ?, ?)",
+                    (user["id"], name, color, is_global),
                 )
             except sqlite3.IntegrityError:
-                raise HTTPException(status_code=400, detail="이미 있는 태그예요")
+                raise HTTPException(status_code=400, detail="이미 있는 태그입니다")
             tag_id = cur.lastrowid
+            if body.allowed_user_ids is not None:
+                _replace_tag_permissions(conn, tag_id, body.allowed_user_ids)
+            row = conn.execute(
+                "SELECT id, user_id, name, color, is_global FROM tags WHERE id = ?",
+                (tag_id,),
+            ).fetchone()
+            result = _to_tag(row, conn, user)
     finally:
         conn.close()
 
-    return {"id": tag_id, "name": name, "color": color}
+    return result
 
 
 @router.patch("/tags/{tag_id}")
@@ -109,16 +234,20 @@ def update_tag(
     tag_id: int, body: TagUpdate, user: dict = Depends(get_current_user)
 ) -> dict:
     updates = body.model_dump(exclude_unset=True)
+    permission_update = "allowed_user_ids" in updates
     conn = db.get_conn()
     try:
         row = conn.execute(
-            "SELECT id, name, color FROM tags WHERE id = ? AND user_id = ?",
-            (tag_id, user["id"]),
+            "SELECT id, user_id, name, color, is_global FROM tags WHERE id = ?",
+            (tag_id,),
         ).fetchone()
         if row is None:
             raise HTTPException(status_code=404, detail="태그를 찾을 수 없습니다")
-        old_name = row["name"]
+        if not _can_manage_tag(row, user):
+            raise HTTPException(status_code=403, detail="관리자 공유 태그는 수정할 수 없습니다")
 
+        old_name = row["name"]
+        is_project_tag = _is_project_tag(conn, tag_id)
         fields: list[str] = []
         values: list = []
         new_name: str | None = None
@@ -131,52 +260,68 @@ def update_tag(
             values.append(value)
         if "color" in updates:
             value = (updates["color"] or "").strip()
-            if value:  # color는 NOT NULL — 빈 값은 무시
+            if value:
                 fields.append("color = ?")
                 values.append(value)
+        if "is_global" in updates:
+            if user.get("role") != "admin":
+                raise HTTPException(status_code=403, detail="태그 공유 여부는 관리자만 수정할 수 있습니다")
+            fields.append("is_global = ?")
+            values.append(1 if updates["is_global"] else 0)
 
-        if fields:
+        if fields or permission_update:
             try:
                 with conn:
-                    conn.execute(
-                        f"UPDATE tags SET {', '.join(fields)} WHERE id = ? AND user_id = ?",
-                        (*values, tag_id, user["id"]),
-                    )
-                    # name 변경 시 해당 태그명을 쓰는 내 meetings.tag도 함께 변경
+                    if fields:
+                        conn.execute(f"UPDATE tags SET {', '.join(fields)} WHERE id = ?", (*values, tag_id))
                     if new_name is not None and new_name != old_name:
-                        conn.execute(
-                            "UPDATE meetings SET tag = ? WHERE user_id = ? AND tag = ?",
-                            (new_name, user["id"], old_name),
+                        if row["is_global"] or is_project_tag:
+                            conn.execute("UPDATE meetings SET tag = ? WHERE tag = ?", (new_name, old_name))
+                        else:
+                            conn.execute(
+                                "UPDATE meetings SET tag = ? WHERE user_id = ? AND tag = ?",
+                                (new_name, user["id"], old_name),
+                            )
+                    if permission_update:
+                        _replace_tag_permissions(
+                            conn,
+                            tag_id,
+                            updates.get("allowed_user_ids") or [],
                         )
             except sqlite3.IntegrityError:
-                raise HTTPException(status_code=400, detail="이미 있는 태그예요")
+                raise HTTPException(status_code=400, detail="이미 있는 태그입니다")
 
-        row = conn.execute(
-            "SELECT id, name, color FROM tags WHERE id = ?", (tag_id,)
+        updated = conn.execute(
+            "SELECT id, user_id, name, color, is_global FROM tags WHERE id = ?", (tag_id,)
         ).fetchone()
+        result = _to_tag(updated, conn, user)
     finally:
         conn.close()
-    return _to_tag(row)
+    return result
 
 
 @router.delete("/tags/{tag_id}")
 def delete_tag(tag_id: int, user: dict = Depends(get_current_user)) -> dict:
-    """태그 사전에서만 제거한다 — 회의의 tag 문자열은 남겨둠."""
     conn = db.get_conn()
     try:
-        with conn:
-            cur = conn.execute(
-                "DELETE FROM tags WHERE id = ? AND user_id = ?",
-                (tag_id, user["id"]),
-            )
-        if cur.rowcount == 0:
+        row = conn.execute(
+            "SELECT id, user_id, is_global FROM tags WHERE id = ?", (tag_id,)
+        ).fetchone()
+        if row is None:
             raise HTTPException(status_code=404, detail="태그를 찾을 수 없습니다")
+        if not _can_manage_tag(row, user):
+            raise HTTPException(status_code=403, detail="관리자 공유 태그는 삭제할 수 없습니다")
+        if user.get("role") != "admin" and _is_project_tag(conn, tag_id):
+            raise HTTPException(
+                status_code=403,
+                detail="프로젝트에 연결된 태그는 일반 사용자가 삭제할 수 없습니다",
+            )
+
+        with conn:
+            conn.execute("DELETE FROM tags WHERE id = ?", (tag_id,))
     finally:
         conn.close()
     return {"ok": True}
-
-
-# ---------------------------------------------------------------- org-options
 
 
 @router.get("/org-options")
@@ -192,17 +337,27 @@ def list_org_options(
     try:
         if kind:
             rows = conn.execute(
-                "SELECT id, kind, name, color FROM org_options WHERE user_id = ? AND kind = ? ORDER BY name ASC",
+                """
+                SELECT id, kind, name, color
+                FROM org_options
+                WHERE user_id = ? AND kind = ?
+                ORDER BY name ASC
+                """,
                 (user["id"], kind),
             ).fetchall()
         else:
             rows = conn.execute(
-                "SELECT id, kind, name, color FROM org_options WHERE user_id = ? ORDER BY kind ASC, name ASC",
+                """
+                SELECT id, kind, name, color
+                FROM org_options
+                WHERE user_id = ?
+                ORDER BY kind ASC, name ASC
+                """,
                 (user["id"],),
             ).fetchall()
     finally:
         conn.close()
-    return [_to_org_option(r) for r in rows]
+    return [_to_org_option(row) for row in rows]
 
 
 @router.post("/org-options")
@@ -212,29 +367,29 @@ def create_org_option(
     name = body.name.strip()
     if not name:
         raise HTTPException(status_code=400, detail="이름을 입력해주세요")
+    color = (body.color or "").strip() or None
 
     conn = db.get_conn()
     try:
         with conn:
             try:
                 cur = conn.execute(
-                    "INSERT INTO org_options (user_id, kind, name) VALUES (?, ?, ?)",
-                    (user["id"], body.kind, name),
+                    "INSERT INTO org_options (user_id, kind, name, color) VALUES (?, ?, ?, ?)",
+                    (user["id"], body.kind, name, color),
                 )
             except sqlite3.IntegrityError:
-                raise HTTPException(status_code=400, detail="이미 등록돼 있어요")
+                raise HTTPException(status_code=400, detail="이미 등록되어 있습니다")
             option_id = cur.lastrowid
     finally:
         conn.close()
 
-    return {"id": option_id, "kind": body.kind, "name": name, "color": None}
+    return {"id": option_id, "kind": body.kind, "name": name, "color": color}
 
 
 @router.patch("/org-options/{option_id}")
 def update_org_option(
     option_id: int, body: OrgOptionUpdate, user: dict = Depends(get_current_user)
 ) -> dict:
-    """소속(조직) 색 지정 — color에 빈 문자열을 주면 색 해제."""
     updates = body.model_dump(exclude_unset=True)
     conn = db.get_conn()
     try:
@@ -245,13 +400,42 @@ def update_org_option(
         if row is None:
             raise HTTPException(status_code=404, detail="항목을 찾을 수 없습니다")
 
+        fields: list[str] = []
+        values: list = []
+        new_name: str | None = None
+        old_name = row["name"]
+
+        if "name" in updates:
+            name = (updates["name"] or "").strip()
+            if not name:
+                raise HTTPException(status_code=400, detail="이름을 입력해주세요")
+            new_name = name
+            fields.append("name = ?")
+            values.append(name)
         if "color" in updates:
             color = (updates["color"] or "").strip() or None
-            with conn:
-                conn.execute(
-                    "UPDATE org_options SET color = ? WHERE id = ? AND user_id = ?",
-                    (color, option_id, user["id"]),
-                )
+            fields.append("color = ?")
+            values.append(color)
+
+        if fields:
+            try:
+                with conn:
+                    conn.execute(
+                        f"UPDATE org_options SET {', '.join(fields)} WHERE id = ? AND user_id = ?",
+                        (*values, option_id, user["id"]),
+                    )
+                    if (
+                        new_name is not None
+                        and new_name != old_name
+                        and user.get("role") == "admin"
+                    ):
+                        column = ORG_USER_COLUMNS[row["kind"]]
+                        conn.execute(
+                            f"UPDATE users SET {column} = ? WHERE {column} = ?",
+                            (new_name, old_name),
+                        )
+            except sqlite3.IntegrityError:
+                raise HTTPException(status_code=400, detail="이미 등록되어 있습니다")
         row = conn.execute(
             "SELECT id, kind, name, color FROM org_options WHERE id = ?", (option_id,)
         ).fetchone()

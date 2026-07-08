@@ -3,6 +3,7 @@ import type { KeyboardEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { marked } from 'marked'
 import { api } from '../api'
+import { useAuth } from '../App'
 import { AudioPlayerCard } from './AudioPlayerCard'
 import type { AudioPlayerCardHandle } from './AudioPlayerCard'
 import { AvatarStack } from './Avatar'
@@ -27,6 +28,17 @@ const PROGRESS_MESSAGE: Partial<Record<MeetingStatus, string>> = {
   queued: '대기 중이에요...',
   transcribing: '음성을 텍스트로 변환하고 있어요...',
   summarizing: 'AI가 회의록을 만들고 있어요...',
+}
+
+function estimateProcessingTime(durationSec: number | null | undefined): string {
+  if (!durationSec || durationSec <= 0) return '약 1~3분'
+  const min = Math.max(1, Math.ceil(durationSec / 600))
+  const max = Math.max(min + 1, Math.ceil(durationSec / 300))
+  return `약 ${min}~${max}분`
+}
+
+function isTemporaryAudioFailure(meeting: MeetingDetail): boolean {
+  return meeting.status === 'failed' && Boolean(meeting.audio_filename) && meeting.segments.length === 0
 }
 
 export interface MeetingDetailViewProps {
@@ -55,6 +67,7 @@ export function MeetingDetailView({
   const navigate = useNavigate()
   const confirm = useConfirm()
   const promptInput = usePrompt()
+  const { user } = useAuth()
 
   const [meeting, setMeeting] = useState<MeetingDetail | null>(null)
   const [loading, setLoading] = useState(true)
@@ -384,35 +397,6 @@ export function MeetingDetailView({
     }
   }
 
-  /** PDF 파일 공유 — Slack/카카오/메일 등은 브라우저·OS 공유 시트가 제공하는 대상으로 전달된다. */
-  const sharePdf = async () => {
-    if (!meeting) return
-    try {
-      const result = await fetchExportBlob('pdf')
-      if (!result) return
-      const filename = result.filename.toLowerCase().endsWith('.pdf')
-        ? result.filename
-        : `${result.filename}.pdf`
-      const file = new File([result.blob], filename, { type: 'application/pdf' })
-      const shareData: ShareData = {
-        title: `[회의록] ${meeting.title}`,
-        text: `${meeting.title} 회의록 PDF`,
-        files: [file],
-      }
-
-      if (navigator.share && navigator.canShare?.(shareData)) {
-        await navigator.share(shareData)
-        return
-      }
-
-      saveBlob(result.blob, filename)
-      alert('이 브라우저에서는 PDF 파일 공유가 지원되지 않아 다운로드로 대신 처리했어요.')
-    } catch (e) {
-      if (e instanceof DOMException && e.name === 'AbortError') return
-      alert(e instanceof Error ? e.message : '공유에 실패했어요')
-    }
-  }
-
   const goBackToList = () => {
     if (onBack) onBack()
     else navigate('/meetings')
@@ -472,26 +456,75 @@ export function MeetingDetailView({
       alert('잠긴 회의는 AI 회의록을 다시 생성할 수 없어요. 잠금을 해제한 뒤 다시 시도해주세요.')
       return
     }
+    const retryFromAudio = isTemporaryAudioFailure(meeting)
     try {
-      await api.resummarize(meeting.id)
-      // 상태를 즉시 summarizing으로 바꿔 폴링 재개
+      if (retryFromAudio) {
+        await api.retryAudioProcessing(meeting.id)
+      } else {
+        await api.resummarize(meeting.id)
+      }
+      // 상태를 즉시 바꿔 폴링 재개
       setMeeting((prev) =>
-        prev ? { ...prev, status: 'summarizing', error_message: null } : prev,
+        prev
+          ? {
+              ...prev,
+              status: retryFromAudio ? 'queued' : 'summarizing',
+              error_message: null,
+              ...(retryFromAudio ? { segments: [], summary: null } : {}),
+            }
+          : prev,
       )
       setTab('minutes')
       notifyChanged()
     } catch (e) {
-      alert(e instanceof Error ? e.message : 'AI 회의록 재생성에 실패했어요')
+      alert(e instanceof Error ? e.message : 'AI 회의록 처리에 실패했어요')
     }
   }
 
   const handleResummarizeWithConfirm = async () => {
+    if (!meeting) return
+    const retryFromAudio = isTemporaryAudioFailure(meeting)
     const ok = await confirm({
-      title: 'AI 요약을 진행하시겠습니까?',
-      confirmLabel: '진행',
+      title: retryFromAudio ? '텍스트 추출부터 다시 시도할까요?' : 'AI 요약을 진행하시겠습니까?',
+      message: retryFromAudio
+        ? `임시저장된 음성 파일로 텍스트 추출을 다시 실행한 뒤 AI 요약까지 진행합니다. 음성 길이 기준 ${estimateProcessingTime(
+            meeting.duration_sec,
+          )} 정도 걸릴 수 있어요.`
+        : undefined,
+      confirmLabel: retryFromAudio ? '다시 시도' : '진행',
     })
     if (!ok) return
     await handleResummarize()
+  }
+
+  const handleCancelProcessing = async () => {
+    if (!meeting) return
+    const ok = await confirm({
+      title: '변환을 취소할까요?',
+      message:
+        '현재 텍스트 변환을 멈추고 음성 파일만 임시저장합니다. 나중에 AI 요약을 누르면 텍스트 추출부터 다시 시도할 수 있어요.',
+      confirmLabel: '변환 취소',
+      danger: true,
+    })
+    if (!ok) return
+    try {
+      const result = await api.cancelProcessing(meeting.id)
+      setMeeting((prev) =>
+        prev
+          ? {
+              ...prev,
+              status: 'failed',
+              error_message: result.message,
+              segments: [],
+              summary: null,
+            }
+          : prev,
+      )
+      notifyChanged()
+    } catch (e) {
+      alert(e instanceof Error ? e.message : '변환 취소에 실패했어요')
+      api.getMeeting(meetingId).then(setMeeting).catch(() => {})
+    }
   }
 
   // ----- 회의 잠금 -----
@@ -514,6 +547,33 @@ export function MeetingDetailView({
     } catch (e) {
       setMeeting((prev) => (prev ? { ...prev, locked: !next } : prev))
       alert(e instanceof Error ? e.message : '잠금 상태 변경에 실패했어요')
+    }
+  }
+
+  // ----- 회의 공유 -----
+  const handleToggleShare = async () => {
+    if (!meeting || user?.id !== meeting.user_id) return
+    const nextShared = !meeting.is_shared
+    const ok = await confirm({
+      title: nextShared ? '회의를 공유하시겠습니까?' : '회의 공유를 해제하시겠습니까?',
+      message: nextShared
+        ? '공유하면 해당 회의록과 회의 내용이 모든 사용자에게 공개됩니다. 공개된 회의는 내용 보호를 위해 자동으로 잠금 처리됩니다.'
+        : '공유를 해제하면 해당 회의록은 더 이상 다른 사용자에게 공개되지 않습니다. 공유 해제와 함께 회의 잠금도 해제됩니다.',
+      confirmLabel: nextShared ? '회의 공유' : '회의 공유 해제',
+      danger: !nextShared,
+    })
+    if (!ok) return
+
+    const prevShared = meeting.is_shared
+    const prevLocked = meeting.locked
+    setMeeting((prev) => (prev ? { ...prev, is_shared: nextShared, locked: nextShared } : prev))
+    if (nextShared) setEditingSummary(false)
+    try {
+      await api.updateMeeting(meeting.id, { is_shared: nextShared, locked: nextShared })
+      notifyChanged()
+    } catch (e) {
+      setMeeting((prev) => (prev ? { ...prev, is_shared: prevShared, locked: prevLocked } : prev))
+      alert(e instanceof Error ? e.message : '공유 설정을 변경하지 못했어요')
     }
   }
 
@@ -665,18 +725,77 @@ export function MeetingDetailView({
   const isScheduledMeeting = meeting.status === 'scheduled'
   const shouldBlockAudioPlayback = audioPlaybackDisabled || isRecordingMeeting
   const isLocked = meeting.locked
+  const isOwner = user?.id === meeting.user_id
   const lockedActionMessage = '잠금 상태에서는 AI 회의록 수정/재생성과 삭제를 할 수 없어요.'
   const resummarizeHint = '메모와 전체 스크립트를 기준으로 다시 요약합니다'
+  const temporaryAudioFailure = isTemporaryAudioFailure(meeting)
+  const processingEstimate = estimateProcessingTime(meeting.duration_sec)
+  const canCancelProcessing =
+    isOwner &&
+    Boolean(meeting.audio_filename) &&
+    (meeting.status === 'queued' || meeting.status === 'transcribing')
   const canResummarize =
-    meeting.segments.length > 0 && (meeting.status === 'done' || meeting.status === 'failed')
+    temporaryAudioFailure ||
+    (meeting.segments.length > 0 && (meeting.status === 'done' || meeting.status === 'failed'))
+  const aiSummaryHint = temporaryAudioFailure
+    ? `임시저장된 음성 파일로 텍스트 추출부터 다시 시도합니다. 예상 소요 시간: ${processingEstimate}`
+    : resummarizeHint
 
   return (
     <div className="detail-view">
-      {onBack && (
-        <button className="detail-back" onClick={onBack}>
-          ← 회의 목록
-        </button>
-      )}
+      <div className="detail-topbar">
+        {onBack ? (
+          <button className="detail-back" onClick={onBack}>
+            ← 회의 목록
+          </button>
+        ) : (
+          <span />
+        )}
+        <div className="detail-actions">
+          <button
+            type="button"
+            className={`btn detail-lock-btn${isLocked ? ' locked' : ' btn-ghost'}`}
+            aria-pressed={isLocked}
+            title={isLocked ? '잠금을 해제합니다' : `회의 삭제와 AI 수정을 잠급니다. ${resummarizeHint}`}
+            onClick={() => void handleToggleLock()}
+          >
+            {isLocked ? '🔒 잠금됨' : '🔓 잠금'}
+          </button>
+          {isOwner && (
+            <button
+              type="button"
+              className={`btn detail-share-btn${meeting.is_shared ? ' active' : ' btn-ghost'}`}
+              aria-pressed={meeting.is_shared}
+              title={
+                meeting.is_shared
+                  ? '회의 공유를 해제합니다'
+                  : '회의록과 회의 내용을 모든 사용자에게 공유합니다'
+              }
+              onClick={() => void handleToggleShare()}
+            >
+              ↗ {meeting.is_shared ? '회의 공유 해제' : '회의 공유'}
+            </button>
+          )}
+          {canResummarize && (
+            <button
+              className="btn btn-soft"
+              onClick={() => void handleResummarizeWithConfirm()}
+              disabled={isLocked}
+              title={isLocked ? lockedActionMessage : aiSummaryHint}
+            >
+              ✨ AI 요약
+            </button>
+          )}
+          <button
+            className="btn btn-danger"
+            onClick={handleDelete}
+            disabled={isLocked}
+            title={isLocked ? lockedActionMessage : undefined}
+          >
+            삭제
+          </button>
+        </div>
+      </div>
 
       {/* 헤더 */}
       <div className="detail-header">
@@ -714,37 +833,6 @@ export function MeetingDetailView({
             </span>
           )}
           <StatusBadge status={meeting.status} />
-          <div className="detail-actions">
-            <button
-              type="button"
-              className={`btn detail-lock-btn${isLocked ? ' locked' : ' btn-ghost'}`}
-              aria-pressed={isLocked}
-              title={isLocked ? '잠금을 해제합니다' : `회의 삭제와 AI 수정을 잠급니다. ${resummarizeHint}`}
-              onClick={() => void handleToggleLock()}
-            >
-              {isLocked ? '🔒 잠금됨' : '🔓 잠금'}
-            </button>
-            {canResummarize && (
-              <>
-                <button
-                  className="btn btn-soft"
-                  onClick={() => void handleResummarizeWithConfirm()}
-                  disabled={isLocked}
-                  title={isLocked ? lockedActionMessage : resummarizeHint}
-                >
-                  ✨ AI 요약
-                </button>
-              </>
-            )}
-            <button
-              className="btn btn-danger"
-              onClick={handleDelete}
-              disabled={isLocked}
-              title={isLocked ? lockedActionMessage : undefined}
-            >
-              삭제
-            </button>
-          </div>
         </div>
         {isLocked && (
           <div className="detail-lock-banner">
@@ -834,20 +922,47 @@ export function MeetingDetailView({
       {progressMessage && (
         <div className="progress-banner">
           <span className="spinner" />
-          <span className="progress-text">{progressMessage}</span>
+          <div className="progress-copy">
+            <span className="progress-text">{progressMessage}</span>
+            {(meeting.status === 'queued' || meeting.status === 'transcribing') && (
+              <span className="progress-subtext">
+                음성 길이 기준 {processingEstimate} 정도 걸릴 수 있어요.
+              </span>
+            )}
+          </div>
+          {canCancelProcessing && (
+            <button
+              type="button"
+              className="btn btn-ghost progress-cancel-btn"
+              onClick={() => void handleCancelProcessing()}
+            >
+              변환 취소
+            </button>
+          )}
         </div>
       )}
 
       {/* 실패 배너 */}
       {meeting.status === 'failed' && (
-        <div className="failed-banner">
+        <div className={`failed-banner${temporaryAudioFailure ? ' temp-audio' : ''}`}>
           <span className="failed-emoji">⚠️</span>
           <div className="failed-body">
-            <strong>처리에 실패했어요</strong>
+            <strong>{temporaryAudioFailure ? '음성 변환에 실패했어요' : '처리에 실패했어요'}</strong>
             {meeting.error_message && <p className="failed-message">{meeting.error_message}</p>}
+            {temporaryAudioFailure && (
+              <p className="failed-help">
+                음성 파일은 임시저장되어 있어요. AI 요약을 누르면 텍스트 추출부터 다시
+                시도합니다. 예상 소요 시간은 {processingEstimate} 정도예요.
+              </p>
+            )}
           </div>
-          <button className="btn btn-danger" onClick={handleResummarize} disabled={isLocked}>
-            다시 시도
+          <button
+            className={`btn ${temporaryAudioFailure ? 'btn-primary' : 'btn-danger'}`}
+            onClick={() => void handleResummarizeWithConfirm()}
+            disabled={isLocked}
+            title={isLocked ? lockedActionMessage : undefined}
+          >
+            {temporaryAudioFailure ? '텍스트 추출 다시 시도' : '다시 시도'}
           </button>
         </div>
       )}
@@ -898,8 +1013,7 @@ export function MeetingDetailView({
               <div className="minutes-panel summary-edit">
                 <p className="muted summary-edit-hint">
                   AI 회의록의 항목과 내용을 직접 수정할 수 있어요. 핵심내용·결정사항·추가
-                  확인·할 일은 한 줄에 하나씩 적어주세요. 저장하면 Word/PDF 출력과 공유에도
-                  반영됩니다.
+                  확인·할 일은 한 줄에 하나씩 적어주세요. 저장하면 Word/PDF 출력에도 반영됩니다.
                 </p>
                 <label className="field-label">회의내용 (마크다운)</label>
                 <textarea
@@ -972,13 +1086,6 @@ export function MeetingDetailView({
                   onClick={() => downloadExport('pdf')}
                 >
                   🖨 PDF로 출력
-                </button>
-                <button
-                  className="btn btn-ghost"
-                  title="회의록 PDF를 Slack, 카카오톡, 메일 등으로 공유합니다"
-                  onClick={() => void sharePdf()}
-                >
-                  📤 공유
                 </button>
               </div>
 

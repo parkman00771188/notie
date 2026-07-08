@@ -1,5 +1,5 @@
 ﻿import { useEffect, useRef, useState } from 'react'
-import { NavLink, useNavigate } from 'react-router-dom'
+import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
 import { Avatar } from './Avatar'
 import './components.css'
@@ -82,13 +82,106 @@ function CalendarIcon() {
 
 function GearIcon() {
   return (
-    <span aria-hidden="true" style={{ fontSize: 15, lineHeight: 1 }}>
-      ⚙️
-    </span>
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.9"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" />
+      <path d="M19.4 15a1.8 1.8 0 0 0 .36 2l.06.06a2.1 2.1 0 1 1-2.97 2.97l-.06-.06a1.8 1.8 0 0 0-2-.36 1.8 1.8 0 0 0-1.1 1.65V21.4a2.1 2.1 0 1 1-4.2 0v-.09a1.8 1.8 0 0 0-1.1-1.65 1.8 1.8 0 0 0-2 .36l-.06.06a2.1 2.1 0 1 1-2.97-2.97l.06-.06a1.8 1.8 0 0 0 .36-2 1.8 1.8 0 0 0-1.65-1.1H2.6a2.1 2.1 0 1 1 0-4.2h.09a1.8 1.8 0 0 0 1.65-1.1 1.8 1.8 0 0 0-.36-2l-.06-.06a2.1 2.1 0 1 1 2.97-2.97l.06.06a1.8 1.8 0 0 0 2 .36 1.8 1.8 0 0 0 1.1-1.65V2.6a2.1 2.1 0 1 1 4.2 0v.09a1.8 1.8 0 0 0 1.1 1.65 1.8 1.8 0 0 0 2-.36l.06-.06a2.1 2.1 0 1 1 2.97 2.97l-.06.06a1.8 1.8 0 0 0-.36 2 1.8 1.8 0 0 0 1.65 1.1h.09a2.1 2.1 0 1 1 0 4.2h-.09A1.8 1.8 0 0 0 19.4 15Z" />
+    </svg>
   )
 }
 
-const NAV_ITEMS = [
+function UsersIcon() {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.9"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M16 20v-1.6c0-1.8-1.5-3.3-3.3-3.3H7.3C5.5 15.1 4 16.6 4 18.4V20" />
+      <circle cx="10" cy="7.5" r="3.3" />
+      <path d="M20 20v-1.3c0-1.5-.9-2.8-2.2-3.3" />
+      <path d="M16.3 4.4a3.3 3.3 0 0 1 0 6.2" />
+    </svg>
+  )
+}
+
+function ProjectIcon() {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.9"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M3.8 6.5a2 2 0 0 1 2-2h4.4l2 2h6a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5.8a2 2 0 0 1-2-2v-11Z" />
+      <path d="M3.8 9h16.4" />
+    </svg>
+  )
+}
+
+function MoreIcon() {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.9"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <circle cx="5" cy="12" r="1.4" />
+      <circle cx="12" cy="12" r="1.4" />
+      <circle cx="19" cy="12" r="1.4" />
+    </svg>
+  )
+}
+
+function CloseIcon() {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M18 6 6 18" />
+      <path d="m6 6 12 12" />
+    </svg>
+  )
+}
+
+interface NavItem {
+  to: string
+  label: string
+  icon: JSX.Element
+  end: boolean
+  center?: boolean
+}
+
+const NAV_ITEMS: NavItem[] = [
   { to: '/', label: '홈', icon: <HomeIcon />, end: true },
   { to: '/meetings', label: '회의 목록', icon: <ListIcon />, end: false },
   { to: '/record', label: '회의 기록', icon: <MicIcon />, end: false },
@@ -96,7 +189,7 @@ const NAV_ITEMS = [
   { to: '/settings', label: '설정', icon: <GearIcon />, end: false },
 ]
 
-const MOBILE_NAV_ITEMS = [
+const MOBILE_NAV_ITEMS: NavItem[] = [
   { to: '/', label: '홈', icon: <HomeIcon />, end: true },
   { to: '/meetings', label: '회의 목록', icon: <ListIcon />, end: false },
   { to: '/record', label: '회의 기록', icon: <MicIcon />, end: false, center: true },
@@ -107,9 +200,23 @@ const MOBILE_NAV_ITEMS = [
 export function Sidebar() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
   const [menuOpen, setMenuOpen] = useState(false)
+  const [mobileMoreOpen, setMobileMoreOpen] = useState(false)
   const userAreaRef = useRef<HTMLDivElement>(null)
   const mobileUserAreaRef = useRef<HTMLDivElement>(null)
+  const adminNavItem: NavItem = { to: '/users', label: '사용자 관리', icon: <UsersIcon />, end: false }
+  const projectNavItem: NavItem = { to: '/projects', label: '프로젝트 관리', icon: <ProjectIcon />, end: false }
+  const isAdmin = user?.role === 'admin'
+  const navItems: NavItem[] = isAdmin
+    ? [...NAV_ITEMS.slice(0, 4), adminNavItem, projectNavItem, NAV_ITEMS[4]]
+    : [...NAV_ITEMS.slice(0, 4), projectNavItem, NAV_ITEMS[4]]
+  const mobileNavItems: NavItem[] = MOBILE_NAV_ITEMS.slice(0, 4)
+  const mobileMoreItems: NavItem[] = navItems
+  const hasMobileMore = mobileMoreItems.length > mobileNavItems.length
+  const mobileMoreActive =
+    mobileMoreOpen ||
+    ['/users', '/projects', '/settings'].some((path) => location.pathname.startsWith(path))
 
   useEffect(() => {
     if (!menuOpen) return
@@ -125,8 +232,20 @@ export function Sidebar() {
     return () => document.removeEventListener('mousedown', onMouseDown)
   }, [menuOpen])
 
+  useEffect(() => {
+    if (!mobileMoreOpen) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setMobileMoreOpen(false)
+      }
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [mobileMoreOpen])
+
   const handleLogout = async () => {
     setMenuOpen(false)
+    setMobileMoreOpen(false)
     try {
       await logout()
     } catch {
@@ -153,7 +272,7 @@ export function Sidebar() {
         </div>
 
         <nav className="side-nav">
-          {NAV_ITEMS.map((item) => (
+          {navItems.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
@@ -279,7 +398,7 @@ export function Sidebar() {
       </header>
 
       <nav className="mobile-bottom-nav" aria-label="주요 화면">
-        {MOBILE_NAV_ITEMS.map((item) => (
+        {mobileNavItems.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}
@@ -293,7 +412,75 @@ export function Sidebar() {
             <span>{item.label}</span>
           </NavLink>
         ))}
+        {hasMobileMore && (
+          <button
+            type="button"
+            className={`mobile-nav-link mobile-nav-more${mobileMoreActive ? ' active' : ''}`}
+            onClick={() => {
+              setMenuOpen(false)
+              setMobileMoreOpen(true)
+            }}
+            aria-haspopup="dialog"
+            aria-expanded={mobileMoreOpen}
+          >
+            <span className="mobile-nav-icon">
+              <MoreIcon />
+            </span>
+            <span>더보기</span>
+          </button>
+        )}
       </nav>
+
+      {hasMobileMore && mobileMoreOpen && (
+        <div
+          className="mobile-more-backdrop"
+          role="presentation"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) {
+              setMobileMoreOpen(false)
+            }
+          }}
+        >
+          <aside className="mobile-more-drawer" role="dialog" aria-label="더보기 메뉴">
+            <div className="mobile-more-head">
+              <button
+                type="button"
+                className="mobile-more-logo"
+                onClick={() => {
+                  setMobileMoreOpen(false)
+                  navigate('/')
+                }}
+                aria-label="홈으로 이동"
+              >
+                <img src="/logo.png" alt="Notie 로고" />
+              </button>
+              <button
+                type="button"
+                className="btn-icon mobile-more-close"
+                onClick={() => setMobileMoreOpen(false)}
+                aria-label="더보기 메뉴 닫기"
+              >
+                <CloseIcon />
+              </button>
+            </div>
+
+            <nav className="mobile-more-list" aria-label="전체 메뉴">
+              {mobileMoreItems.map((item) => (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  end={item.end}
+                  className={({ isActive }) => `mobile-more-item${isActive ? ' active' : ''}`}
+                  onClick={() => setMobileMoreOpen(false)}
+                >
+                  <span className="mobile-more-item-icon">{item.icon}</span>
+                  <span>{item.label}</span>
+                </NavLink>
+              ))}
+            </nav>
+          </aside>
+        </div>
+      )}
     </>
   )
 }

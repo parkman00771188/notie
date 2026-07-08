@@ -1,8 +1,8 @@
 """처리 파이프라인 — STT/요약 백그라운드 잡 큐.
 
 계약 (SPEC.md):
-- 모듈 레벨 ThreadPoolExecutor(max_workers=1) — Whisper 동시 실행 방지.
-- enqueue(meeting_id): status='transcribing' → stt.transcribe → 세그먼트 교체 저장
+- 모듈 레벨 ThreadPoolExecutor(max_workers=1) — STT/요약 잡 순차 처리.
+- enqueue(meeting_id): status='transcribing' → gemini_stt.transcribe → 세그먼트 교체 저장
   → status='summarizing' → summarizer.summarize → summaries upsert → status='done'.
 - enqueue_summary(meeting_id): 요약 단계만 재실행.
 - 각 잡은 자체 db.get_conn() 사용(스레드 안전). 예외 시 status='failed' + error_message
@@ -16,12 +16,16 @@ import traceback
 from concurrent.futures import ThreadPoolExecutor
 
 from .. import config, db
-from . import stt, summarizer
+from . import gemini_stt, summarizer
 
 logger = logging.getLogger("gimnote.pipeline")
 
-# Whisper 모델 동시 실행 방지를 위해 워커 1개로 고정
+# 긴 오디오 전사/요약이 겹치지 않도록 워커 1개로 고정
 _executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="gimnote-pipeline")
+
+
+class ProcessingStopped(Exception):
+    """사용자가 취소했거나 상태가 바뀐 작업을 조용히 중단하기 위한 내부 예외."""
 
 
 def enqueue(meeting_id: int) -> None:
@@ -47,6 +51,9 @@ def _run_full_job(meeting_id: int) -> None:
             logger.warning("pipeline: meeting %s 이(가) 존재하지 않아 잡을 건너뜁니다", meeting_id)
             return
         meeting = dict(row)
+        if meeting.get("status") != "queued":
+            logger.info("pipeline: meeting %s 상태가 queued가 아니어서 전체 잡을 중단합니다", meeting_id)
+            return
 
         audio_filename = meeting.get("audio_filename")
         if not audio_filename:
@@ -55,39 +62,36 @@ def _run_full_job(meeting_id: int) -> None:
         if not audio_path.exists():
             raise RuntimeError(f"오디오 파일을 찾을 수 없습니다: {audio_filename}")
 
+        # 새 오디오 전체 처리에서는 예전 스크립트/요약을 먼저 비운다.
+        # 전사 실패 시에도 낡은 텍스트로 재요약되는 일을 막고, 임시저장 상태를 명확히 한다.
+        _ensure_status(conn, meeting_id, "queued")
+        with conn:
+            conn.execute("DELETE FROM transcript_segments WHERE meeting_id = ?", (meeting_id,))
+            conn.execute("DELETE FROM summaries WHERE meeting_id = ?", (meeting_id,))
+
         # 0) 파형 피크 미리 계산 (변환 중에도 UI에 파형이 보이도록 — 실패해도 진행)
-        _set_status(conn, meeting_id, "transcribing")
+        _transition_status(conn, meeting_id, "queued", "transcribing")
         try:
             from . import waveform
 
             waveform.get_peaks(audio_path)
         except Exception:
             logger.warning("pipeline: 파형 계산 실패 — 요청 시 재계산됨 (meeting %s)", meeting_id)
+        _ensure_status(conn, meeting_id, "transcribing")
 
-        # 1) 변환 — 설정이 'gemini'면 Gemini 전사 시도, 실패 시 로컬 Whisper 폴백
-        segments = None
+        # 1) 변환 — Gemini 키/네트워크 오류를 실패로 남긴다.
+        # 그래야 음성 파일을 임시저장해두고, 키 수정 후 같은 오디오로 다시 전사할 수 있다.
         try:
-            from . import gemini_stt
+            segments = gemini_stt.transcribe(str(audio_path))
+        except Exception as exc:
+            raise RuntimeError(f"음성 변환 실패: {exc}") from exc
 
-            if gemini_stt.get_engine() == "gemini":
-                try:
-                    segments = gemini_stt.transcribe(str(audio_path))
-                except Exception as exc:
-                    logger.warning(
-                        "pipeline: Gemini 전사 실패 — 로컬 Whisper로 폴백 (meeting %s): %s",
-                        meeting_id,
-                        exc,
-                    )
-        except Exception:
-            pass  # gemini_stt 모듈 문제 시에도 로컬 경로로 진행
-        if segments is None:
-            segments = stt.transcribe(str(audio_path))
-
-        # 기존 세그먼트 삭제 후 삽입 (무음이면 0개 — 정상 진행)
+        # 세그먼트 삽입 (무음이면 0개 — 정상 진행)
+        _ensure_status(conn, meeting_id, "transcribing")
         with conn:
-            conn.execute(
-                "DELETE FROM transcript_segments WHERE meeting_id = ?", (meeting_id,)
-            )
+            current = conn.execute("SELECT status FROM meetings WHERE id = ?", (meeting_id,)).fetchone()
+            if current is None or current["status"] != "transcribing":
+                raise ProcessingStopped()
             conn.executemany(
                 "INSERT INTO transcript_segments (meeting_id, start_sec, end_sec, text)"
                 " VALUES (?, ?, ?, ?)",
@@ -105,10 +109,12 @@ def _run_full_job(meeting_id: int) -> None:
                 )
 
         # 2) 요약
-        _set_status(conn, meeting_id, "summarizing")
+        _transition_status(conn, meeting_id, "transcribing", "summarizing")
         _summarize_and_store(conn, meeting_id)
 
-        _set_status(conn, meeting_id, "done")
+        _transition_status(conn, meeting_id, "summarizing", "done")
+    except ProcessingStopped:
+        logger.info("pipeline: meeting %s 작업이 취소되었거나 상태가 바뀌어 중단됐습니다", meeting_id)
     except Exception as exc:
         _mark_failed(meeting_id, exc)
     finally:
@@ -125,9 +131,11 @@ def _run_summary_job(meeting_id: int) -> None:
             logger.warning("pipeline: meeting %s 이(가) 존재하지 않아 잡을 건너뜁니다", meeting_id)
             return
 
-        _set_status(conn, meeting_id, "summarizing")
+        _ensure_status(conn, meeting_id, "summarizing")
         _summarize_and_store(conn, meeting_id)
-        _set_status(conn, meeting_id, "done")
+        _transition_status(conn, meeting_id, "summarizing", "done")
+    except ProcessingStopped:
+        logger.info("pipeline: meeting %s 요약 작업이 취소되었거나 상태가 바뀌어 중단됐습니다", meeting_id)
     except Exception as exc:
         _mark_failed(meeting_id, exc)
     finally:
@@ -145,6 +153,28 @@ def _set_status(conn, meeting_id: int, status: str, error_message: str | None = 
             "UPDATE meetings SET status = ?, error_message = ? WHERE id = ?",
             (status, error_message, meeting_id),
         )
+
+
+def _ensure_status(conn, meeting_id: int, expected_status: str) -> None:
+    row = conn.execute("SELECT status FROM meetings WHERE id = ?", (meeting_id,)).fetchone()
+    if row is None or row["status"] != expected_status:
+        raise ProcessingStopped()
+
+
+def _transition_status(
+    conn, meeting_id: int, expected_status: str, next_status: str, error_message: str | None = None
+) -> None:
+    with conn:
+        cur = conn.execute(
+            """
+            UPDATE meetings
+            SET status = ?, error_message = ?
+            WHERE id = ? AND status = ?
+            """,
+            (next_status, error_message, meeting_id, expected_status),
+        )
+    if cur.rowcount == 0:
+        raise ProcessingStopped()
 
 
 def _mark_failed(meeting_id: int, exc: Exception) -> None:

@@ -12,6 +12,9 @@ import './RecentMeetingsModal.css'
 export interface RecentMeetingsPanelProps {
   refreshKey?: number
   recordingActive?: boolean
+  limit?: number
+  showPromo?: boolean
+  onChanged?: () => void
 }
 
 /** 전체 보기 모달 태그 필터: 'all'(전체) | { tag: 태그명 } */
@@ -25,7 +28,13 @@ interface ModalGroup {
   items: Meeting[]
 }
 
-export function RecentMeetingsPanel({ refreshKey = 0, recordingActive = false }: RecentMeetingsPanelProps) {
+export function RecentMeetingsPanel({
+  refreshKey = 0,
+  recordingActive = false,
+  limit = 5,
+  showPromo = true,
+  onChanged,
+}: RecentMeetingsPanelProps) {
   const [meetings, setMeetings] = useState<Meeting[]>([])
   const [loading, setLoading] = useState(true)
   const [reloadKey, setReloadKey] = useState(0)
@@ -69,7 +78,7 @@ export function RecentMeetingsPanel({ refreshKey = 0, recordingActive = false }:
     () => meetings.filter((meeting) => meeting.status !== 'scheduled'),
     [meetings],
   )
-  const recent = recordedMeetings.slice(0, 5)
+  const recent = recordedMeetings.slice(0, limit)
 
   const openAll = () => {
     setTagFilter('all')
@@ -89,7 +98,10 @@ export function RecentMeetingsPanel({ refreshKey = 0, recordingActive = false }:
     setDetailId(null)
   }
 
-  const reloadList = () => setReloadKey((k) => k + 1)
+  const reloadList = () => {
+    setReloadKey((k) => k + 1)
+    onChanged?.()
+  }
 
   // 태그 필터 적용된 모달 목록
   const visible = useMemo(() => {
@@ -226,21 +238,23 @@ export function RecentMeetingsPanel({ refreshKey = 0, recordingActive = false }:
         )}
       </div>
 
-      <div className="ai-promo">
-        <div className="ai-promo-emoji">✨</div>
-        <p className="ai-promo-title">회의를 더 빠르게 정리해보세요</p>
-        <button
-          type="button"
-          className="ai-promo-link"
-          onClick={() => {
-            if (!recordingActive) navigate('/meetings')
-          }}
-          disabled={recordingActive}
-          title={recordingActive ? '녹음 중에는 화면 이동을 막았어요.' : undefined}
-        >
-          AI 회의록 사용하기 →
-        </button>
-      </div>
+      {showPromo && (
+        <div className="ai-promo">
+          <div className="ai-promo-emoji">✨</div>
+          <p className="ai-promo-title">회의를 더 빠르게 정리해보세요</p>
+          <button
+            type="button"
+            className="ai-promo-link"
+            onClick={() => {
+              if (!recordingActive) navigate('/meetings')
+            }}
+            disabled={recordingActive}
+            title={recordingActive ? '녹음 중에는 화면 이동을 막았어요.' : undefined}
+          >
+            AI 회의록 사용하기 →
+          </button>
+        </div>
+      )}
 
       {/* 전체 보기 팝업 — 태그 필터 + 목록/폴더 보기 + 팝업 내 상세 */}
       <Modal open={modalOpen} title={detailId == null ? '전체 회의' : '회의 내용'} width={960} onClose={closeModal}>

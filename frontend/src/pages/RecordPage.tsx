@@ -16,6 +16,13 @@ import './RecordPage.css'
 
 const DEFAULT_TITLE = '새 회의 기록'
 
+function localDateTimeString(date = new Date()): string {
+  const pad = (value: number) => String(value).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(
+    date.getMinutes(),
+  )}`
+}
+
 function sortByTime(list: Bookmark[]): Bookmark[] {
   return [...list].sort((a, b) => a.time_sec - b.time_sec)
 }
@@ -33,7 +40,11 @@ export default function RecordPage() {
   const [participants, setParticipants] = useState<Participant[]>([])
   const [pickerOpen, setPickerOpen] = useState(false)
   const [uploadOpen, setUploadOpen] = useState(false)
-  const [startedAt] = useState(() => new Date().toISOString())
+  const [startedAt, setStartedAt] = useState(() => localDateTimeString())
+  const [editingDate, setEditingDate] = useState(false)
+  const [dateDraft, setDateDraft] = useState('')
+  const [hourDraft, setHourDraft] = useState(9)
+  const [minuteDraft, setMinuteDraft] = useState(0)
 
   // ---- 녹음/북마크 ----
   const [meetingId, setMeetingId] = useState<number | null>(null)
@@ -128,6 +139,30 @@ export default function RecordPage() {
     }
   }
 
+  const beginEditDate = () => {
+    const iso = startedAt || new Date().toISOString()
+    setDateDraft(iso.slice(0, 10))
+    setHourDraft(Number(iso.slice(11, 13)) || 0)
+    setMinuteDraft(Number(iso.slice(14, 16)) || 0)
+    setEditingDate(true)
+  }
+
+  const commitDate = async () => {
+    setEditingDate(false)
+    if (!dateDraft.trim()) return
+    const next = `${dateDraft}T${String(hourDraft).padStart(2, '0')}:${String(minuteDraft).padStart(2, '0')}`
+    if (next === startedAt.slice(0, 16)) return
+    setStartedAt(next)
+    if (meetingId == null) return
+    try {
+      const updated = await api.updateMeeting(meetingId, { started_at: next })
+      setStartedAt(updated.started_at)
+      setRefreshKey((k) => k + 1)
+    } catch (err) {
+      alert(err instanceof Error ? err.message : '날짜 변경에 실패했어요')
+    }
+  }
+
   // ---- 녹음 시작/종료 ----
   const handleStart = async () => {
     if (starting || isLive) return
@@ -143,9 +178,11 @@ export default function RecordPage() {
       const meeting = await api.createMeeting({
         title: title.trim() || DEFAULT_TITLE,
         tag: tag ?? undefined,
+        started_at: startedAt,
         participant_ids: participants.map((p) => p.id),
       })
       setMeetingId(meeting.id)
+      setStartedAt(meeting.started_at)
       setBookmarks([])
       setRefreshKey((k) => k + 1)
     } catch (err) {
@@ -378,7 +415,51 @@ export default function RecordPage() {
           </div>
 
           <div className="record-meta">
-            <span className="record-meta-item">📅 {formatKoreanDateTime(startedAt)}</span>
+            {editingDate ? (
+              <span className="record-date-edit">
+                <input
+                  type="date"
+                  className="input record-date-input"
+                  value={dateDraft}
+                  onChange={(e) => setDateDraft(e.target.value)}
+                  autoFocus
+                />
+                <select
+                  className="input record-time-select"
+                  aria-label="시"
+                  value={hourDraft}
+                  onChange={(e) => setHourDraft(Number(e.target.value))}
+                >
+                  {Array.from({ length: 24 }, (_, h) => (
+                    <option key={h} value={h}>
+                      {h}시
+                    </option>
+                  ))}
+                </select>
+                <select
+                  className="input record-time-select"
+                  aria-label="분"
+                  value={minuteDraft}
+                  onChange={(e) => setMinuteDraft(Number(e.target.value))}
+                >
+                  {Array.from({ length: 12 }, (_, i) => i * 5).map((m) => (
+                    <option key={m} value={m}>
+                      {String(m).padStart(2, '0')}분
+                    </option>
+                  ))}
+                </select>
+                <button type="button" className="btn btn-primary record-date-save" onClick={() => void commitDate()}>
+                  저장
+                </button>
+                <button type="button" className="btn btn-ghost record-date-save" onClick={() => setEditingDate(false)}>
+                  취소
+                </button>
+              </span>
+            ) : (
+              <button type="button" className="record-meta-item record-date-btn" onClick={beginEditDate}>
+                📅 {formatKoreanDateTime(startedAt)} ✎
+              </button>
+            )}
             <span className="record-meta-item">
               ⏱️ 회의 시간 <b>{formatClock(recorder.elapsedSec)}</b>
             </span>

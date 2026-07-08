@@ -19,7 +19,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from .. import config, db
-from ..auth_utils import get_current_user
+from ..auth_utils import get_current_user, require_admin
 from ..services import summarizer
 
 router = APIRouter()
@@ -78,6 +78,7 @@ def _settings_response() -> dict:
 
 @router.get("")
 def get_settings(user: dict = Depends(get_current_user)) -> dict:
+    require_admin(user)
     return _settings_response()
 
 
@@ -85,11 +86,12 @@ def get_settings(user: dict = Depends(get_current_user)) -> dict:
 def update_settings(
     body: SettingsUpdate, user: dict = Depends(get_current_user)
 ) -> dict:
+    require_admin(user)
     updates = body.model_dump(exclude_unset=True)
     if "stt_engine" in updates:
         value = (updates["stt_engine"] or "").strip()
-        if value not in ("local", "gemini"):
-            raise HTTPException(status_code=400, detail="지원하지 않는 STT 엔진입니다")
+        if value and value != "gemini":
+            raise HTTPException(status_code=400, detail="STT 엔진은 Gemini만 사용할 수 있습니다")
     field_to_setting = {
         "gemini_api_key": GEMINI_KEY_SETTING,
         "summary_prompt": SUMMARY_PROMPT_SETTING,
@@ -129,6 +131,7 @@ def update_settings(
 
 @router.post("/test-gemini")
 def test_gemini(user: dict = Depends(get_current_user)) -> dict:
+    require_admin(user)
     key = summarizer.get_gemini_key()
     if not key:
         return {
@@ -141,6 +144,7 @@ def test_gemini(user: dict = Depends(get_current_user)) -> dict:
 
 @router.get("/gemini-models")
 def list_gemini_models(user: dict = Depends(get_current_user)) -> dict:
+    require_admin(user)
     """사용 가능한 Gemini 모델 목록 조회 (SPEC J5) — 실패해도 200 + 한국어 error."""
     key = summarizer.get_gemini_key()
     if not key:

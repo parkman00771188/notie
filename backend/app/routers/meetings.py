@@ -61,6 +61,7 @@ _ALLOWED_UPLOAD_EXTS = {".mp3", ".m4a", ".wav", ".webm", ".ogg", ".mp4", ".aac",
 class MeetingCreate(BaseModel):
     title: str
     tag: Optional[str] = None
+    started_at: Optional[str] = None
     participant_ids: Optional[List[int]] = None
 
 
@@ -77,6 +78,7 @@ class MeetingUpdate(BaseModel):
     started_at: Optional[str] = None
     participant_ids: Optional[List[int]] = None
     locked: Optional[bool] = None
+    is_shared: Optional[bool] = None
 
 
 class SummaryUpdate(BaseModel):
@@ -114,6 +116,70 @@ def get_owned_meeting(
     return row
 
 
+def _meeting_tag_row(conn: sqlite3.Connection, row: sqlite3.Row) -> sqlite3.Row | None:
+    tag_name = (row["tag"] or "").strip()
+    if not tag_name:
+        return None
+    return conn.execute(
+        """
+        SELECT id, user_id, name, is_global
+        FROM tags
+        WHERE name = ? AND (is_global = 1 OR user_id = ?)
+        ORDER BY is_global DESC, id DESC
+        LIMIT 1
+        """,
+        (tag_name, row["user_id"]),
+    ).fetchone()
+
+
+def _can_read_meeting_row(conn: sqlite3.Connection, row: sqlite3.Row, user: dict) -> bool:
+    if row["user_id"] == user["id"]:
+        return True
+    if not row["is_shared"]:
+        return False
+    tag_row = _meeting_tag_row(conn, row)
+    if tag_row is None:
+        return True
+    has_restriction = conn.execute(
+        "SELECT 1 FROM tag_permissions WHERE tag_id = ? LIMIT 1",
+        (tag_row["id"],),
+    ).fetchone()
+    if has_restriction is None:
+        return True
+    if user.get("role") == "admin":
+        return True
+    allowed = conn.execute(
+        "SELECT 1 FROM tag_permissions WHERE tag_id = ? AND user_id = ?",
+        (tag_row["id"], user["id"]),
+    ).fetchone()
+    return allowed is not None
+
+
+def get_readable_meeting(
+    conn: sqlite3.Connection,
+    meeting_id: int,
+    user_id: int,
+    user_role: str = "user",
+    include_deleted: bool = False,
+) -> sqlite3.Row:
+    """현재 사용자 소유이거나 공유된 meeting row를 반환."""
+    sql = """
+        SELECT m.*, u.name AS owner_name
+        FROM meetings m
+        JOIN users u ON u.id = m.user_id
+        WHERE m.id = ? AND (m.user_id = ? OR m.is_shared = 1)
+    """
+    if not include_deleted:
+        sql += " AND m.deleted_at IS NULL"
+    row = conn.execute(sql, (meeting_id, user_id)).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="회의를 찾을 수 없습니다")
+    if not _can_read_meeting_row(conn, row, {"id": user_id, "role": user_role}):
+        raise HTTPException(status_code=404, detail="회의를 찾을 수 없습니다")
+        raise HTTPException(status_code=404, detail="?뚯쓽瑜?李얠쓣 ???놁뒿?덈떎")
+    return row
+
+
 def ensure_unlocked(row: sqlite3.Row, detail: str) -> None:
     """잠긴 회의에서 막아야 하는 파괴적/AI 변경 작업을 공통으로 차단."""
     if row["locked"]:
@@ -122,6 +188,7 @@ def ensure_unlocked(row: sqlite3.Row, detail: str) -> None:
 
 def serialize_meeting(conn: sqlite3.Connection, row: sqlite3.Row) -> dict:
     """meetings row → Meeting 응답 dict (participants 조인 포함)."""
+    row_keys = row.keys()
     participants = conn.execute(
         """
         SELECT p.id, p.name, p.role, p.department, p.organization, p.email, p.phone, p.color
@@ -134,6 +201,7 @@ def serialize_meeting(conn: sqlite3.Connection, row: sqlite3.Row) -> dict:
     ).fetchall()
     return {
         "id": row["id"],
+        "user_id": row["user_id"],
         "title": row["title"],
         "tag": row["tag"],
         "status": row["status"],
@@ -141,6 +209,8 @@ def serialize_meeting(conn: sqlite3.Connection, row: sqlite3.Row) -> dict:
         "duration_sec": row["duration_sec"],
         "audio_filename": row["audio_filename"],
         "locked": bool(row["locked"]),
+        "is_shared": bool(row["is_shared"]),
+        "owner_name": row["owner_name"] if "owner_name" in row_keys else None,
         "created_at": row["created_at"],
         "participants": [dict(p) for p in participants],
     }
@@ -165,7 +235,13 @@ def _replace_participants(
 
 @router.post("")
 def create_meeting(payload: MeetingCreate, user: dict = Depends(get_current_user)) -> dict:
-    started_at = datetime.now().isoformat(timespec="seconds")
+    if payload.started_at:
+        try:
+            started_at = datetime.fromisoformat(payload.started_at).isoformat(timespec="seconds")
+        except ValueError:
+            raise HTTPException(status_code=400, detail="날짜 형식이 올바르지 않습니다")
+    else:
+        started_at = datetime.now().isoformat(timespec="seconds")
     with closing(db.get_conn()) as conn:
         with conn:
             cur = conn.execute(
@@ -210,19 +286,26 @@ def list_meetings(
     user: dict = Depends(get_current_user),
 ) -> list:
     with closing(db.get_conn()) as conn:
-        where = ["user_id = ?", "deleted_at IS NULL"]
+        where = ["(m.user_id = ? OR m.is_shared = 1)", "m.deleted_at IS NULL"]
         values: list = [user["id"]]
         if q:
-            where.append("title LIKE ?")
+            where.append("m.title LIKE ?")
             values.append(f"%{q}%")
         if tag:
-            where.append("tag = ?")
+            where.append("m.tag = ?")
             values.append(tag)
         rows = conn.execute(
-            f"SELECT * FROM meetings WHERE {' AND '.join(where)} ORDER BY created_at DESC, id DESC",
+            f"""
+            SELECT m.*, u.name AS owner_name
+            FROM meetings m
+            JOIN users u ON u.id = m.user_id
+            WHERE {' AND '.join(where)}
+            ORDER BY m.created_at DESC, m.id DESC
+            """,
             values,
         ).fetchall()
-        return [serialize_meeting(conn, row) for row in rows]
+        readable = [row for row in rows if _can_read_meeting_row(conn, row, user)]
+        return [serialize_meeting(conn, row) for row in readable]
 
 
 # 주의: /{meeting_id}보다 먼저 선언해야 "trash"가 int 경로 매칭에 걸리지 않는다.
@@ -246,7 +329,7 @@ def list_trash(user: dict = Depends(get_current_user)) -> list:
 @router.get("/{meeting_id}")
 def get_meeting(meeting_id: int, user: dict = Depends(get_current_user)) -> dict:
     with closing(db.get_conn()) as conn:
-        row = get_owned_meeting(conn, meeting_id, user["id"])
+        row = get_readable_meeting(conn, meeting_id, user["id"], user.get("role") or "user")
         detail = serialize_meeting(conn, row)
         detail["error_message"] = row["error_message"]
 
@@ -309,6 +392,9 @@ def update_meeting(
             if "locked" in data and data["locked"] is not None:
                 sets.append("locked = ?")
                 values.append(1 if data["locked"] else 0)
+            if "is_shared" in data and data["is_shared"] is not None:
+                sets.append("is_shared = ?")
+                values.append(1 if data["is_shared"] else 0)
             if sets:
                 values.append(meeting_id)
                 conn.execute(f"UPDATE meetings SET {', '.join(sets)} WHERE id = ?", values)
@@ -448,7 +534,7 @@ def upload_audio(
 def get_audio(meeting_id: int, user: dict = Depends(get_current_user)) -> FileResponse:
     """오디오 스트리밍. get_current_user가 ?token= 쿼리 인증도 지원한다."""
     with closing(db.get_conn()) as conn:
-        row = get_owned_meeting(conn, meeting_id, user["id"])
+        row = get_readable_meeting(conn, meeting_id, user["id"], user.get("role") or "user")
         audio_filename = row["audio_filename"]
 
     if not audio_filename:
@@ -466,7 +552,7 @@ def get_audio(meeting_id: int, user: dict = Depends(get_current_user)) -> FileRe
 def get_waveform(meeting_id: int, user: dict = Depends(get_current_user)) -> dict:
     """파형 피크(≤600개) — 서버에서 스트리밍 계산·캐시. 브라우저 디코딩 OOM 방지."""
     with closing(db.get_conn()) as conn:
-        row = get_owned_meeting(conn, meeting_id, user["id"])
+        row = get_readable_meeting(conn, meeting_id, user["id"], user.get("role") or "user")
         audio_filename = row["audio_filename"]
         duration_sec = row["duration_sec"]
 
@@ -492,7 +578,7 @@ def export_minutes(
     from ..services import export_doc
 
     with closing(db.get_conn()) as conn:
-        row = get_owned_meeting(conn, meeting_id, user["id"])
+        row = get_readable_meeting(conn, meeting_id, user["id"], user.get("role") or "user")
         meeting = dict(row)
         participants = [
             dict(p)
@@ -556,7 +642,7 @@ def export_minutes(
 @router.get("/{meeting_id}/status")
 def get_status(meeting_id: int, user: dict = Depends(get_current_user)) -> dict:
     with closing(db.get_conn()) as conn:
-        row = get_owned_meeting(conn, meeting_id, user["id"])
+        row = get_readable_meeting(conn, meeting_id, user["id"], user.get("role") or "user")
         return {"status": row["status"], "error_message": row["error_message"]}
 
 
@@ -691,4 +777,78 @@ def resummarize(meeting_id: int, user: dict = Depends(get_current_user)) -> dict
             )
 
     pipeline.enqueue_summary(meeting_id)
+    return {"ok": True}
+
+
+@router.post("/{meeting_id}/cancel-processing")
+def cancel_processing(meeting_id: int, user: dict = Depends(get_current_user)) -> dict:
+    """STT 변환 대기/진행 중인 회의를 취소하고 음성 파일은 임시저장 상태로 남긴다."""
+    message = (
+        "변환이 취소되었습니다. 음성 파일은 임시저장되어 있어요. "
+        "AI 요약을 누르면 텍스트 추출부터 다시 시도할 수 있습니다."
+    )
+    with closing(db.get_conn()) as conn:
+        row = get_owned_meeting(conn, meeting_id, user["id"])
+        if not row["audio_filename"]:
+            raise HTTPException(status_code=400, detail="임시저장할 음성 파일이 없습니다")
+        if row["status"] not in ("queued", "transcribing"):
+            raise HTTPException(status_code=400, detail="취소할 수 있는 변환 작업이 없습니다")
+
+        with conn:
+            cur = conn.execute(
+                """
+                UPDATE meetings
+                SET status = 'failed', error_message = ?
+                WHERE id = ? AND status IN ('queued', 'transcribing')
+                """,
+                (message, meeting_id),
+            )
+            if cur.rowcount > 0:
+                conn.execute("DELETE FROM transcript_segments WHERE meeting_id = ?", (meeting_id,))
+                conn.execute("DELETE FROM summaries WHERE meeting_id = ?", (meeting_id,))
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=409, detail="이미 다른 상태로 변경되었습니다")
+
+    return {"ok": True, "message": message}
+
+
+@router.post("/{meeting_id}/retry-audio")
+def retry_audio_processing(meeting_id: int, user: dict = Depends(get_current_user)) -> dict:
+    """임시저장된 음성 파일로 STT부터 다시 실행한다.
+
+    일반 재요약(/summarize)은 이미 있는 스크립트 기반으로만 동작한다. 이 엔드포인트는
+    전사 단계에서 실패해 스크립트가 없는 회의에 한해, 저장된 오디오를 다시 전사하고
+    이어서 요약까지 처리한다.
+    """
+    with closing(db.get_conn()) as conn:
+        row = get_owned_meeting(conn, meeting_id, user["id"])
+        ensure_unlocked(row, "잠긴 회의는 음성 변환을 다시 시도할 수 없어요. 잠금을 해제한 뒤 다시 시도해주세요.")
+        audio_filename = row["audio_filename"]
+        if not audio_filename:
+            raise HTTPException(status_code=400, detail="다시 처리할 임시저장 음성이 없습니다")
+        if row["status"] != "failed":
+            raise HTTPException(status_code=400, detail="실패로 임시저장된 음성만 다시 처리할 수 있습니다")
+
+        audio_path = config.AUDIO_DIR / audio_filename
+        if not audio_path.is_file():
+            raise HTTPException(status_code=404, detail="임시저장된 음성 파일을 찾을 수 없습니다")
+
+        count_row = conn.execute(
+            "SELECT COUNT(*) AS cnt FROM transcript_segments WHERE meeting_id = ?",
+            (meeting_id,),
+        ).fetchone()
+        if count_row["cnt"] > 0:
+            raise HTTPException(
+                status_code=400,
+                detail="이미 스크립트가 있는 회의입니다. AI 요약은 기존 스크립트 기반으로 다시 실행해주세요.",
+            )
+
+        with conn:
+            conn.execute("DELETE FROM summaries WHERE meeting_id = ?", (meeting_id,))
+            conn.execute(
+                "UPDATE meetings SET status = 'queued', error_message = NULL WHERE id = ?",
+                (meeting_id,),
+            )
+
+    pipeline.enqueue(meeting_id)
     return {"ok": True}

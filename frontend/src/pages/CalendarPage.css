@@ -61,7 +61,7 @@
 
 .calendar-shell {
   overflow: hidden;
-  height: clamp(520px, calc(100dvh - 218px), 680px);
+  height: clamp(640px, calc(100dvh - 236px), 900px);
 }
 
 .calendar-loading {

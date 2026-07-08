@@ -33,28 +33,6 @@ export function AiEngineSettings() {
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null)
   const savedTimerRef = useRef<number | null>(null)
 
-  // STT 엔진 선택 (local Whisper | gemini)
-  const [sttSaving, setSttSaving] = useState(false)
-  const [sttSaved, setSttSaved] = useState(false)
-  const sttTimerRef = useRef<number | null>(null)
-
-  const handleSttChange = async (engine: 'local' | 'gemini') => {
-    if (!settings || settings.stt_engine === engine || sttSaving) return
-    setSttSaving(true)
-    setError('')
-    try {
-      const next = await api.updateSettings({ stt_engine: engine })
-      setSettings(next)
-      setSttSaved(true)
-      if (sttTimerRef.current) window.clearTimeout(sttTimerRef.current)
-      sttTimerRef.current = window.setTimeout(() => setSttSaved(false), 2000)
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'STT 엔진 설정에 실패했어요')
-    } finally {
-      setSttSaving(false)
-    }
-  }
-
   // Gemini 모델 선택
   const [modelInput, setModelInput] = useState('')
   const [modelOptions, setModelOptions] = useState<string[]>(FALLBACK_GEMINI_MODELS)
@@ -228,7 +206,8 @@ export function AiEngineSettings() {
     if (deleting) return
     const ok = await confirm({
       title: '저장된 Gemini API 키를 삭제할까요?',
-      message: '삭제하면 Ollama 또는 내장 추출 요약으로 동작해요.',
+      message:
+        '삭제하면 새 녹음의 음성 변환은 실패 후 임시저장될 수 있어요. AI 요약은 가능한 경우 Ollama 또는 내장 추출 요약으로 동작합니다.',
       confirmLabel: '삭제',
       danger: true,
     })
@@ -267,10 +246,9 @@ export function AiEngineSettings() {
         <div className="settings-card-head">
           <h2 className="settings-card-title">
             <span aria-hidden="true">🎙</span> 음성 변환(STT) 엔진
-            {sttSaved && <span className="stt-saved">저장됨 ✓</span>}
           </h2>
           <p className="settings-card-desc">
-            녹음·업로드한 음성을 텍스트로 바꿀 때 사용할 엔진을 선택합니다.
+            모든 사용자의 녹음·업로드 음성 변환은 Gemini로만 처리됩니다.
           </p>
         </div>
 
@@ -280,51 +258,28 @@ export function AiEngineSettings() {
           </div>
         ) : settings ? (
           <>
-            <div className="stt-options" role="radiogroup" aria-label="STT 엔진 선택">
-              <label className={`stt-option${settings.stt_engine === 'local' ? ' selected' : ''}`}>
-                <input
-                  type="radio"
-                  name="stt-engine"
-                  checked={settings.stt_engine === 'local'}
-                  onChange={() => void handleSttChange('local')}
-                  disabled={sttSaving}
-                />
-                <span className="stt-option-body">
-                  <span className="stt-option-title">
-                    로컬 Whisper <span className="badge badge-green">기본 · 무료</span>
-                  </span>
-                  <span className="stt-option-desc">
-                    이 PC에서 변환해요 — 음성이 외부로 나가지 않아요. GPU가 있으면 빠릅니다.
-                  </span>
-                </span>
-              </label>
-
-              <label
-                className={`stt-option${settings.stt_engine === 'gemini' ? ' selected' : ''}${
-                  !settings.gemini_api_key_set ? ' disabled' : ''
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="stt-engine"
-                  checked={settings.stt_engine === 'gemini'}
-                  onChange={() => void handleSttChange('gemini')}
-                  disabled={sttSaving || !settings.gemini_api_key_set}
-                />
-                <span className="stt-option-body">
-                  <span className="stt-option-title">
-                    Gemini <span className="badge badge-blue">클라우드</span>
-                  </span>
-                  <span className="stt-option-desc">
-                    아래에 등록된 Gemini 키로 전사해요 — GPU 없이도 빠르지만 음성이 Google
-                    서버로 전송됩니다.
-                  </span>
-                </span>
-              </label>
+            <div className={`stt-fixed-card${settings.gemini_api_key_set ? '' : ' warning'}`}>
+              <div className="stt-fixed-mark" aria-hidden="true">
+                G
+              </div>
+              <div className="stt-fixed-body">
+                <div className="stt-fixed-title">
+                  Gemini <span className="badge badge-blue">전용</span>
+                  {settings.gemini_api_key_set ? (
+                    <span className="badge badge-green">키 등록됨</span>
+                  ) : (
+                    <span className="badge badge-gray">키 필요</span>
+                  )}
+                </div>
+                <p className="stt-option-desc">
+                  등록된 Gemini API 키로 음성을 텍스트로 변환합니다. 변환 실패 시 음성은
+                  임시저장되고, 회의 상세에서 다시 시도할 수 있어요.
+                </p>
+              </div>
             </div>
             <p className="muted settings-note">
               {settings.gemini_api_key_set
-                ? 'Gemini 변환이 실패하면 자동으로 로컬 Whisper로 대체되니 회의가 실패하지 않아요.'
+                ? 'Gemini 변환이 실패하면 음성을 임시저장해두고, 키나 네트워크를 확인한 뒤 회의 상세에서 다시 시도할 수 있어요.'
                 : 'Gemini 변환을 사용하려면 아래 카드에서 API 키를 먼저 등록해주세요.'}
             </p>
           </>
@@ -337,8 +292,7 @@ export function AiEngineSettings() {
             <span aria-hidden="true">✨</span> AI 요약 엔진
           </h2>
           <p className="settings-card-desc">
-            회의 요약에 사용할 엔진을 관리합니다. Gemini API 키를 등록하면 더 정확한 AI 요약을 받을 수
-            있어요.
+            관리자 전용 전역 설정입니다. 저장한 API 키와 모델은 모든 사용자의 회의 요약에 자동 적용됩니다.
           </p>
         </div>
 
@@ -475,7 +429,7 @@ export function AiEngineSettings() {
             <span aria-hidden="true">📝</span> 요약 지시사항 (프롬프트)
           </h2>
           <p className="settings-card-desc">
-            AI가 요약과 회의록을 만들 때 따라야 할 추가 지시사항을 적어두세요.
+            모든 사용자의 AI 요약과 회의록 생성에 함께 적용할 전역 지시사항을 적어두세요.
           </p>
         </div>
 

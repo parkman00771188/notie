@@ -135,6 +135,37 @@ function RoleBadge({ role }: { role: AdminUser['role'] }) {
   )
 }
 
+function BuildingIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M4.5 20V5.8a1.8 1.8 0 0 1 1.8-1.8h7.4a1.8 1.8 0 0 1 1.8 1.8V20" />
+      <path d="M15.5 9h2.2a1.8 1.8 0 0 1 1.8 1.8V20" />
+      <path d="M8 8h.01M12 8h.01M8 12h.01M12 12h.01M8 16h.01M12 16h.01" />
+      <path d="M3 20h18" />
+    </svg>
+  )
+}
+
+function UsersIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M16 20v-1.6c0-1.8-1.5-3.3-3.3-3.3H7.3C5.5 15.1 4 16.6 4 18.4V20" />
+      <circle cx="10" cy="7.5" r="3.3" />
+      <path d="M20 20v-1.3c0-1.5-.9-2.8-2.2-3.3" />
+      <path d="M16.3 4.4a3.3 3.3 0 0 1 0 6.2" />
+    </svg>
+  )
+}
+
+function PencilIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="m4 20 4.2-1.1L19.1 8a2.1 2.1 0 0 0 0-3l-.1-.1a2.1 2.1 0 0 0-3 0L5.1 15.8 4 20Z" />
+      <path d="m14.5 6.5 3 3" />
+    </svg>
+  )
+}
+
 function toDraft(user: AdminUser): UserDraft {
   return {
     username: user.username,
@@ -167,6 +198,9 @@ function buildPayload(draft: UserDraft, includePassword: boolean, includeUsernam
   return payload
 }
 
+const displayUserEmail = (email?: string | null) =>
+  email && !email.endsWith('@notie.local') ? email : '-'
+
 export default function UserManagementPage() {
   const { user } = useAuth()
   const confirm = useConfirm()
@@ -174,10 +208,10 @@ export default function UserManagementPage() {
   const [error, setError] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState<AdminUser | null>(null)
+  const [detailUserId, setDetailUserId] = useState<number | null>(null)
   const [draft, setDraft] = useState<UserDraft>(EMPTY_DRAFT)
   const [roleMenuOpen, setRoleMenuOpen] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [sort, setSort] = useState<'name' | 'department'>('name')
   const [orgOptions, setOrgOptions] = useState<OrgOption[]>([])
   const [orgManageOpen, setOrgManageOpen] = useState(false)
   const [orgManageTab, setOrgManageTab] = useState<OrgKind>('organization')
@@ -190,7 +224,7 @@ export default function UserManagementPage() {
   const [orgDraftColor, setOrgDraftColor] = useState(ORG_COLOR_PALETTE[0])
   const [orgSavingKind, setOrgSavingKind] = useState<OrgKind | null>(null)
   const [orgEditing, setOrgEditing] = useState<{ id: number; name: string } | null>(null)
-  const [collapsedOrgGroups, setCollapsedOrgGroups] = useState<Record<string, boolean>>({})
+  const [selectedGroupKey, setSelectedGroupKey] = useState<string | null>(null)
 
   useEffect(() => {
     if (user?.role !== 'admin') return
@@ -221,15 +255,8 @@ export default function UserManagementPage() {
 
   const sortedUsers = useMemo(() => {
     const list = [...(users ?? [])]
-    return list.sort((a, b) => {
-      if (sort === 'department') {
-        const left = `${a.department ?? ''}${a.name}`
-        const right = `${b.department ?? ''}${b.name}`
-        return left.localeCompare(right, 'ko')
-      }
-      return a.name.localeCompare(b.name, 'ko') || a.username.localeCompare(b.username)
-    })
-  }, [sort, users])
+    return list.sort((a, b) => a.name.localeCompare(b.name, 'ko') || a.username.localeCompare(b.username))
+  }, [users])
 
   const stats = useMemo(() => {
     const list = users ?? []
@@ -274,10 +301,23 @@ export default function UserManagementPage() {
     }))
   }, [organizationOptions, sortedUsers])
 
-  const userIndexById = useMemo(
-    () => new Map(sortedUsers.map((item, index) => [item.id, index + 1])),
-    [sortedUsers],
-  )
+  useEffect(() => {
+    if (users === null) return
+    if (organizationGroups.length === 0) {
+      setSelectedGroupKey(null)
+      return
+    }
+    if (!selectedGroupKey || !organizationGroups.some((group) => group.key === selectedGroupKey)) {
+      setSelectedGroupKey(organizationGroups[0].key)
+    }
+  }, [organizationGroups, selectedGroupKey, users])
+
+  const selectedGroup =
+    selectedGroupKey === null
+      ? null
+      : organizationGroups.find((group) => group.key === selectedGroupKey) ?? null
+  const detailUser =
+    detailUserId === null ? null : (users ?? []).find((item) => item.id === detailUserId) ?? null
 
   if (user && user.role !== 'admin') {
     return <Navigate to="/" replace />
@@ -416,19 +456,19 @@ export default function UserManagementPage() {
     }
   }
 
-  const toggleOrgGroup = (key: string) => {
-    setCollapsedOrgGroups((prev) => ({ ...prev, [key]: !prev[key] }))
-  }
-
   const openCreate = () => {
     setEditing(null)
-    setDraft(EMPTY_DRAFT)
+    setDraft({
+      ...EMPTY_DRAFT,
+      organization: selectedGroup && selectedGroup.key !== NO_ORG_KEY ? selectedGroup.name : '',
+    })
     setRoleMenuOpen(false)
     setError('')
     setModalOpen(true)
   }
 
   const openEdit = (target: AdminUser) => {
+    setDetailUserId(null)
     setEditing(target)
     setDraft(toDraft(target))
     setRoleMenuOpen(false)
@@ -442,6 +482,11 @@ export default function UserManagementPage() {
     setEditing(null)
     setDraft(EMPTY_DRAFT)
     setRoleMenuOpen(false)
+  }
+
+  const openUserDetail = (target: AdminUser) => {
+    setDetailUserId(target.id)
+    setError('')
   }
 
   const saveUser = async (e: FormEvent) => {
@@ -477,7 +522,7 @@ export default function UserManagementPage() {
   const toggleActive = async (target: AdminUser) => {
     const nextActive = !target.active
     const ok = await confirm({
-      title: nextActive ? `${target.name} 계정을 활성화할까요?` : `${target.name} 계정을 비활성화할까요?`,
+      title: nextActive ? `${target.name} 계정을 활성화하시겠습니까?` : `${target.name} 계정을 비활성화하시겠습니까?`,
       message: nextActive
         ? '활성화하면 해당 사용자가 다시 로그인할 수 있습니다.'
         : '비활성화하면 해당 사용자는 로그인할 수 없지만 기존 회의 데이터는 유지됩니다.',
@@ -489,32 +534,27 @@ export default function UserManagementPage() {
     try {
       const updated = await api.updateAdminUser(target.id, { active: nextActive })
       setUsers((prev) => (prev ?? []).map((item) => (item.id === updated.id ? updated : item)))
+      return updated
     } catch (err: unknown) {
       setError(errMsg(err, '계정 상태를 변경하지 못했습니다'))
+      return null
     }
   }
 
-  const deleteUser = async (target: AdminUser) => {
-    if (target.id === user?.id) return
-    const ok = await confirm({
-      title: `${target.name} 계정을 삭제할까요?`,
-      message: '삭제하면 해당 사용자의 로그인 계정과 기존 회의 데이터가 함께 삭제됩니다. 이 작업은 되돌릴 수 없습니다.',
-      confirmLabel: '삭제',
-      danger: true,
-    })
-    if (!ok) return
-    setError('')
-    try {
-      await api.deleteAdminUser(target.id)
-      setUsers((prev) => (prev ?? []).filter((item) => item.id !== target.id))
-    } catch (err: unknown) {
-      setError(errMsg(err, '사용자를 삭제하지 못했습니다'))
-    }
-  }
-
-  const renderUserRow = (item: AdminUser) => (
-    <tr key={item.id} className={!item.active ? 'inactive' : undefined}>
-      <td>{userIndexById.get(item.id) ?? '-'}</td>
+  const renderUserRow = (item: AdminUser, groupIndex: number) => (
+    <tr
+      key={item.id}
+      className={`user-clickable-row${!item.active ? ' inactive' : ''}`}
+      tabIndex={0}
+      onClick={() => openUserDetail(item)}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          openUserDetail(item)
+        }
+      }}
+    >
+      <td>{groupIndex}</td>
       <td>
         <RoleBadge role={item.role} />
       </td>
@@ -524,38 +564,10 @@ export default function UserManagementPage() {
         </div>
       </td>
       <td className="user-id-cell">{item.username}</td>
-      <td>{item.organization || '-'}</td>
       <td>{item.department || '-'}</td>
       <td>{item.position || '-'}</td>
-      <td>{item.phone || '-'}</td>
-      <td>
-        <span className={`user-status-pill ${item.active ? 'active' : 'inactive'}`}>
-          {item.active ? '활성' : '비활성'}
-        </span>
-      </td>
-      <td>
-        <div className="user-row-actions">
-          <button type="button" className="btn btn-ghost" onClick={() => openEdit(item)}>
-            수정
-          </button>
-          <button
-            type="button"
-            className={`btn ${item.active ? 'btn-danger' : 'btn-soft'}`}
-            onClick={() => void toggleActive(item)}
-          >
-            {item.active ? '비활성' : '활성'}
-          </button>
-          <button
-            type="button"
-            className="btn-icon user-delete-btn"
-            disabled={item.id === user?.id}
-            title={item.id === user?.id ? '현재 로그인한 계정은 삭제할 수 없습니다' : '삭제'}
-            aria-label={`${item.name} 계정 삭제`}
-            onClick={() => void deleteUser(item)}
-          >
-            🗑️
-          </button>
-        </div>
+      <td className="user-email-cell" title={displayUserEmail(item.email)}>
+        {displayUserEmail(item.email)}
       </td>
     </tr>
   )
@@ -572,14 +584,6 @@ export default function UserManagementPage() {
           <p className="user-admin-subtitle">
             관리자만 계정을 추가하고 권한을 변경할 수 있습니다.
           </p>
-        </div>
-        <div className="user-admin-head-actions">
-          <button type="button" className="btn btn-ghost" onClick={openOrgManage}>
-            소속/부서/직책 관리
-          </button>
-          <button type="button" className="btn btn-primary" onClick={openCreate}>
-            사용자 추가
-          </button>
         </div>
       </div>
 
@@ -598,27 +602,7 @@ export default function UserManagementPage() {
         </div>
       </div>
 
-      <section className="user-admin-section">
-        <div className="user-admin-toolbar">
-          <span className="user-admin-toolbar-label">정렬 기준</span>
-          <div className="user-admin-sort">
-            <button
-              type="button"
-              className={`btn ${sort === 'name' ? 'btn-primary' : 'btn-ghost'}`}
-              onClick={() => setSort('name')}
-            >
-              이름순
-            </button>
-            <button
-              type="button"
-              className={`btn ${sort === 'department' ? 'btn-primary' : 'btn-ghost'}`}
-              onClick={() => setSort('department')}
-            >
-              부서순
-            </button>
-          </div>
-        </div>
-
+      <section className="user-directory-section">
         {error && <div className="user-admin-error">{error}</div>}
 
         {users === null ? (
@@ -630,36 +614,84 @@ export default function UserManagementPage() {
             <div className="user-admin-empty">등록된 사용자가 없습니다.</div>
           </div>
         ) : (
-          <div className="user-org-groups">
-            {organizationGroups.map((group) => {
-              const isCollapsed = !!collapsedOrgGroups[group.key]
-              return (
-                <div key={group.key} className="card user-org-group">
+          <div className="user-directory-layout">
+            <aside className="card user-org-list-card" aria-label="소속 목록">
+              <div className="user-org-list-head">
+                <div className="user-org-list-title">
+                  <span className="user-org-list-icon">
+                    <BuildingIcon />
+                  </span>
+                  <div>
+                    <strong>소속</strong>
+                    <small>{organizationGroups.length}개 그룹</small>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="user-org-manage-btn"
+                  onClick={openOrgManage}
+                  title="소속/부서/직책 관리"
+                >
+                  관리
+                </button>
+              </div>
+              <div className="user-org-list">
+                {organizationGroups.map((group) => {
+                  const adminCount = group.items.filter((item) => item.role === 'admin').length
+                  const activeCount = group.items.filter((item) => item.active).length
+                  return (
                   <button
+                    key={group.key}
                     type="button"
-                    className="user-org-head"
-                    aria-expanded={!isCollapsed}
-                    onClick={() => toggleOrgGroup(group.key)}
+                    className={`user-org-list-item${selectedGroup?.key === group.key ? ' active' : ''}`}
+                    onClick={() => setSelectedGroupKey(group.key)}
                   >
-                    <span className={`user-org-caret${isCollapsed ? '' : ' open'}`}>▸</span>
                     <span className="user-org-dot" style={{ background: group.color }} />
-                    <span className="user-org-name">{group.name}</span>
-                    <span className="user-org-count">{group.items.length}명</span>
+                    <span className="user-org-item-text">
+                      <strong>{group.name}</strong>
+                      <small>
+                        활성 {activeCount}명
+                        {adminCount > 0 ? ` · 관리자 ${adminCount}명` : ''}
+                      </small>
+                    </span>
+                    <span className="user-org-count">{group.items.length}</span>
                   </button>
-                  {!isCollapsed && (
-                    <div className="user-admin-table-wrap user-org-table-wrap">
+                  )
+                })}
+              </div>
+            </aside>
+
+            <section className="card user-detail-card" aria-label="소속별 사용자 목록">
+              {selectedGroup ? (
+                <>
+                  <div className="user-detail-top">
+                    <div className="user-detail-title">
+                      <span className="user-detail-icon">
+                        <UsersIcon />
+                      </span>
+                      <div>
+                        <h2>{selectedGroup.name}</h2>
+                        <p>이 소속에 등록된 사용자 {selectedGroup.items.length}명</p>
+                      </div>
+                    </div>
+                    <div className="user-detail-actions">
+                      <button type="button" className="btn btn-primary" onClick={openCreate}>
+                        + 사용자 추가
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="user-detail-body">
+                    <div className="user-admin-table-wrap user-table-wrap">
                       <table className="user-admin-table">
                         <colgroup>
                           <col className="user-admin-col-index" />
                           <col className="user-admin-col-role" />
                           <col className="user-admin-col-name" />
                           <col className="user-admin-col-username" />
-                          <col className="user-admin-col-organization" />
                           <col className="user-admin-col-department" />
                           <col className="user-admin-col-position" />
-                          <col className="user-admin-col-phone" />
-                          <col className="user-admin-col-status" />
-                          <col className="user-admin-col-actions" />
+                          <col className="user-admin-col-email" />
                         </colgroup>
                         <thead>
                           <tr>
@@ -667,32 +699,104 @@ export default function UserManagementPage() {
                             <th>권한</th>
                             <th>이름</th>
                             <th>사용자 ID</th>
-                            <th>소속</th>
                             <th>부서</th>
                             <th>직책</th>
-                            <th>연락처</th>
-                            <th>상태</th>
-                            <th>관리</th>
+                            <th>이메일</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {group.items.length > 0 ? (
-                            group.items.map(renderUserRow)
+                          {selectedGroup.items.length > 0 ? (
+                            selectedGroup.items.map((item, index) => renderUserRow(item, index + 1))
                           ) : (
                             <tr className="user-admin-empty-row">
-                              <td colSpan={10}>이 소속에는 등록된 사용자가 없습니다.</td>
+                              <td colSpan={7}>이 소속에는 등록된 사용자가 없습니다.</td>
                             </tr>
                           )}
                         </tbody>
                       </table>
                     </div>
-                  )}
+                  </div>
+                </>
+              ) : (
+                <div className="user-detail-empty">
+                  <UsersIcon />
+                  <strong>선택된 소속이 없습니다.</strong>
+                  <span>소속을 선택하면 사용자 목록이 표시됩니다.</span>
                 </div>
               )
-            })}
+              }
+            </section>
           </div>
         )}
       </section>
+
+      <Modal
+        open={detailUser !== null}
+        title="사용자 정보"
+        width={620}
+        onClose={() => setDetailUserId(null)}
+      >
+        {detailUser && (
+          <div className="user-detail-modal">
+            <div className="user-detail-modal-head">
+              <div className="user-detail-identity">
+                <strong>{detailUser.name}</strong>
+                <span>{detailUser.username}</span>
+              </div>
+              <div className="user-detail-modal-badges">
+                <RoleBadge role={detailUser.role} />
+                <span className={`user-status-pill ${detailUser.active ? 'active' : 'inactive'}`}>
+                  {detailUser.active ? '활성' : '비활성'}
+                </span>
+              </div>
+            </div>
+
+            <dl className="user-detail-list">
+              <div>
+                <dt>소속</dt>
+                <dd>{detailUser.organization || '-'}</dd>
+              </div>
+              <div>
+                <dt>부서</dt>
+                <dd>{detailUser.department || '-'}</dd>
+              </div>
+              <div>
+                <dt>직책</dt>
+                <dd>{detailUser.position || '-'}</dd>
+              </div>
+              <div>
+                <dt>이메일</dt>
+                <dd>{displayUserEmail(detailUser.email)}</dd>
+              </div>
+              <div>
+                <dt>연락처</dt>
+                <dd>{detailUser.phone || '-'}</dd>
+              </div>
+              <div>
+                <dt>회의 수</dt>
+                <dd>{detailUser.meeting_count}개</dd>
+              </div>
+            </dl>
+
+            <div className="user-detail-modal-actions">
+              <button type="button" className="btn btn-ghost" onClick={() => setDetailUserId(null)}>
+                닫기
+              </button>
+              <button type="button" className="btn btn-soft user-detail-edit-action" onClick={() => openEdit(detailUser)}>
+                <PencilIcon />
+                수정
+              </button>
+              <button
+                type="button"
+                className={`btn ${detailUser.active ? 'btn-danger' : 'btn-primary'}`}
+                onClick={() => void toggleActive(detailUser)}
+              >
+                {detailUser.active ? '비활성화' : '활성화'}
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       <Modal
         open={modalOpen}

@@ -70,6 +70,7 @@ _HTTP_REASONS = {
 GEMINI_KEY_SETTING = "gemini_api_key"
 GEMINI_MODEL_SETTING = "gemini_model"
 SUMMARY_PROMPT_SETTING = "summary_prompt"
+MANUAL_SUMMARY_PROMPT_SETTING = "manual_summary_prompt"
 
 
 # ---------------------------------------------------------------------------
@@ -81,12 +82,14 @@ def summarize(
     segments: list[dict],
     bookmarks: list[dict],
     participants: list[dict],
+    prompt_kind: str = "recording",
 ) -> dict:
     """회의를 요약하여 key_points/decisions/action_items/minutes_md/engine을 반환한다."""
     meeting = meeting or {}
     segments = segments or []
     bookmarks = bookmarks or []
     participants = participants or []
+    prompt_kind = "manual" if prompt_kind == "manual" else "recording"
 
     texts = [str(s.get("text") or "").strip() for s in segments]
     texts = [t for t in texts if t]
@@ -136,7 +139,7 @@ def summarize(
     if gemini_key:
         try:
             parsed, model_name = _try_gemini(
-                meeting, transcript, bookmarks, participants, gemini_key
+                meeting, transcript, bookmarks, participants, gemini_key, prompt_kind
             )
             engine = f"gemini:{model_name}"
             key_points = _clean_str_list(parsed.get("key_points"), _MAX_ITEMS_LLM)
@@ -154,7 +157,7 @@ def summarize(
     if engine == "extractive":
         try:
             parsed, model_name = _summarize_with_ollama(
-                meeting, transcript, bookmarks, participants
+                meeting, transcript, bookmarks, participants, prompt_kind
             )
             engine = f"ollama:{model_name}"
             key_points = _clean_str_list(parsed.get("key_points"), _MAX_ITEMS_LLM)
@@ -205,18 +208,23 @@ def summarize(
 
 _LLM_SYSTEM_PROMPT = (
     "당신은 한국어 회의록 작성 전문가입니다. "
-    "반드시 유효한 JSON 객체 하나만 출력하고, JSON 외의 텍스트는 절대 포함하지 마세요."
+    "반드시 유효한 JSON 객체 하나만 출력하고, JSON 외의 텍스트는 절대 포함하지 마세요. "
+    "사용자 지정 지시사항이 출력 형식이나 섹션 형식을 요구하더라도, "
+    "최종 응답 형식은 JSON 스키마를 최우선으로 따르세요."
 )
 
 
-def get_summary_prompt() -> str | None:
-    """사용자 지정 요약 지시사항 조회 — app_settings 'summary_prompt', 없거나 비면 None."""
+def get_summary_prompt(prompt_kind: str = "recording") -> str | None:
+    """사용자 지정 요약 지시사항 조회 — 녹음/직접 작성 프롬프트를 분리한다."""
+    setting_key = (
+        MANUAL_SUMMARY_PROMPT_SETTING if prompt_kind == "manual" else SUMMARY_PROMPT_SETTING
+    )
     try:
         conn = db.get_conn()
         try:
             row = conn.execute(
                 "SELECT value FROM app_settings WHERE key = ?",
-                (SUMMARY_PROMPT_SETTING,),
+                (setting_key,),
             ).fetchone()
         finally:
             conn.close()
@@ -225,7 +233,7 @@ def get_summary_prompt() -> str | None:
             if value:
                 return value
     except Exception as exc:
-        logger.warning("summarizer: summary_prompt 조회 실패 — 기본 프롬프트만 사용: %s", exc)
+        logger.warning("summarizer: %s 조회 실패 — 기본 프롬프트만 사용: %s", setting_key, exc)
     return None
 
 
@@ -235,6 +243,7 @@ def _build_llm_user_prompt(
     bookmarks: list[dict],
     participants: list[dict],
     include_transcript: bool = True,
+    prompt_kind: str = "recording",
 ) -> str:
     """Gemini/Ollama 공용 요약 프롬프트 (K1 JSON 스키마).
 
@@ -264,25 +273,31 @@ def _build_llm_user_prompt(
         bookmark_block = "회의 중 메모(북마크): 없음\n"
 
     # 사용자 지정 추가 지시사항 (있을 때만 — SPEC 2차 개선 A)
-    user_instructions = get_summary_prompt()
+    prompt_kind = "manual" if prompt_kind == "manual" else "recording"
+    user_instructions = get_summary_prompt(prompt_kind)
     user_block = (
-        "\n\n다음은 사용자가 지정한 추가 지시사항이다. "
-        f"기본 규칙과 충돌하면 사용자 지시를 우선하라:\n{user_instructions}"
+        "\n사용자 지정 작성 지시사항:\n"
+        f"{user_instructions}\n"
+        "단, 위 지시사항은 회의록의 내용 선택, 문체, 정리 방식에만 적용한다. "
+        "출력 형식, JSON 키 이름, 값 타입, JSON 외 텍스트 금지 규칙은 아래 JSON 스키마를 반드시 따른다. "
+        "[회의내용], [핵심내용], [결정사항] 같은 섹션 표기는 필요한 경우 discussion 문자열 내부의 표현으로만 사용한다.\n"
         if user_instructions
         else ""
     )
 
+    content_label = "직접 작성한 회의 내용" if prompt_kind == "manual" else "녹취록"
     if include_transcript:
-        transcript_block = f"녹취록:\n{transcript[:_MAX_TRANSCRIPT_CHARS]}\n"
+        transcript_block = f"{content_label}:\n{transcript[:_MAX_TRANSCRIPT_CHARS]}\n"
     else:
         transcript_block = "전체 스크립트는 첨부된 텍스트 파일(transcript.txt)을 참고하라.\n"
 
     return (
-        "다음 회의 녹취록을 분석해서 아래 JSON 형식으로 요약해주세요.\n\n"
+        f"다음 회의 {content_label}을 분석해서 아래 JSON 형식으로 요약해주세요.\n\n"
         f"회의 제목: {str(meeting.get('title') or '제목 없음')}\n"
         f"참석자: {names}\n"
         f"{bookmark_block}\n"
         f"{transcript_block}\n"
+        f"{user_block}\n"
         "작성 규칙:\n"
         "- discussion(회의내용): 논의된 주제별로 묶어 마크다운으로 정리하라. "
         "주제마다 '### 소제목'을 달고 그 아래 '- 불릿'으로 요점을 적는다. "
@@ -299,8 +314,8 @@ def _build_llm_user_prompt(
         '  "decisions": ["명확하게 확정된 결정사항만 (없으면 빈 배열)"],\n'
         '  "followups": ["추가로 확인/검토가 필요한 사항 (없으면 빈 배열)"],\n'
         '  "action_items": [{"text": "해야 할 일", "owner": "담당자 이름 또는 null", "due": "기한 또는 null"}]\n'
-        "}"
-        f"{user_block}"
+        "}\n"
+        "중요: 위 JSON 객체 하나만 출력한다. 설명 문장, 마크다운 코드펜스, JSON 바깥 섹션 제목은 출력하지 않는다."
     )
 
 
@@ -355,6 +370,7 @@ def _try_gemini(
     bookmarks: list[dict],
     participants: list[dict],
     api_key: str,
+    prompt_kind: str = "recording",
 ) -> tuple[dict, str]:
     """Gemini generateContent REST 호출로 요약 JSON을 받는다. 실패 시 예외를 던진다.
 
@@ -371,6 +387,7 @@ def _try_gemini(
         bookmarks,
         participants,
         include_transcript=not attach_transcript,
+        prompt_kind=prompt_kind,
     )
 
     parts: list[dict] = [{"text": prompt}]
@@ -401,9 +418,7 @@ def _try_gemini(
         resp.raise_for_status()  # HTTP 오류(400/403 등)는 재시도하지 않고 즉시 전파
         try:
             text = _extract_gemini_text(resp.json())
-            parsed = extract_first_json(text)
-            if not isinstance(parsed, dict):
-                raise ValueError("Gemini 응답이 JSON 객체가 아닙니다")
+            parsed = _parse_llm_response_text(text)
             return parsed, model_name
         except (json.JSONDecodeError, ValueError) as exc:
             last_err = exc
@@ -461,6 +476,191 @@ def extract_first_json(text: str):
     return obj
 
 
+def _parse_llm_response_text(text: str) -> dict:
+    """LLM 응답을 요약 dict로 파싱한다.
+
+    정상 경로는 JSON 객체다. 다만 사용자 지정 프롬프트가 강하게 작용하면 Gemini가
+    "[회의내용]" 같은 문서형 섹션으로 답하는 경우가 있어, 가능한 범위에서 내부 요약
+    스키마로 변환한다.
+    """
+    try:
+        parsed = extract_first_json(text)
+    except (json.JSONDecodeError, ValueError) as json_exc:
+        try:
+            return _parse_structured_summary_text(text)
+        except ValueError:
+            raise json_exc
+    return _normalize_summary_payload(parsed)
+
+
+def _normalize_summary_payload(value) -> dict:
+    """영문/한국어 키와 단일 배열 래핑을 내부 요약 스키마로 정규화한다."""
+    if isinstance(value, list):
+        dict_items = [item for item in value if isinstance(item, dict)]
+        if len(dict_items) == 1:
+            value = dict_items[0]
+        else:
+            raise ValueError("LLM 응답이 JSON 객체가 아닙니다")
+    if not isinstance(value, dict):
+        raise ValueError("LLM 응답이 JSON 객체가 아닙니다")
+
+    for wrapper_key in ("summary", "minutes", "result", "회의록"):
+        wrapped = value.get(wrapper_key)
+        if isinstance(wrapped, dict):
+            value = wrapped
+            break
+
+    aliases = {
+        "discussion": ("discussion", "회의내용", "회의 내용", "논의내용", "논의 내용", "본문"),
+        "key_points": ("key_points", "keyPoints", "핵심내용", "핵심 내용", "주요내용", "주요 내용"),
+        "decisions": ("decisions", "결정사항", "결정 사항"),
+        "followups": (
+            "followups",
+            "follow_ups",
+            "추가확인필요사항",
+            "추가 확인 필요 사항",
+            "추가 확인",
+            "검토사항",
+            "검토 사항",
+        ),
+        "action_items": ("action_items", "actionItems", "할일", "할 일", "액션아이템", "액션 아이템"),
+    }
+
+    normalized: dict = {}
+    for canonical, keys in aliases.items():
+        for key in keys:
+            if key in value:
+                normalized[canonical] = value[key]
+                break
+
+    for key in ("key_points", "decisions", "followups"):
+        if isinstance(normalized.get(key), str):
+            normalized[key] = _section_text_to_items(normalized[key])
+
+    if isinstance(normalized.get("action_items"), str):
+        normalized["action_items"] = [
+            {"text": item, "owner": None, "due": None}
+            for item in _section_text_to_items(normalized["action_items"])
+        ]
+
+    discussion = normalized.get("discussion")
+    if isinstance(discussion, list):
+        normalized["discussion"] = "\n".join(
+            f"- {str(item).strip()}" for item in discussion if str(item).strip()
+        )
+    elif isinstance(discussion, dict):
+        normalized["discussion"] = "\n".join(
+            f"### {str(k).strip()}\n{str(v).strip()}"
+            for k, v in discussion.items()
+            if str(k).strip() and str(v).strip()
+        )
+
+    return normalized
+
+
+_SECTION_NAME_MAP = {
+    "회의내용": "discussion",
+    "논의내용": "discussion",
+    "핵심내용": "key_points",
+    "주요내용": "key_points",
+    "결정사항": "decisions",
+    "추가확인필요사항": "followups",
+    "추가확인": "followups",
+    "검토사항": "followups",
+    "할일": "action_items",
+    "액션아이템": "action_items",
+}
+
+_SECTION_HEADING_RE = re.compile(
+    r"^\s*(?:#{1,6}\s*)?(?:\[)?\s*"
+    r"(회의\s*내용|논의\s*내용|핵심\s*내용|주요\s*내용|결정\s*사항|"
+    r"추가\s*확인\s*필요\s*사항|추가\s*확인|검토\s*사항|할\s*일|액션\s*아이템)"
+    r"\s*(?:\])?\s*:?\s*$",
+    re.IGNORECASE,
+)
+
+_SECTION_INLINE_RE = re.compile(
+    r"^\s*(?:#{1,6}\s*)?(?:\[)?\s*"
+    r"(회의\s*내용|논의\s*내용|핵심\s*내용|주요\s*내용|결정\s*사항|"
+    r"추가\s*확인\s*필요\s*사항|추가\s*확인|검토\s*사항|할\s*일|액션\s*아이템)"
+    r"\s*(?:\])?\s*[:：]\s*(.+?)\s*$",
+    re.IGNORECASE,
+)
+
+
+def _parse_structured_summary_text(text: str) -> dict:
+    """[회의내용]/[핵심내용] 형식의 문서형 응답을 요약 dict로 변환한다."""
+    sections: dict[str, list[str]] = {}
+    current: str | None = None
+    for raw_line in _strip_code_fences(text).splitlines():
+        line = raw_line.rstrip()
+        inline_match = _SECTION_INLINE_RE.match(line)
+        if inline_match:
+            title = re.sub(r"\s+", "", inline_match.group(1))
+            current = _SECTION_NAME_MAP.get(title)
+            if current:
+                sections.setdefault(current, [])
+                content = inline_match.group(2).strip()
+                if content:
+                    sections[current].append(content)
+            continue
+        match = _SECTION_HEADING_RE.match(line)
+        if match:
+            title = re.sub(r"\s+", "", match.group(1))
+            current = _SECTION_NAME_MAP.get(title)
+            if current:
+                sections.setdefault(current, [])
+            continue
+        if current:
+            sections.setdefault(current, []).append(line)
+
+    compact = {key: "\n".join(lines).strip() for key, lines in sections.items()}
+    if not compact:
+        raise ValueError("문서형 요약 섹션을 찾지 못했습니다")
+
+    result = {
+        "discussion": compact.get("discussion", ""),
+        "key_points": _section_text_to_items(compact.get("key_points", "")),
+        "decisions": _section_text_to_items(compact.get("decisions", "")),
+        "followups": _section_text_to_items(compact.get("followups", "")),
+        "action_items": [
+            {"text": item, "owner": None, "due": None}
+            for item in _section_text_to_items(compact.get("action_items", ""))
+        ],
+    }
+    if not any(result.values()):
+        raise ValueError("문서형 요약 내용이 비어 있습니다")
+    return result
+
+
+def _section_text_to_items(text: str) -> list[str]:
+    """문서형 섹션 텍스트를 불릿 리스트로 정규화한다."""
+    if not isinstance(text, str):
+        return []
+    cleaned = text.strip()
+    if not cleaned:
+        return []
+    if re.fullmatch(r".*(없음|확인되지\s*않음|해당\s*없음|없습니다).*", cleaned):
+        return []
+
+    items: list[str] = []
+    for line in cleaned.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        if _SECTION_HEADING_RE.match(line):
+            continue
+        line = re.sub(r"^[\-*•·]\s*", "", line)
+        line = re.sub(r"^\d+[\).\s]+\s*", "", line)
+        line = re.sub(r"^(결정사항|추가\s*확인\s*필요\s*사항)\s*:\s*", "", line).strip()
+        if not line or line in items:
+            continue
+        if re.fullmatch(r".*(없음|확인되지\s*않음|해당\s*없음|없습니다).*", line):
+            continue
+        items.append(line)
+    return items[:_MAX_ITEMS_LLM]
+
+
 def test_gemini_key(key: str) -> tuple[bool, str]:
     """Gemini API 키 연결 테스트 — 미니 generateContent 호출(timeout 15s).
 
@@ -507,6 +707,7 @@ def _summarize_with_ollama(
     transcript: str,
     bookmarks: list[dict],
     participants: list[dict],
+    prompt_kind: str = "recording",
 ) -> tuple[dict, str]:
     """Ollama /api/chat 으로 요약 JSON을 받는다. 실패 시 예외를 던진다."""
     import httpx  # 미설치 시 ImportError → 폴백
@@ -526,7 +727,9 @@ def _summarize_with_ollama(
         raise RuntimeError("사용 가능한 Ollama 모델이 없습니다")
 
     system_prompt = _LLM_SYSTEM_PROMPT
-    user_prompt = _build_llm_user_prompt(meeting, transcript, bookmarks, participants)
+    user_prompt = _build_llm_user_prompt(
+        meeting, transcript, bookmarks, participants, prompt_kind=prompt_kind
+    )
 
     chat_resp = httpx.post(
         f"{base}/api/chat",
@@ -549,9 +752,7 @@ def _summarize_with_ollama(
     if not isinstance(content, str) or not content.strip():
         raise ValueError("Ollama 응답에 content가 없습니다")
 
-    parsed = json.loads(content)
-    if not isinstance(parsed, dict):
-        raise ValueError("Ollama 응답이 JSON 객체가 아닙니다")
+    parsed = _parse_llm_response_text(content)
     return parsed, model_name
 
 

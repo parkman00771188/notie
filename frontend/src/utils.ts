@@ -34,6 +34,18 @@ export function formatKoreanDateTime(iso: string | null | undefined): string {
   return `${d.getFullYear()}년 ${d.getMonth() + 1}월 ${d.getDate()}일 (${WEEKDAYS[d.getDay()]}) ${ampm} ${h12}:${mm}`
 }
 
+/** YYYY-MM-DD 입력값 검증. 브라우저별 date input 표시 차이를 피하려는 텍스트 입력에 사용한다. */
+export function isValidDateInput(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
+  const [year, month, day] = value.split('-').map(Number)
+  const date = new Date(year, month - 1, day)
+  return (
+    date.getFullYear() === year &&
+    date.getMonth() === month - 1 &&
+    date.getDate() === day
+  )
+}
+
 /** ISO → "오늘 11:30" / "어제 16:45" / "6월 28일" */
 export function formatRelativeDate(iso: string | null | undefined): string {
   if (!iso) return ''

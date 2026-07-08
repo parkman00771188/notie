@@ -88,7 +88,6 @@ export default function MeetingsPage() {
   const location = useLocation()
   const confirm = useConfirm()
   const { user } = useAuth()
-  const isAdmin = user?.role === 'admin'
   const [q, setQ] = useState('')
   const [meetings, setMeetings] = useState<Meeting[] | null>(null)
   const [trashOpen, setTrashOpen] = useState(false)
@@ -99,13 +98,11 @@ export default function MeetingsPage() {
   const [tagAddOpen, setTagAddOpen] = useState(false)
   const [tagAddName, setTagAddName] = useState('')
   const [tagAddColor, setTagAddColor] = useState<string | null>(null)
-  const [tagAddShared, setTagAddShared] = useState(false)
   const [tagAddError, setTagAddError] = useState('')
   const [tagAdding, setTagAdding] = useState(false)
   const [editingTagId, setEditingTagId] = useState<number | null>(null)
   const [editTagName, setEditTagName] = useState('')
   const [editTagColor, setEditTagColor] = useState<string | null>(null)
-  const [editTagShared, setEditTagShared] = useState(false)
   const [tagSaving, setTagSaving] = useState(false)
   const [scope, setScope] = useState<MeetingScope>(() => scopeFromSearch(location.search))
   const [view, setView] = useState<'list' | 'folder'>('folder')
@@ -209,15 +206,12 @@ export default function MeetingsPage() {
       const data: {
         name: string
         color?: string
-        is_global?: boolean
       } = { name }
       if (tagAddColor) data.color = tagAddColor
-      if (isAdmin) data.is_global = tagAddShared
       const created = await api.createTag(data)
       setTags((prev) => [...prev, created].sort((a, b) => a.name.localeCompare(b.name, 'ko')))
       setTagAddName('')
       setTagAddColor(null)
-      setTagAddShared(false)
       setTagAddOpen(false)
     } catch (err) {
       setTagAddError(err instanceof Error ? err.message : '태그를 추가하지 못했어요')
@@ -227,10 +221,13 @@ export default function MeetingsPage() {
   }
 
   const startTagEdit = (tag: Tag) => {
+    if (tag.is_project_tag) {
+      setTagAddError('프로젝트 태그는 프로젝트 관리에서만 수정할 수 있어요')
+      return
+    }
     setEditingTagId(tag.id)
     setEditTagName(tag.name)
     setEditTagColor(tag.color)
-    setEditTagShared(tag.is_global)
     setTagAddError('')
   }
 
@@ -241,10 +238,14 @@ export default function MeetingsPage() {
     if (!name) return
 
     const current = tags.find((tag) => tag.id === editingTagId)
-    const data: { name?: string; color?: string; is_global?: boolean } = {}
+    if (current?.is_project_tag) {
+      setTagAddError('프로젝트 태그는 프로젝트 관리에서만 수정할 수 있어요')
+      setEditingTagId(null)
+      return
+    }
+    const data: { name?: string; color?: string } = {}
     if (!current || current.name !== name) data.name = name
     if (editTagColor && (!current || current.color !== editTagColor)) data.color = editTagColor
-    if (isAdmin && current && current.is_global !== editTagShared) data.is_global = editTagShared
     if (Object.keys(data).length === 0) {
       setEditingTagId(null)
       return
@@ -271,6 +272,10 @@ export default function MeetingsPage() {
 
   const handleDeleteTag = async (tag: Tag, event: MouseEvent) => {
     event.stopPropagation()
+    if (tag.is_project_tag) {
+      setTagAddError('프로젝트 태그는 프로젝트 관리에서만 삭제할 수 있어요')
+      return
+    }
     const ok = await confirm({
       title: `'${tag.name}' 태그를 삭제할까요?`,
       message: '기존 회의에 표시된 태그는 그대로 남아요.',
@@ -648,7 +653,7 @@ export default function MeetingsPage() {
         </main>
         <RecentMeetingsPanel
           refreshKey={reloadKey}
-          limit={10}
+          limit={5}
           showPromo={false}
           onChanged={() => setReloadKey((key) => key + 1)}
         />
@@ -735,16 +740,6 @@ export default function MeetingsPage() {
               autoFocus
             />
             <TagColorPicker value={tagAddColor} onChange={setTagAddColor} />
-            {isAdmin && (
-              <label className="meeting-tag-share-option">
-                <input
-                  type="checkbox"
-                  checked={tagAddShared}
-                  onChange={(event) => setTagAddShared(event.target.checked)}
-                />
-                <span>공유</span>
-              </label>
-            )}
             <button type="submit" className="btn btn-primary" disabled={!tagAddName.trim() || tagAdding}>
               {tagAdding ? '추가 중...' : '추가'}
             </button>
@@ -758,18 +753,25 @@ export default function MeetingsPage() {
             <ul className="meeting-tag-list" aria-label="태그 관리">
               {tags.map((tag) => {
                 const canManageTag = tag.can_manage !== false
-                const isProjectDeleteLocked = !isAdmin && Boolean(tag.is_project_tag)
-                const isReadonly = !canManageTag || (tag.is_global && !isAdmin)
-                const deleteDisabled = isReadonly || isProjectDeleteLocked
-                const editTitle = isReadonly ? '이 태그는 수정 권한이 없습니다' : '이름/색 수정'
-                const deleteTitle = isProjectDeleteLocked
-                  ? '프로젝트에 연결된 태그는 프로젝트 관리에서만 관리할 수 있습니다'
+                const isProjectTag = Boolean(tag.is_project_tag)
+                const isReadonly = isProjectTag || !canManageTag
+                const deleteDisabled = isReadonly
+                const editTitle = isProjectTag
+                  ? '프로젝트 태그는 프로젝트 관리에서만 이름과 색상을 수정할 수 있습니다'
+                  : isReadonly
+                    ? '이 태그는 수정 권한이 없습니다'
+                    : '이름/색 수정'
+                const deleteTitle = isProjectTag
+                  ? '프로젝트 태그는 프로젝트 관리에서만 삭제할 수 있습니다'
                   : isReadonly
                     ? '이 태그는 삭제 권한이 없습니다'
                     : '삭제'
                 const isEditing = editingTagId === tag.id
                 return (
-                  <li key={tag.id} className={`meeting-tag-row${isReadonly ? ' readonly' : ''}`}>
+                  <li
+                    key={tag.id}
+                    className={`meeting-tag-row${isReadonly ? ' readonly' : ''}${isProjectTag ? ' project-managed' : ''}`}
+                  >
                     <span
                       className="meeting-tag-row-dot"
                       style={{ background: isEditing ? (editTagColor ?? tag.color) : tag.color }}
@@ -786,16 +788,6 @@ export default function MeetingsPage() {
                           }}
                         />
                         <TagColorPicker value={editTagColor} onChange={setEditTagColor} />
-                        {isAdmin && (
-                          <label className="meeting-tag-share-option meeting-tag-share-option-inline">
-                            <input
-                              type="checkbox"
-                              checked={editTagShared}
-                              onChange={(event) => setEditTagShared(event.target.checked)}
-                            />
-                            <span>공유</span>
-                          </label>
-                        )}
                         <button
                           type="submit"
                           className="btn btn-soft"
@@ -815,7 +807,7 @@ export default function MeetingsPage() {
                     ) : (
                       <>
                         <span className="meeting-tag-row-name">{tag.name}</span>
-                        {tag.is_global && <span className="meeting-tag-shared-badge">공유</span>}
+                        {isProjectTag && <span className="meeting-tag-project-badge">프로젝트</span>}
                         <div className="meeting-tag-row-actions">
                           <button
                             type="button"

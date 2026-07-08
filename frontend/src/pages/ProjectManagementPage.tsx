@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
-import { api, type ProjectInput } from '../api'
+import { api, type AdminUserInput, type ProjectInput } from '../api'
 import { useAuth } from '../App'
 import { useConfirm } from '../components/confirm'
 import Modal from '../components/Modal'
@@ -19,6 +19,14 @@ interface ProjectDraft {
   color: string
   tag_ids: number[]
   member_user_ids: number[]
+}
+
+interface ProjectMemberDraft {
+  name: string
+  organization: string
+  department: string
+  position: string
+  email: string
 }
 
 const PROJECT_COLORS = [
@@ -178,6 +186,26 @@ function displayUserEmail(user: User) {
   return email
 }
 
+function toProjectMemberDraft(user: User): ProjectMemberDraft {
+  return {
+    name: user.name,
+    organization: user.organization ?? '',
+    department: user.department ?? '',
+    position: user.position ?? '',
+    email: user.email?.toLowerCase().endsWith('@notie.local') ? '' : user.email,
+  }
+}
+
+function buildMemberPayload(draft: ProjectMemberDraft): Partial<AdminUserInput> {
+  return {
+    name: draft.name.trim(),
+    organization: draft.organization.trim() || undefined,
+    department: draft.department.trim() || undefined,
+    position: draft.position.trim() || undefined,
+    email: draft.email.trim() || undefined,
+  }
+}
+
 export default function ProjectManagementPage() {
   const { user } = useAuth()
   const confirm = useConfirm()
@@ -197,6 +225,9 @@ export default function ProjectManagementPage() {
   const [tagSaving, setTagSaving] = useState(false)
   const [memberSavingId, setMemberSavingId] = useState<number | null>(null)
   const [memberAddOpen, setMemberAddOpen] = useState(false)
+  const [memberEditTarget, setMemberEditTarget] = useState<User | null>(null)
+  const [memberEditDraft, setMemberEditDraft] = useState<ProjectMemberDraft | null>(null)
+  const [memberEditSaving, setMemberEditSaving] = useState(false)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
 
@@ -257,11 +288,33 @@ export default function ProjectManagementPage() {
     setDraft((prev) => ({ ...prev, [key]: value }))
   }
 
+  const mergeTagsIntoState = (tags: Tag[]) => {
+    if (tags.length === 0) return
+    setAllTags((prev) => {
+      const byId = new Map(prev.map((tag) => [tag.id, tag]))
+      tags.forEach((tag) => {
+        byId.set(tag.id, { ...(byId.get(tag.id) ?? {}), ...tag })
+      })
+      return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name, 'ko'))
+    })
+  }
+
   const updateProjectInState = (updated: Project) => {
+    mergeTagsIntoState(updated.tags)
     setProjects((prev) =>
       (prev ?? []).map((project) => (project.id === updated.id ? updated : project)),
     )
     setSelectedId(updated.id)
+  }
+
+  const updateUserInState = (updated: User) => {
+    setDirectoryUsers((prev) => prev.map((item) => (item.id === updated.id ? { ...item, ...updated } : item)))
+    setProjects((prev) =>
+      (prev ?? []).map((project) => ({
+        ...project,
+        members: project.members.map((member) => (member.id === updated.id ? { ...member, ...updated } : member)),
+      })),
+    )
   }
 
   const openCreate = () => {
@@ -346,7 +399,10 @@ export default function ProjectManagementPage() {
           : [...prev, savedTag]
         return next.sort((a, b) => a.name.localeCompare(b.name, 'ko'))
       })
-      const updated = await api.updateProject(tagEditorProject.id, { tag_ids: [savedTag.id] })
+      const updated = await api.updateProject(tagEditorProject.id, {
+        tag_ids: [savedTag.id],
+        color: tagEditorColor,
+      })
       updateProjectInState(updated)
       setTagEditorProject(null)
       setTagEditorName('')
@@ -368,6 +424,7 @@ export default function ProjectManagementPage() {
         updateProjectInState(updated)
       } else {
         const created = await api.createProject(buildPayload(draft))
+        mergeTagsIntoState(created.tags)
         setProjects((prev) => [created, ...(prev ?? [])])
         setSelectedId(created.id)
       }
@@ -429,6 +486,43 @@ export default function ProjectManagementPage() {
     await saveProjectMembers(project, nextIds, targetUser)
   }
 
+  const openProjectMemberEdit = (targetUser: User) => {
+    if (!isAdmin) return
+    setMemberEditTarget(targetUser)
+    setMemberEditDraft(toProjectMemberDraft(targetUser))
+    setError('')
+  }
+
+  const closeProjectMemberEdit = () => {
+    if (memberEditSaving) return
+    setMemberEditTarget(null)
+    setMemberEditDraft(null)
+  }
+
+  const setMemberEditField = <K extends keyof ProjectMemberDraft>(
+    key: K,
+    value: ProjectMemberDraft[K],
+  ) => {
+    setMemberEditDraft((prev) => (prev ? { ...prev, [key]: value } : prev))
+  }
+
+  const saveProjectMemberEdit = async (event: FormEvent) => {
+    event.preventDefault()
+    if (!memberEditTarget || !memberEditDraft || memberEditSaving || !memberEditDraft.name.trim()) return
+    setMemberEditSaving(true)
+    setError('')
+    try {
+      const updated = await api.updateAdminUser(memberEditTarget.id, buildMemberPayload(memberEditDraft))
+      updateUserInState(updated)
+      setMemberEditTarget(null)
+      setMemberEditDraft(null)
+    } catch (err: unknown) {
+      setError(errMsg(err, '프로젝트 참여자 정보를 수정하지 못했습니다.'))
+    } finally {
+      setMemberEditSaving(false)
+    }
+  }
+
   const renderTagChips = (tags: Tag[]) => {
     if (tags.length === 0) return <span className="project-muted-value">태그 없음</span>
     return (
@@ -464,11 +558,6 @@ export default function ProjectManagementPage() {
         <span>태그</span>
         <strong className="project-info-tags">
           {renderTagChips(project.tags)}
-          {canManageProject(project) && (
-            <button type="button" className="btn btn-ghost project-inline-edit" onClick={() => openTagEditor(project)}>
-              태그 설정
-            </button>
-          )}
         </strong>
       </div>
       <div>
@@ -529,7 +618,6 @@ export default function ProjectManagementPage() {
                     <span>ID</span>
                     <span>부서</span>
                     <span>직책</span>
-                    <span>전화</span>
                     <span>이메일</span>
                     {canManage && <span>관리</span>}
                   </div>
@@ -542,10 +630,21 @@ export default function ProjectManagementPage() {
                       <span className="project-member-id-cell">{item.username}</span>
                       <span>{item.department || '-'}</span>
                       <span>{item.position || '-'}</span>
-                      <span>{item.phone || '-'}</span>
                       <span>{displayUserEmail(item)}</span>
                       {canManage && (
                         <span className="project-member-action-cell">
+                          {isAdmin && (
+                            <button
+                              type="button"
+                              className="btn-icon project-member-edit-icon"
+                              disabled={memberEditSaving}
+                              onClick={() => openProjectMemberEdit(item)}
+                              aria-label={`${item.name} 참여자 수정`}
+                              title="참여자 수정"
+                            >
+                              <EditIcon />
+                            </button>
+                          )}
                           <button
                             type="button"
                             className="btn-icon project-member-remove-icon"
@@ -663,7 +762,12 @@ export default function ProjectManagementPage() {
                 >
                   <span className="project-list-dot" style={{ background: project.color }} />
                   <span className="project-list-text">
-                    <strong>{project.title}</strong>
+                    <strong>
+                      <span>{project.title}</span>
+                      {project.members.some((member) => member.id === user?.id) && (
+                        <em className="project-list-member-badge">참여자</em>
+                      )}
+                    </strong>
                     <small>{project.task_number || project.research_institution || '기본 정보 미입력'}</small>
                   </span>
                 </button>
@@ -680,10 +784,25 @@ export default function ProjectManagementPage() {
                   <span className="project-detail-dot" style={{ background: selectedProject.color }} />
                   <div>
                     <h2>{selectedProject.title}</h2>
-                    <p>
-                      {selectedProject.task_number || '과제번호 없음'}
-                      {selectedProject.research_institution ? ` · ${selectedProject.research_institution}` : ''}
-                    </p>
+                    <div className="project-detail-meta">
+                      <span className="project-detail-meta-text">{selectedProject.task_number || '과제번호 없음'}</span>
+                      <span className="project-detail-meta-tags">{renderTagChips(selectedProject.tags)}</span>
+                      {canManageProject(selectedProject) && (
+                        <button
+                          type="button"
+                          className="btn btn-ghost project-header-tag-btn"
+                          onClick={() => openTagEditor(selectedProject)}
+                        >
+                          태그 설정
+                        </button>
+                      )}
+                      {selectedProject.research_institution && (
+                        <>
+                          <span className="project-detail-meta-dot">·</span>
+                          <span className="project-detail-meta-text">{selectedProject.research_institution}</span>
+                        </>
+                      )}
+                    </div>
                   </div>
                 </div>
                 {canManageProject(selectedProject) && (
@@ -878,6 +997,85 @@ export default function ProjectManagementPage() {
               </button>
             </div>
           </div>
+        )}
+      </Modal>
+
+      <Modal
+        open={Boolean(memberEditTarget && memberEditDraft)}
+        title="프로젝트 참여자 수정"
+        width={720}
+        onClose={closeProjectMemberEdit}
+      >
+        {memberEditTarget && memberEditDraft && (
+          <form className="project-form" onSubmit={saveProjectMemberEdit}>
+            <div className="project-form-grid">
+              <label className="project-form-field">
+                <span>이름 *</span>
+                <input
+                  className="input"
+                  value={memberEditDraft.name}
+                  onChange={(event) => setMemberEditField('name', event.target.value)}
+                  placeholder="이름"
+                  required
+                />
+              </label>
+              <label className="project-form-field">
+                <span>소속</span>
+                <input
+                  className="input"
+                  value={memberEditDraft.organization}
+                  onChange={(event) => setMemberEditField('organization', event.target.value)}
+                  placeholder="소속"
+                />
+              </label>
+              <label className="project-form-field">
+                <span>부서</span>
+                <input
+                  className="input"
+                  value={memberEditDraft.department}
+                  onChange={(event) => setMemberEditField('department', event.target.value)}
+                  placeholder="부서"
+                />
+              </label>
+              <label className="project-form-field">
+                <span>직책</span>
+                <input
+                  className="input"
+                  value={memberEditDraft.position}
+                  onChange={(event) => setMemberEditField('position', event.target.value)}
+                  placeholder="직책"
+                />
+              </label>
+              <label className="project-form-field project-form-field-wide">
+                <span>이메일</span>
+                <input
+                  className="input"
+                  type="email"
+                  value={memberEditDraft.email}
+                  onChange={(event) => setMemberEditField('email', event.target.value)}
+                  placeholder="name@example.com"
+                />
+              </label>
+            </div>
+
+            <div className="project-form-actions">
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={closeProjectMemberEdit}
+                disabled={memberEditSaving}
+              >
+                취소
+              </button>
+              <button
+                type="submit"
+                className="btn btn-primary"
+                disabled={!memberEditDraft.name.trim() || memberEditSaving}
+              >
+                {memberEditSaving ? '저장 중...' : '저장'}
+              </button>
+            </div>
+          </form>
         )}
       </Modal>
     </div>

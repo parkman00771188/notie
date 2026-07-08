@@ -3,11 +3,13 @@
 main.py에서 prefix="/api/settings"로 include된다.
 
 계약 (SPEC.md):
-- GET ""  → {gemini_api_key_set, gemini_key_preview, gemini_model, ollama_available, summary_prompt}
+- GET ""  → {gemini_api_key_set, gemini_key_preview, gemini_model, ollama_available,
+  summary_prompt, manual_summary_prompt}
   (preview는 키 마지막 4자 "...abcd", gemini_model은 유효값(DB → config 순),
    ollama_available은 /api/tags 1.5초 체크,
    summary_prompt는 사용자 지정 요약 프롬프트 — 없으면 "")
-- PUT ""  {gemini_api_key?: str, summary_prompt?: str, gemini_model?: str}
+- PUT ""  {gemini_api_key?: str, summary_prompt?: str, manual_summary_prompt?: str,
+  gemini_model?: str}
   → 값 upsert(공백 trim), 빈 문자열이면 삭제 → GET과 동일 응답
 - POST "/test-gemini" → 등록된 키로 generateContent 미니 호출 → {ok: bool, message: str}
 - GET "/gemini-models" → 저장된 키로 GET {GEMINI_BASE_URL}/models?key=...&pageSize=50 (timeout 10s),
@@ -27,12 +29,14 @@ router = APIRouter()
 GEMINI_KEY_SETTING = "gemini_api_key"
 GEMINI_MODEL_SETTING = "gemini_model"
 SUMMARY_PROMPT_SETTING = "summary_prompt"
+MANUAL_SUMMARY_PROMPT_SETTING = "manual_summary_prompt"
 STT_ENGINE_SETTING = "stt_engine"
 
 
 class SettingsUpdate(BaseModel):
     gemini_api_key: str | None = None
     summary_prompt: str | None = None
+    manual_summary_prompt: str | None = None
     gemini_model: str | None = None
     stt_engine: str | None = None
 
@@ -48,13 +52,13 @@ def _check_ollama_available() -> bool:
         return False
 
 
-def _get_summary_prompt() -> str:
+def _get_setting(key: str) -> str:
     """app_settings에서 사용자 지정 요약 프롬프트 조회 — 없으면 ""."""
     conn = db.get_conn()
     try:
         row = conn.execute(
             "SELECT value FROM app_settings WHERE key = ?",
-            (SUMMARY_PROMPT_SETTING,),
+            (key,),
         ).fetchone()
     finally:
         conn.close()
@@ -71,7 +75,8 @@ def _settings_response() -> dict:
         "gemini_key_preview": f"...{key[-4:]}" if key else None,
         "gemini_model": summarizer.get_gemini_model(),
         "ollama_available": _check_ollama_available(),
-        "summary_prompt": _get_summary_prompt(),
+        "summary_prompt": _get_setting(SUMMARY_PROMPT_SETTING),
+        "manual_summary_prompt": _get_setting(MANUAL_SUMMARY_PROMPT_SETTING),
         "stt_engine": gemini_stt.get_engine(),
     }
 
@@ -95,6 +100,7 @@ def update_settings(
     field_to_setting = {
         "gemini_api_key": GEMINI_KEY_SETTING,
         "summary_prompt": SUMMARY_PROMPT_SETTING,
+        "manual_summary_prompt": MANUAL_SUMMARY_PROMPT_SETTING,
         "gemini_model": GEMINI_MODEL_SETTING,
         "stt_engine": STT_ENGINE_SETTING,
     }

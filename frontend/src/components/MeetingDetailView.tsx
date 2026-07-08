@@ -13,7 +13,7 @@ import { ParticipantPicker } from './ParticipantPicker'
 import { StatusBadge } from './StatusBadge'
 import { TagPicker } from './TagPicker'
 import type { Bookmark, MeetingDetail, MeetingStatus, Participant, Tag, TranscriptSegment } from '../types'
-import { formatClock, formatKoreanDateTime } from '../utils'
+import { formatClock, formatKoreanDateTime, isValidDateInput } from '../utils'
 import './MeetingDetailView.css'
 
 type TabKey = 'minutes' | 'transcript' | 'notes'
@@ -87,6 +87,7 @@ export function MeetingDetailView({
   const [editingSegmentId, setEditingSegmentId] = useState<number | null>(null)
   const [segmentDraft, setSegmentDraft] = useState('')
   const [savingSegmentId, setSavingSegmentId] = useState<number | null>(null)
+  const [cancellingProcessing, setCancellingProcessing] = useState(false)
 
   // AI 회의록 내용 직접 편집 (리스트는 "한 줄에 하나" 텍스트로 편집)
   const [editingSummary, setEditingSummary] = useState(false)
@@ -278,9 +279,14 @@ export function MeetingDetailView({
   /** 회의 날짜/시간 변경 (날짜 + 24시간제 시/분 → ISO) */
   const commitDate = async () => {
     if (!meeting) return
+    const dateValue = dateDraft.trim()
+    if (!dateValue) return
+    if (!isValidDateInput(dateValue)) {
+      alert('날짜는 2026-07-08 형식으로 입력해주세요.')
+      return
+    }
     setEditingDate(false)
-    if (!dateDraft.trim()) return
-    const value = `${dateDraft}T${String(hourDraft).padStart(2, '0')}:${String(minuteDraft).padStart(2, '0')}`
+    const value = `${dateValue}T${String(hourDraft).padStart(2, '0')}:${String(minuteDraft).padStart(2, '0')}`
     if (value === (meeting.started_at || '').slice(0, 16)) return
     try {
       const updated = await api.updateMeeting(meeting.id, { started_at: value })
@@ -499,14 +505,19 @@ export function MeetingDetailView({
 
   const handleCancelProcessing = async () => {
     if (!meeting) return
+    const isSummaryCancel = meeting.status === 'summarizing'
+    const cancelTranscriptLabel =
+      !meeting.audio_filename && meeting.segments.length > 0 ? '직접 작성 내용' : '전체 스크립트'
     const ok = await confirm({
-      title: '변환을 취소할까요?',
-      message:
-        '현재 텍스트 변환을 멈추고 음성 파일만 임시저장합니다. 나중에 AI 요약을 누르면 텍스트 추출부터 다시 시도할 수 있어요.',
-      confirmLabel: '변환 취소',
+      title: isSummaryCancel ? 'AI 요약을 취소할까요?' : '변환을 취소할까요?',
+      message: isSummaryCancel
+        ? `현재 진행 중인 AI 요약을 멈춥니다. ${cancelTranscriptLabel}과 기존 회의 내용은 유지되고, 나중에 다시 AI 요약을 실행할 수 있어요.`
+        : '현재 텍스트 변환을 멈추고 음성 파일만 임시저장합니다. 나중에 AI 요약을 누르면 텍스트 추출부터 다시 시도할 수 있어요.',
+      confirmLabel: isSummaryCancel ? '요약 취소' : '변환 취소',
       danger: true,
     })
     if (!ok) return
+    setCancellingProcessing(true)
     try {
       const result = await api.cancelProcessing(meeting.id)
       setMeeting((prev) =>
@@ -515,15 +526,16 @@ export function MeetingDetailView({
               ...prev,
               status: 'failed',
               error_message: result.message,
-              segments: [],
-              summary: null,
+              ...(isSummaryCancel ? {} : { segments: [], summary: null }),
             }
           : prev,
       )
       notifyChanged()
     } catch (e) {
-      alert(e instanceof Error ? e.message : '변환 취소에 실패했어요')
+      alert(e instanceof Error ? e.message : '처리 취소에 실패했어요')
       api.getMeeting(meetingId).then(setMeeting).catch(() => {})
+    } finally {
+      setCancellingProcessing(false)
     }
   }
 
@@ -723,17 +735,21 @@ export function MeetingDetailView({
   const progressMessage = PROGRESS_MESSAGE[meeting.status]
   const isRecordingMeeting = meeting.status === 'recording'
   const isScheduledMeeting = meeting.status === 'scheduled'
+  const isManualMeeting = !meeting.audio_filename && meeting.segments.length > 0
+  const manualSegment = isManualMeeting ? meeting.segments[0] : null
+  const transcriptLabel = isManualMeeting ? '직접 작성 내용' : '전체 스크립트'
   const shouldBlockAudioPlayback = audioPlaybackDisabled || isRecordingMeeting
   const isLocked = meeting.locked
   const isOwner = user?.id === meeting.user_id
   const lockedActionMessage = '잠금 상태에서는 AI 회의록 수정/재생성과 삭제를 할 수 없어요.'
-  const resummarizeHint = '메모와 전체 스크립트를 기준으로 다시 요약합니다'
+  const resummarizeHint = isManualMeeting
+    ? '메모와 직접 작성 내용을 기준으로 다시 요약합니다'
+    : '메모와 전체 스크립트를 기준으로 다시 요약합니다'
   const temporaryAudioFailure = isTemporaryAudioFailure(meeting)
   const processingEstimate = estimateProcessingTime(meeting.duration_sec)
   const canCancelProcessing =
     isOwner &&
-    Boolean(meeting.audio_filename) &&
-    (meeting.status === 'queued' || meeting.status === 'transcribing')
+    (meeting.status === 'queued' || meeting.status === 'transcribing' || meeting.status === 'summarizing')
   const canResummarize =
     temporaryAudioFailure ||
     (meeting.segments.length > 0 && (meeting.status === 'done' || meeting.status === 'failed'))
@@ -844,9 +860,13 @@ export function MeetingDetailView({
           {editingDate ? (
             <span className="detail-date-edit">
               <input
-                type="date"
+                type="text"
                 className="input detail-date-input"
                 value={dateDraft}
+                inputMode="numeric"
+                placeholder="YYYY-MM-DD"
+                pattern="[0-9]{4}-[0-9]{2}-[0-9]{2}"
+                maxLength={10}
                 autoFocus
                 onChange={(e) => setDateDraft(e.target.value)}
               />
@@ -934,9 +954,14 @@ export function MeetingDetailView({
             <button
               type="button"
               className="btn btn-ghost progress-cancel-btn"
+              disabled={cancellingProcessing}
               onClick={() => void handleCancelProcessing()}
             >
-              변환 취소
+              {cancellingProcessing
+                ? '취소 중...'
+                : meeting.status === 'summarizing'
+                  ? 'AI 요약 취소'
+                  : '변환 취소'}
             </button>
           )}
         </div>
@@ -997,7 +1022,7 @@ export function MeetingDetailView({
             className={`detail-tab${tab === t.key ? ' active' : ''}`}
             onClick={() => setTab(t.key)}
           >
-            {t.label}
+            {t.key === 'transcript' ? transcriptLabel : t.label}
             {t.key === 'notes' && meeting.bookmarks.length > 0 && (
               <span className="tab-count">{meeting.bookmarks.length}</span>
             )}
@@ -1234,9 +1259,63 @@ export function MeetingDetailView({
             </div>
           ))}
 
-        {/* 전체 스크립트 */}
+        {/* 전체 스크립트 / 직접 작성 내용 */}
         {tab === 'transcript' &&
-          (meeting.segments.length > 0 ? (
+          (manualSegment ? (
+            <div className={`manual-content-panel${editingSegmentId === manualSegment.id ? ' editing' : ''}`}>
+              <div className="manual-content-head">
+                <div>
+                  <h3>직접 작성 내용</h3>
+                  <p>직접 입력한 회의 원문입니다. 수정 후 AI 요약을 다시 실행하면 변경 내용이 반영돼요.</p>
+                </div>
+                {editingSegmentId !== manualSegment.id && (
+                  <button
+                    type="button"
+                    className="btn btn-soft"
+                    onClick={() => beginEditSegment(manualSegment)}
+                  >
+                    ✎ 수정
+                  </button>
+                )}
+              </div>
+
+              {editingSegmentId === manualSegment.id ? (
+                <div className="manual-content-editor">
+                  <textarea
+                    className="input manual-content-textarea"
+                    value={segmentDraft}
+                    autoFocus
+                    onChange={(e) => setSegmentDraft(e.target.value)}
+                    onKeyDown={(e) => onSegmentEditorKeyDown(e, manualSegment)}
+                  />
+                  <div className="manual-content-actions">
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      onClick={cancelSegmentEdit}
+                      disabled={savingSegmentId === manualSegment.id}
+                    >
+                      취소
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      onClick={() => void commitSegment(manualSegment)}
+                      disabled={
+                        savingSegmentId === manualSegment.id ||
+                        segmentDraft.trim().length === 0 ||
+                        segmentDraft.trim() === manualSegment.text
+                      }
+                    >
+                      {savingSegmentId === manualSegment.id ? '저장 중...' : '저장'}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <p className="manual-content-text">{manualSegment.text}</p>
+              )}
+            </div>
+          ) : meeting.segments.length > 0 ? (
             <div className="transcript-list">
               {meeting.segments.map((seg) => {
                 const isEditingSegment = editingSegmentId === seg.id
@@ -1305,9 +1384,9 @@ export function MeetingDetailView({
               <div className="emoji">🗣️</div>
               <p>
                 {isScheduledMeeting
-                  ? '회의가 진행되면 전체 스크립트가 준비됩니다.'
+                  ? `회의가 진행되면 ${transcriptLabel}이 준비됩니다.`
                   : isRecordingMeeting
-                  ? '녹음 종료 후 전체 스크립트가 준비됩니다.'
+                  ? `녹음 종료 후 ${transcriptLabel}이 준비됩니다.`
                   : (progressMessage ?? '인식된 음성이 없어요.')}
               </p>
             </div>

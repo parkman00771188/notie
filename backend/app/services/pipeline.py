@@ -225,8 +225,12 @@ def _summarize_and_store(conn, meeting_id: int) -> None:
         )
     ]
 
-    summary = summarizer.summarize(meeting, segments, bookmarks, participants)
+    prompt_kind = "manual" if not meeting.get("audio_filename") else "recording"
+    summary = summarizer.summarize(
+        meeting, segments, bookmarks, participants, prompt_kind=prompt_kind
+    )
 
+    _ensure_status(conn, meeting_id, "summarizing")
     with conn:
         conn.execute(
             "INSERT OR REPLACE INTO summaries"

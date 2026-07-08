@@ -46,8 +46,8 @@ export default function HomePage() {
   const totalCount = recordedList.length
   const doneCount = recordedList.filter((m) => m.status === 'done').length
   const totalSec = recordedList.reduce((acc, m) => acc + (m.duration_sec ?? 0), 0)
-  const recentShared = recordedList.filter((m) => m.is_shared).slice(0, 6)
-  const recentMine = recordedList.filter((m) => m.user_id === user?.id).slice(0, 6)
+  const recentShared = recordedList.filter((m) => m.is_shared).slice(0, 5)
+  const recentMine = recordedList.filter((m) => m.user_id === user?.id).slice(0, 5)
 
   const tagColor = (name: string) => tags.find((t) => t.name === name)?.color ?? '#16a34a'
 
@@ -63,6 +63,7 @@ export default function HomePage() {
       }}
     >
       <div className="meeting-card-top">
+        {m.is_shared && <span className="home-shared-pill">공유</span>}
         {m.tag &&
           (() => {
             const c = tagColor(m.tag)
@@ -87,7 +88,6 @@ export default function HomePage() {
             🔒
           </span>
         )}
-        {m.is_shared && <span className="home-shared-pill">공유</span>}
         <StatusBadge status={m.status} />
       </div>
       <div className="meeting-card-meta">

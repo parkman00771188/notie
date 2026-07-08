@@ -650,7 +650,7 @@ export default function CalendarPage() {
                   className="day-planner-add-row"
                   onClick={() => {
                     setSelectedDay(null)
-                    navigate('/record')
+                    navigate(`/record?started_at=${encodeURIComponent(`${inputDate(selectedDay)}T09:00`)}`)
                   }}
                 >
                   + 회의 기록 추가
@@ -746,29 +746,6 @@ export default function CalendarPage() {
               <span className="muted">{scheduleParticipants.length}명 선택됨</span>
             </div>
           )}
-
-          <div className="schedule-preview">
-            <div className="schedule-preview-label">캘린더 표시</div>
-            <span
-              className="calendar-event-pill schedule-preview-pill"
-              style={{
-                color:
-                  scheduleTag == null
-                    ? FALLBACK_EVENT_COLOR
-                    : tags.find((t) => t.name === scheduleTag)?.color ?? FALLBACK_EVENT_COLOR,
-                borderColor:
-                  scheduleTag == null
-                    ? FALLBACK_EVENT_COLOR
-                    : tags.find((t) => t.name === scheduleTag)?.color ?? FALLBACK_EVENT_COLOR,
-              }}
-            >
-              {scheduleTime && <span className="calendar-event-time">{scheduleTime}</span>}
-              <span className="calendar-event-title">
-                {scheduleTag ? `#${scheduleTag} ` : ''}
-                {scheduleTitle.trim() || '새 회의 일정'}
-              </span>
-            </span>
-          </div>
 
           <div className="schedule-actions">
             <button

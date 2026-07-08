@@ -1,20 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { KeyboardEvent, ReactNode } from 'react'
-import { useNavigate } from 'react-router-dom'
+import type { ChangeEvent, DragEvent, KeyboardEvent, ReactNode } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { api } from '../api'
 import { AvatarStack } from '../components/Avatar'
 import { useConfirm } from '../components/confirm'
 import { ParticipantPicker } from '../components/ParticipantPicker'
 import { RecentMeetingsPanel } from '../components/RecentMeetingsPanel'
 import { TagPicker } from '../components/TagPicker'
-import { UploadModal } from '../components/UploadModal'
 import { Waveform } from '../components/Waveform'
 import { useRecorder } from '../hooks/useRecorder'
 import type { Bookmark, Participant } from '../types'
-import { formatClock, formatKoreanDateTime } from '../utils'
+import { formatClock, formatKoreanDateTime, isValidDateInput } from '../utils'
 import './RecordPage.css'
 
 const DEFAULT_TITLE = '새 회의 기록'
+const ACCEPT_AUDIO = 'audio/*,.mp3,.m4a,.wav,.webm,.ogg,.mp4,.aac,.flac'
+const AUDIO_EXTENSIONS = ['.mp3', '.m4a', '.wav', '.webm', '.ogg', '.mp4', '.aac', '.flac']
 
 function localDateTimeString(date = new Date()): string {
   const pad = (value: number) => String(value).padStart(2, '0')
@@ -23,12 +24,50 @@ function localDateTimeString(date = new Date()): string {
   )}`
 }
 
+function startedAtFromSearch(search: string): string | null {
+  const value = new URLSearchParams(search).get('started_at')
+  if (!value || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value)) return null
+
+  const dateValue = value.slice(0, 10)
+  const hourValue = Number(value.slice(11, 13))
+  const minuteValue = Number(value.slice(14, 16))
+  if (!isValidDateInput(dateValue) || hourValue < 0 || hourValue > 23 || minuteValue < 0 || minuteValue > 59) {
+    return null
+  }
+  return value
+}
+
+function isAudioFile(file: File): boolean {
+  if (file.type.startsWith('audio/')) return true
+  const lower = file.name.toLowerCase()
+  return AUDIO_EXTENSIONS.some((ext) => lower.endsWith(ext))
+}
+
+function readAudioDuration(file: File): Promise<number> {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file)
+    const audio = new Audio()
+    const done = (sec: number) => {
+      URL.revokeObjectURL(url)
+      resolve(sec)
+    }
+    audio.preload = 'metadata'
+    audio.onloadedmetadata = () => {
+      const duration = audio.duration
+      done(Number.isFinite(duration) && duration > 0 ? duration : 0)
+    }
+    audio.onerror = () => done(0)
+    audio.src = url
+  })
+}
+
 function sortByTime(list: Bookmark[]): Bookmark[] {
   return [...list].sort((a, b) => a.time_sec - b.time_sec)
 }
 
 export default function RecordPage() {
   const navigate = useNavigate()
+  const location = useLocation()
   const recorder = useRecorder()
   const confirm = useConfirm()
 
@@ -39,8 +78,7 @@ export default function RecordPage() {
   const [tag, setTag] = useState<string | null>(null)
   const [participants, setParticipants] = useState<Participant[]>([])
   const [pickerOpen, setPickerOpen] = useState(false)
-  const [uploadOpen, setUploadOpen] = useState(false)
-  const [startedAt, setStartedAt] = useState(() => localDateTimeString())
+  const [startedAt, setStartedAt] = useState(() => startedAtFromSearch(location.search) ?? localDateTimeString())
   const [editingDate, setEditingDate] = useState(false)
   const [dateDraft, setDateDraft] = useState('')
   const [hourDraft, setHourDraft] = useState(9)
@@ -52,6 +90,11 @@ export default function RecordPage() {
   const [memoText, setMemoText] = useState('')
   const [withTime, setWithTime] = useState(true)
   const memoAreaRef = useRef<HTMLTextAreaElement>(null)
+  const uploadInputRef = useRef<HTMLInputElement>(null)
+  const [recordMode, setRecordMode] = useState<'idle' | 'manual'>('idle')
+  const [manualText, setManualText] = useState('')
+  const [manualSubmitting, setManualSubmitting] = useState(false)
+  const [uploadDragActive, setUploadDragActive] = useState(false)
   const [starting, setStarting] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
@@ -63,17 +106,18 @@ export default function RecordPage() {
 
   const isLive = recorder.status === 'recording' || recorder.status === 'paused'
   const canMemo = isLive && meetingId != null
+  const processing = uploading || manualSubmitting
 
   // 녹음/업로드 중 페이지 이탈 경고
   useEffect(() => {
-    if (!isLive && !uploading) return
+    if (!isLive && !processing) return
     const handler = (e: BeforeUnloadEvent) => {
       e.preventDefault()
       e.returnValue = ''
     }
     window.addEventListener('beforeunload', handler)
     return () => window.removeEventListener('beforeunload', handler)
-  }, [isLive, uploading])
+  }, [isLive, processing])
 
   // ⋯ 메뉴 바깥 클릭 시 닫기
   useEffect(() => {
@@ -148,9 +192,14 @@ export default function RecordPage() {
   }
 
   const commitDate = async () => {
+    const dateValue = dateDraft.trim()
+    if (!dateValue) return
+    if (!isValidDateInput(dateValue)) {
+      alert('날짜는 2026-07-08 형식으로 입력해주세요.')
+      return
+    }
     setEditingDate(false)
-    if (!dateDraft.trim()) return
-    const next = `${dateDraft}T${String(hourDraft).padStart(2, '0')}:${String(minuteDraft).padStart(2, '0')}`
+    const next = `${dateValue}T${String(hourDraft).padStart(2, '0')}:${String(minuteDraft).padStart(2, '0')}`
     if (next === startedAt.slice(0, 16)) return
     setStartedAt(next)
     if (meetingId == null) return
@@ -164,8 +213,17 @@ export default function RecordPage() {
   }
 
   // ---- 녹음 시작/종료 ----
+  const createMeetingFromCurrentMeta = async () =>
+    api.createMeeting({
+      title: title.trim() || DEFAULT_TITLE,
+      tag: tag ?? undefined,
+      started_at: startedAt,
+      participant_ids: participants.map((p) => p.id),
+    })
+
   const handleStart = async () => {
     if (starting || isLive) return
+    setRecordMode('idle')
     setStarting(true)
     try {
       await recorder.start()
@@ -175,12 +233,7 @@ export default function RecordPage() {
       return
     }
     try {
-      const meeting = await api.createMeeting({
-        title: title.trim() || DEFAULT_TITLE,
-        tag: tag ?? undefined,
-        started_at: startedAt,
-        participant_ids: participants.map((p) => p.id),
-      })
+      const meeting = await createMeetingFromCurrentMeta()
       setMeetingId(meeting.id)
       setStartedAt(meeting.started_at)
       setBookmarks([])
@@ -222,6 +275,74 @@ export default function RecordPage() {
       return
     }
     await uploadAndGo(result.blob, result.durationSec)
+  }
+
+  const handleUploadFile = async (file: File) => {
+    if (starting || uploading || manualSubmitting) return
+    if (!isAudioFile(file)) {
+      alert('오디오 파일만 업로드할 수 있어요. (mp3, m4a, wav, webm, ogg, mp4, aac, flac)')
+      return
+    }
+    setUploading(true)
+    let createdMeetingId: number | null = null
+    try {
+      const durationSec = await readAudioDuration(file)
+      const meeting = await createMeetingFromCurrentMeta()
+      createdMeetingId = meeting.id
+      setMeetingId(meeting.id)
+      setStartedAt(meeting.started_at)
+      setRefreshKey((k) => k + 1)
+      await api.uploadAudio(meeting.id, file, durationSec)
+      navigate(`/meetings/${meeting.id}`)
+    } catch (err) {
+      if (createdMeetingId != null) void api.deleteMeeting(createdMeetingId).catch(() => {})
+      alert(err instanceof Error ? err.message : '오디오 파일 업로드에 실패했어요')
+      setUploading(false)
+    }
+  }
+
+  const handleUploadInputChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) void handleUploadFile(file)
+    e.target.value = ''
+  }
+
+  const handleUploadDragOver = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    if (!uploadDragActive) setUploadDragActive(true)
+  }
+
+  const handleUploadDragLeave = (e: DragEvent<HTMLDivElement>) => {
+    if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+      setUploadDragActive(false)
+    }
+  }
+
+  const handleUploadDrop = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    setUploadDragActive(false)
+    const file = e.dataTransfer.files?.[0]
+    if (file) void handleUploadFile(file)
+  }
+
+  const handleManualSubmit = async () => {
+    const text = manualText.trim()
+    if (!text || starting || uploading || manualSubmitting) return
+    setManualSubmitting(true)
+    let createdMeetingId: number | null = null
+    try {
+      const meeting = await createMeetingFromCurrentMeta()
+      createdMeetingId = meeting.id
+      setMeetingId(meeting.id)
+      setStartedAt(meeting.started_at)
+      await api.submitManualTranscript(meeting.id, { text, duration_sec: 0 })
+      setRefreshKey((k) => k + 1)
+      navigate(`/meetings/${meeting.id}`)
+    } catch (err) {
+      if (createdMeetingId != null) void api.deleteMeeting(createdMeetingId).catch(() => {})
+      alert(err instanceof Error ? err.message : '직접 작성한 회의 내용을 요약하지 못했어요')
+      setManualSubmitting(false)
+    }
   }
 
   // ---- 북마크(메모/마크) ----
@@ -318,7 +439,7 @@ export default function RecordPage() {
   const timedBookmarks = useMemo(() => bookmarks.filter((b) => b.kind !== 'note'), [bookmarks])
   const noteBookmarks = useMemo(() => bookmarks.filter((b) => b.kind === 'note'), [bookmarks])
 
-  const showRecorder = isLive || uploading
+  const showRecorder = isLive || (uploading && recorder.status !== 'idle')
 
   // 메모/마크/일반 메모 공통 행 렌더 (수정/삭제 UX 동일)
   const renderBookmarkItem = (b: Bookmark): ReactNode => (
@@ -418,9 +539,13 @@ export default function RecordPage() {
             {editingDate ? (
               <span className="record-date-edit">
                 <input
-                  type="date"
+                  type="text"
                   className="input record-date-input"
                   value={dateDraft}
+                  inputMode="numeric"
+                  placeholder="YYYY-MM-DD"
+                  pattern="[0-9]{4}-[0-9]{2}-[0-9]{2}"
+                  maxLength={10}
                   onChange={(e) => setDateDraft(e.target.value)}
                   autoFocus
                 />
@@ -484,28 +609,113 @@ export default function RecordPage() {
             {/* ---- 레코더 카드 ---- */}
             <section className="card recorder-card">
               {!showRecorder ? (
-                <div className="recorder-idle">
-                  <div className="recorder-idle-emoji">🎙️</div>
-                  <p className="recorder-idle-hint">
-                    녹음을 시작하면 회의가 만들어지고, 메모는 실시간으로 저장돼요.
-                  </p>
-                  <button
-                    type="button"
-                    className="btn btn-primary btn-lg record-start-btn"
-                    onClick={() => void handleStart()}
-                    disabled={starting}
-                  >
-                    <span className="record-start-dot" /> 녹음 시작
-                  </button>
-                  <button
-                    type="button"
-                    className="upload-entry-link"
-                    onClick={() => setUploadOpen(true)}
-                    disabled={starting}
-                  >
-                    또는 오디오 파일 업로드
-                  </button>
-                </div>
+                recordMode === 'manual' ? (
+                  <div className="manual-writing-panel">
+                    <div className="manual-writing-head">
+                      <span className="manual-writing-icon" aria-hidden="true">
+                        📝
+                      </span>
+                      <div>
+                        <h2>회의 내용 입력</h2>
+                        <p>녹음 없이 회의 내용을 직접 작성하면 바로 AI 요약을 시작할 수 있어요.</p>
+                      </div>
+                    </div>
+                    <textarea
+                      className="input manual-writing-textarea"
+                      value={manualText}
+                      onChange={(e) => setManualText(e.target.value)}
+                      placeholder={'여기에 회의 내용을 직접 작성하세요.\n결정사항, 할 일, 논의 내용을 자유롭게 적어도 됩니다.'}
+                      spellCheck={false}
+                      autoFocus
+                    />
+                    <div className="manual-writing-actions">
+                      <button
+                        type="button"
+                        className="btn btn-ghost"
+                        onClick={() => {
+                          setRecordMode('idle')
+                          setManualText('')
+                        }}
+                        disabled={manualSubmitting}
+                      >
+                        돌아가기
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-primary"
+                        onClick={() => void handleManualSubmit()}
+                        disabled={!manualText.trim() || manualSubmitting}
+                      >
+                        {manualSubmitting ? '요약 시작 중...' : 'AI 요약 시작'}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="recorder-idle">
+                    <div className="record-start-options">
+                      <article className="record-start-option record-start-option-audio">
+                        <div className="record-start-option-icon" aria-hidden="true">
+                          🎙️
+                        </div>
+                        <h2>녹음으로 회의 시작</h2>
+                        <p>실시간 녹음과 메모를 함께 기록합니다.</p>
+                        <button
+                          type="button"
+                          className="btn btn-primary btn-lg record-start-btn"
+                          onClick={() => void handleStart()}
+                          disabled={starting}
+                        >
+                          <span className="record-start-dot" /> 녹음 시작
+                        </button>
+                      </article>
+
+                      <article className="record-start-option record-start-option-manual">
+                        <div className="record-start-option-icon manual" aria-hidden="true">
+                          📝
+                        </div>
+                        <h2>직접 작성으로 시작</h2>
+                        <p>녹음 없이 회의 내용만 직접 작성합니다.</p>
+                        <button
+                          type="button"
+                          className="btn btn-lg manual-start-btn"
+                          onClick={() => setRecordMode('manual')}
+                          disabled={starting}
+                        >
+                          바로 작성하기
+                        </button>
+                      </article>
+                    </div>
+
+                    <div
+                      className={`record-upload-strip${uploadDragActive ? ' drag-over' : ''}`}
+                      onDragOver={handleUploadDragOver}
+                      onDragLeave={handleUploadDragLeave}
+                      onDrop={handleUploadDrop}
+                    >
+                      <span className="record-upload-icon" aria-hidden="true">
+                        ☁
+                      </span>
+                      <span className="record-upload-text">이미 녹음한 파일이 있나요?</span>
+                      <button
+                        type="button"
+                        className="record-upload-link"
+                        onClick={() => uploadInputRef.current?.click()}
+                        disabled={starting || uploading}
+                      >
+                        오디오 파일 업로드
+                      </button>
+                      <input
+                        ref={uploadInputRef}
+                        type="file"
+                        className="record-upload-input"
+                        accept={ACCEPT_AUDIO}
+                        onChange={handleUploadInputChange}
+                        aria-hidden="true"
+                        tabIndex={-1}
+                      />
+                    </div>
+                  </div>
+                )
               ) : (
                 <>
                   <div
@@ -562,6 +772,7 @@ export default function RecordPage() {
             </section>
 
             {/* ---- 메모 카드 ---- */}
+            {recordMode !== 'manual' && (
             <section className="card memo-card">
               <div className="memo-header">
                 <h2 className="memo-title">메모</h2>
@@ -618,6 +829,7 @@ export default function RecordPage() {
                 </>
               )}
             </section>
+            )}
           </div>
 
           {/* ---- 우측 최근 회의 패널 ---- */}
@@ -634,12 +846,14 @@ export default function RecordPage() {
         onChange={handleParticipantsChange}
       />
 
-      <UploadModal open={uploadOpen} onClose={() => setUploadOpen(false)} />
-
-      {uploading && (
+      {processing && (
         <div className="upload-overlay">
           <span className="spinner" />
-          <p>녹음을 업로드하고 있어요...</p>
+          <p>
+            {manualSubmitting
+              ? '작성한 회의 내용으로 AI 요약을 시작하고 있어요...'
+              : '음성 파일을 업로드하고 분석을 시작하고 있어요...'}
+          </p>
         </div>
       )}
     </div>

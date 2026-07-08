@@ -93,6 +93,11 @@ class TranscriptSegmentUpdate(BaseModel):
     text: str
 
 
+class ManualTranscriptCreate(BaseModel):
+    text: str
+    duration_sec: Optional[float] = None
+
+
 def payload_fields(model: BaseModel) -> dict:
     """요청 본문에 실제로 포함된 필드만 dict로 (pydantic v1/v2 호환)."""
     if hasattr(model, "model_dump"):
@@ -414,7 +419,7 @@ def update_transcript_segment(
     text = payload.text.strip()
     if not text:
         raise HTTPException(status_code=400, detail="스크립트 내용을 입력해주세요")
-    if len(text) > 10000:
+    if len(text) > 200000:
         raise HTTPException(status_code=400, detail="스크립트 내용이 너무 깁니다")
 
     with closing(db.get_conn()) as conn:
@@ -527,6 +532,50 @@ def upload_audio(
         result = serialize_meeting(conn, row)
 
     pipeline.enqueue(meeting_id)
+    return result
+
+
+@router.post("/{meeting_id}/manual-transcript")
+def submit_manual_transcript(
+    meeting_id: int,
+    payload: ManualTranscriptCreate,
+    user: dict = Depends(get_current_user),
+) -> dict:
+    """직접 작성한 회의 내용을 스크립트로 저장하고 STT 없이 요약만 실행한다."""
+    text = payload.text.strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="회의 내용을 입력해주세요")
+    if len(text) > 200000:
+        raise HTTPException(status_code=400, detail="회의 내용이 너무 깁니다")
+
+    duration_sec = max(float(payload.duration_sec or 0), 0.0)
+    with closing(db.get_conn()) as conn:
+        row = get_owned_meeting(conn, meeting_id, user["id"])
+        ensure_unlocked(row, "잠긴 회의는 직접 작성 내용을 요약할 수 없어요. 잠금을 해제한 뒤 다시 시도해주세요.")
+        if row["audio_filename"]:
+            raise HTTPException(status_code=400, detail="이미 음성 파일이 있는 회의입니다")
+        with conn:
+            conn.execute("DELETE FROM transcript_segments WHERE meeting_id = ?", (meeting_id,))
+            conn.execute("DELETE FROM summaries WHERE meeting_id = ?", (meeting_id,))
+            conn.execute(
+                """
+                INSERT INTO transcript_segments (meeting_id, start_sec, end_sec, text)
+                VALUES (?, 0, ?, ?)
+                """,
+                (meeting_id, duration_sec, text),
+            )
+            conn.execute(
+                """
+                UPDATE meetings
+                SET duration_sec = ?, status = 'summarizing', error_message = NULL
+                WHERE id = ?
+                """,
+                (duration_sec, meeting_id),
+            )
+        row = get_owned_meeting(conn, meeting_id, user["id"])
+        result = serialize_meeting(conn, row)
+
+    pipeline.enqueue_summary(meeting_id)
     return result
 
 
@@ -782,28 +831,37 @@ def resummarize(meeting_id: int, user: dict = Depends(get_current_user)) -> dict
 
 @router.post("/{meeting_id}/cancel-processing")
 def cancel_processing(meeting_id: int, user: dict = Depends(get_current_user)) -> dict:
-    """STT 변환 대기/진행 중인 회의를 취소하고 음성 파일은 임시저장 상태로 남긴다."""
-    message = (
-        "변환이 취소되었습니다. 음성 파일은 임시저장되어 있어요. "
-        "AI 요약을 누르면 텍스트 추출부터 다시 시도할 수 있습니다."
-    )
+    """STT 변환 또는 AI 요약을 취소한다."""
     with closing(db.get_conn()) as conn:
         row = get_owned_meeting(conn, meeting_id, user["id"])
-        if not row["audio_filename"]:
+        status = row["status"]
+        if status not in ("queued", "transcribing", "summarizing"):
+            raise HTTPException(status_code=400, detail="취소할 수 있는 처리 작업이 없습니다")
+
+        is_summary_cancel = status == "summarizing"
+        if not is_summary_cancel and not row["audio_filename"]:
             raise HTTPException(status_code=400, detail="임시저장할 음성 파일이 없습니다")
-        if row["status"] not in ("queued", "transcribing"):
-            raise HTTPException(status_code=400, detail="취소할 수 있는 변환 작업이 없습니다")
+
+        message = (
+            "AI 요약이 취소되었습니다. 전체 스크립트는 유지되어 있어요. "
+            "필요하면 AI 요약을 다시 진행할 수 있습니다."
+            if is_summary_cancel
+            else (
+                "변환이 취소되었습니다. 음성 파일은 임시저장되어 있어요. "
+                "AI 요약을 누르면 텍스트 추출부터 다시 시도할 수 있습니다."
+            )
+        )
 
         with conn:
             cur = conn.execute(
                 """
                 UPDATE meetings
                 SET status = 'failed', error_message = ?
-                WHERE id = ? AND status IN ('queued', 'transcribing')
+                WHERE id = ? AND status = ?
                 """,
-                (message, meeting_id),
+                (message, meeting_id, status),
             )
-            if cur.rowcount > 0:
+            if cur.rowcount > 0 and not is_summary_cancel:
                 conn.execute("DELETE FROM transcript_segments WHERE meeting_id = ?", (meeting_id,))
                 conn.execute("DELETE FROM summaries WHERE meeting_id = ?", (meeting_id,))
         if cur.rowcount == 0:

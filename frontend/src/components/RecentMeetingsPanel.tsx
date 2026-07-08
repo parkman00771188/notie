@@ -78,7 +78,7 @@ export function RecentMeetingsPanel({
     () => meetings.filter((meeting) => meeting.status !== 'scheduled'),
     [meetings],
   )
-  const recent = recordedMeetings.slice(0, limit)
+  const recent = recordedMeetings.slice(0, Math.min(limit, 5))
 
   const openAll = () => {
     setTagFilter('all')
@@ -152,6 +152,7 @@ export function RecentMeetingsPanel({
     return (
       <button key={m.id} type="button" className="rmm-row" onClick={() => setDetailId(m.id)}>
         <span className="rmm-row-title" title={m.title}>
+          {m.is_shared && <span className="rmm-row-shared">공유</span>}
           {m.tag && (
             <span
               className="tag-pill rmm-row-tag"
@@ -204,6 +205,7 @@ export function RecentMeetingsPanel({
               >
                 <span className="recent-item-title">
                   <span className="recent-item-icon">📄</span>
+                  {m.is_shared && <span className="recent-item-shared">공유</span>}
                   {m.tag &&
                     (() => {
                       const c = tagColor(m.tag) ?? '#16a34a'

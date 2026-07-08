@@ -63,7 +63,7 @@
   gap: 16px;
   margin-top: 8px;
   color: var(--text-2);
-  font-size: 13.5px;
+  font-size: 14px;
 }
 
 .record-meta-item {
@@ -79,6 +79,9 @@
   padding: 0;
   color: var(--text-2);
   font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.1px;
   cursor: pointer;
 }
 
@@ -90,22 +93,31 @@
   display: inline-flex;
   align-items: center;
   flex-wrap: wrap;
+  flex: 0 1 auto;
   gap: 8px;
+  max-width: 100%;
 }
 
-.record-date-input {
-  width: 145px;
+.record-date-edit .record-date-input {
+  flex: 0 0 142px;
+  width: 142px !important;
+  min-width: 0;
+  max-width: 142px;
   padding: 7px 10px;
-  font-size: 13px;
+  font-size: 14px;
 }
 
-.record-time-select {
-  width: 78px;
+.record-date-edit .record-time-select {
+  flex: 0 0 74px;
+  width: 74px !important;
+  min-width: 0;
+  max-width: 74px;
   padding: 7px 10px;
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .record-date-save {
+  flex: 0 0 auto;
   min-height: 32px;
   padding: 6px 11px;
   border-radius: 10px;
@@ -183,23 +195,72 @@
 .recorder-idle {
   display: flex;
   flex-direction: column;
+  gap: 18px;
+  padding: 0;
+}
+
+.record-start-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.record-start-option {
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 14px;
-  padding: 40px 0 44px;
-}
-
-.recorder-idle-emoji {
-  font-size: 44px;
-  line-height: 1;
-}
-
-.recorder-idle-hint {
-  color: var(--text-3);
-  font-size: 14px;
+  min-height: 250px;
+  padding: 24px 22px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
   text-align: center;
 }
 
+.record-start-option-audio {
+  background: linear-gradient(180deg, rgba(37, 99, 235, 0.08), rgba(37, 99, 235, 0.02));
+}
+
+.record-start-option-manual {
+  background: linear-gradient(180deg, rgba(16, 185, 129, 0.1), rgba(16, 185, 129, 0.03));
+}
+
+.record-start-option-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 74px;
+  height: 74px;
+  margin-bottom: 18px;
+  border-radius: 50%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-card);
+  font-size: 38px;
+  line-height: 1;
+}
+
+.record-start-option-icon.manual {
+  background: #ecfdf5;
+  color: #0f766e;
+}
+
+.record-start-option h2 {
+  font-size: 19px;
+  font-weight: 800;
+  line-height: 1.35;
+  color: var(--text);
+}
+
+.record-start-option p {
+  margin: 9px 0 20px;
+  color: var(--text-3);
+  font-size: 14px;
+  text-align: center;
+  line-height: 1.55;
+}
+
 .record-start-btn {
+  margin-top: auto;
   padding: 16px 40px;
   font-size: 17px;
   border-radius: 14px;
@@ -213,6 +274,129 @@
   background: var(--red);
   box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.35);
   animation: rec-pulse 1.4s ease-in-out infinite;
+}
+
+.manual-start-btn {
+  margin-top: auto;
+  padding: 16px 40px;
+  border-radius: 14px;
+  background: #0fafa3;
+  color: #fff;
+  font-size: 17px;
+  font-weight: 800;
+}
+
+.manual-start-btn:hover:not(:disabled) {
+  background: #0d9488;
+}
+
+.record-upload-strip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 12px 18px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text-3);
+  transition:
+    border-color 0.15s,
+    background 0.15s,
+    color 0.15s;
+}
+
+.record-upload-strip.drag-over {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.record-upload-icon {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.record-upload-text {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.record-upload-link {
+  border: none;
+  background: transparent;
+  padding: 0;
+  color: var(--primary);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.record-upload-link:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.record-upload-link:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.record-upload-input {
+  display: none;
+}
+
+.manual-writing-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.manual-writing-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.manual-writing-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 58px;
+  height: 58px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #ecfdf5;
+  border: 1px solid #bbf7d0;
+  font-size: 30px;
+}
+
+.manual-writing-head h2 {
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.manual-writing-head p {
+  margin-top: 5px;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--text-3);
+}
+
+.manual-writing-textarea {
+  min-height: 280px;
+  padding: 18px;
+  resize: vertical;
+  font-size: 15px;
+  line-height: 1.7;
+}
+
+.manual-writing-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
 }
 
 /* 녹음 중 상태 배지 — 타이머 위 중앙의 작은 필 */
@@ -644,6 +828,10 @@
     font-size: 17px;
   }
 
+  .record-date-btn {
+    font-size: 17px;
+  }
+
   .record-meta-item {
     gap: 8px;
   }
@@ -670,28 +858,84 @@
   }
 
   .recorder-idle {
-    gap: 16px;
+    gap: 14px;
     padding: 14px 0 18px;
   }
 
-  .recorder-idle-emoji {
-    font-size: 42px;
+  .record-start-options {
+    grid-template-columns: 1fr;
+    gap: 12px;
   }
 
-  .recorder-idle-hint {
-    max-width: 280px;
+  .record-start-option {
+    min-height: auto;
+    padding: 20px 18px;
+  }
+
+  .record-start-option-icon {
+    width: 62px;
+    height: 62px;
+    margin-bottom: 14px;
+    font-size: 31px;
+  }
+
+  .record-start-option h2 {
+    font-size: 18px;
+  }
+
+  .record-start-option p {
+    margin: 7px 0 16px;
     font-size: 16px;
     line-height: 1.55;
   }
 
-  .record-start-btn {
+  .record-start-btn,
+  .manual-start-btn {
     width: min(100%, 300px);
     padding: 16px 24px;
     font-size: 18px;
   }
 
-  .upload-entry-link {
+  .record-upload-strip {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 13px 14px;
+  }
+
+  .record-upload-text,
+  .record-upload-link {
     font-size: 16px;
+  }
+
+  .manual-writing-head {
+    align-items: flex-start;
+  }
+
+  .manual-writing-icon {
+    width: 50px;
+    height: 50px;
+    font-size: 26px;
+  }
+
+  .manual-writing-head h2 {
+    font-size: 20px;
+  }
+
+  .manual-writing-head p {
+    font-size: 15px;
+  }
+
+  .manual-writing-textarea {
+    min-height: 240px;
+    font-size: 16px;
+  }
+
+  .manual-writing-actions {
+    flex-wrap: wrap;
+  }
+
+  .manual-writing-actions .btn {
+    flex: 1 1 140px;
   }
 
   .recorder-timer {

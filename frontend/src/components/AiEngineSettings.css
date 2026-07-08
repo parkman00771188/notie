@@ -173,6 +173,19 @@
 }
 
 /* 요약 지시사항 (프롬프트) textarea */
+.settings-prompt-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.settings-prompt-field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 0;
+}
+
 .settings-prompt-textarea {
   display: block;
   min-height: 112px;
@@ -354,6 +367,10 @@
 
   .settings-model-row .btn {
     min-width: 92px;
+  }
+
+  .settings-prompt-grid {
+    grid-template-columns: 1fr;
   }
 
   .settings-note,

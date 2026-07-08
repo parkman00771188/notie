@@ -1043,35 +1043,6 @@ button.day-planner-card:hover,
   padding: 0 2px;
 }
 
-.schedule-preview {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 14px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--surface);
-}
-
-.schedule-preview-label {
-  flex-shrink: 0;
-  color: var(--text-3);
-  font-size: 12.5px;
-  font-weight: 800;
-}
-
-.schedule-preview-pill {
-  width: auto;
-  max-width: 100%;
-  cursor: default;
-  background: color-mix(in srgb, currentColor 8%, transparent);
-}
-
-.schedule-preview-pill:hover {
-  filter: none;
-  transform: none;
-}
-
 .schedule-actions {
   display: flex;
   justify-content: flex-end;
@@ -1484,8 +1455,7 @@ button.day-planner-card:hover,
     white-space: normal;
   }
 
-  .schedule-participants-head,
-  .schedule-preview {
+  .schedule-participants-head {
     align-items: stretch;
     flex-direction: column;
   }

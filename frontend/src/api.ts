@@ -60,6 +60,7 @@ export interface AppSettings {
   gemini_model: string
   ollama_available: boolean
   summary_prompt: string
+  manual_summary_prompt: string
   /** 음성 변환 엔진 — Gemini 전용 */
   stt_engine: 'gemini'
 }
@@ -298,6 +299,16 @@ export const api = {
     return request<Meeting>(`/api/meetings/${meetingId}/audio`, { method: 'POST', body: form })
   },
 
+  submitManualTranscript(
+    meetingId: number,
+    data: { text: string; duration_sec?: number },
+  ): Promise<Meeting> {
+    return request<Meeting>(`/api/meetings/${meetingId}/manual-transcript`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  },
+
   getMeetingStatus(id: number): Promise<{ status: MeetingStatus; error_message: string | null }> {
     return request(`/api/meetings/${id}/status`)
   },
@@ -416,10 +427,11 @@ export const api = {
     return request<AppSettings>('/api/settings')
   },
 
-  /** gemini_api_key/summary_prompt/gemini_model에 빈 문자열을 주면 해당 값 삭제(기본값 복귀) */
+  /** gemini_api_key/summary_prompt/manual_summary_prompt/gemini_model에 빈 문자열을 주면 해당 값 삭제(기본값 복귀) */
   updateSettings(data: {
     gemini_api_key?: string
     summary_prompt?: string
+    manual_summary_prompt?: string
     gemini_model?: string
     stt_engine?: 'gemini'
   }): Promise<AppSettings> {

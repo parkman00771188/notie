@@ -434,6 +434,20 @@
   font-size: 13px;
 }
 
+.recent-item-shared {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: var(--radius-full);
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-size: 10.5px;
+  font-weight: 800;
+  line-height: 1;
+}
+
 /* 제목 왼쪽 태그 칩 (색상은 인라인 style) — 패널 폭이 좁아 살짝 작게 */
 .recent-item-tag {
   flex-shrink: 0;

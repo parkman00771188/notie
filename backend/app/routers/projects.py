@@ -147,6 +147,36 @@ def _replace_project_tags(conn: sqlite3.Connection, project_id: int, tag_ids: li
             )
 
 
+def _ensure_project_title_tag(
+    conn: sqlite3.Connection,
+    *,
+    owner_user_id: int,
+    name: str,
+    color: str,
+) -> int:
+    existing = conn.execute(
+        "SELECT id FROM tags WHERE user_id = ? AND name = ?",
+        (owner_user_id, name),
+    ).fetchone()
+    if existing is not None:
+        return int(existing["id"])
+
+    try:
+        cur = conn.execute(
+            "INSERT INTO tags (user_id, name, color, is_global) VALUES (?, ?, ?, 0)",
+            (owner_user_id, name, color),
+        )
+    except sqlite3.IntegrityError:
+        existing = conn.execute(
+            "SELECT id FROM tags WHERE user_id = ? AND name = ?",
+            (owner_user_id, name),
+        ).fetchone()
+        if existing is not None:
+            return int(existing["id"])
+        raise
+    return int(cur.lastrowid)
+
+
 def _replace_project_members(
     conn: sqlite3.Connection, project_id: int, user_ids: list[int]
 ) -> None:
@@ -337,7 +367,14 @@ def create_project(body: ProjectCreate, current: dict = Depends(get_current_user
                 ),
             )
             project_id = cur.lastrowid
-            _replace_project_tags(conn, project_id, body.tag_ids or [])
+            auto_tag_id = _ensure_project_title_tag(
+                conn,
+                owner_user_id=current["id"],
+                name=title,
+                color=color,
+            )
+            tag_ids = [auto_tag_id, *_normalize_ids(body.tag_ids or [])]
+            _replace_project_tags(conn, project_id, tag_ids)
             member_ids = _normalize_ids(body.member_user_ids or [])
             if not _is_admin(current) and current["id"] not in member_ids:
                 member_ids.append(current["id"])

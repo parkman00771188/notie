@@ -35,6 +35,7 @@
 .project-members-title-icon svg,
 .project-member-org-icon svg,
 .project-member-chevron svg,
+.project-member-edit-icon svg,
 .project-member-remove-icon svg {
   width: 19px;
   height: 19px;
@@ -119,8 +120,8 @@
 
 .project-admin-layout {
   display: grid;
-  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
-  gap: 22px;
+  grid-template-columns: minmax(220px, 260px) minmax(0, 1fr);
+  gap: 18px;
   margin-top: 26px;
   align-items: start;
 }
@@ -161,10 +162,10 @@
   display: grid;
   grid-template-columns: 12px minmax(0, 1fr);
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   width: 100%;
-  min-height: 66px;
-  padding: 12px 14px;
+  min-height: 58px;
+  padding: 10px 12px;
   border: 1px solid transparent;
   border-radius: 13px;
   background: transparent;
@@ -211,9 +212,34 @@
 }
 
 .project-list-text strong {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   color: var(--text);
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 900;
+}
+
+.project-list-text strong > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-list-member-badge {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: #eaf1ff;
+  color: var(--primary);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 900;
+  line-height: 1;
 }
 
 .project-list-text small {
@@ -244,6 +270,10 @@
   gap: 12px;
 }
 
+.project-detail-title > div {
+  min-width: 0;
+}
+
 .project-detail-dot {
   margin-top: 9px;
 }
@@ -256,11 +286,56 @@
   letter-spacing: -0.2px;
 }
 
-.project-detail-title p {
-  margin-top: 4px;
+.project-detail-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  min-width: 0;
+  margin-top: 6px;
   color: var(--text-3);
   font-size: 13px;
   font-weight: 700;
+}
+
+.project-detail-meta-text {
+  min-width: 0;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-detail-meta-dot {
+  color: var(--border-strong);
+}
+
+.project-detail-meta-tags {
+  display: inline-flex;
+  min-width: 0;
+}
+
+.project-detail-meta-tags .project-tag-chip-list {
+  gap: 6px;
+}
+
+.project-detail-meta-tags .project-tag-chip {
+  min-height: 24px;
+  padding: 1px 9px;
+  font-size: 12px;
+  background: var(--surface);
+}
+
+.project-detail-meta-tags .project-muted-value {
+  font-size: 12px;
+}
+
+.project-header-tag-btn {
+  min-height: 28px;
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  font-size: 12px;
+  font-weight: 900;
 }
 
 .project-detail-actions {
@@ -507,7 +582,7 @@
 .project-member-org-list {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
 }
 
 .project-member-org-card {
@@ -521,8 +596,8 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  min-height: 62px;
-  padding: 0 16px;
+  min-height: 48px;
+  padding: 0 14px;
   border-bottom: 1px solid var(--border);
   background: #f1f4f9;
 }
@@ -546,8 +621,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   border-radius: 9px;
   background: #eaf1ff;
   color: var(--primary);
@@ -555,8 +630,8 @@
 }
 
 .project-member-org-icon svg {
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
 }
 
 .project-member-org-head strong {
@@ -592,44 +667,42 @@
 .project-member-table-row {
   display: grid;
   grid-template-columns:
-    minmax(170px, 1.25fr)
-    minmax(110px, 0.85fr)
-    minmax(110px, 0.85fr)
-    minmax(90px, 0.75fr)
-    minmax(110px, 0.85fr)
-    minmax(170px, 1.1fr);
+    minmax(130px, 1.15fr)
+    minmax(92px, 0.8fr)
+    minmax(100px, 0.9fr)
+    minmax(82px, 0.75fr)
+    minmax(150px, 1.1fr);
   align-items: center;
-  column-gap: 16px;
+  column-gap: 12px;
 }
 
 .project-member-table.with-actions .project-member-table-head,
 .project-member-table.with-actions .project-member-table-row {
   grid-template-columns:
-    minmax(170px, 1.25fr)
-    minmax(110px, 0.85fr)
-    minmax(110px, 0.85fr)
-    minmax(90px, 0.75fr)
-    minmax(110px, 0.85fr)
-    minmax(170px, 1.1fr)
-    54px;
+    minmax(130px, 1.15fr)
+    minmax(92px, 0.8fr)
+    minmax(100px, 0.9fr)
+    minmax(82px, 0.75fr)
+    minmax(150px, 1.1fr)
+    72px;
 }
 
 .project-member-table-head {
-  min-height: 46px;
-  padding: 0 16px;
+  min-height: 36px;
+  padding: 0 14px;
   border-bottom: 1px solid var(--border);
   background: #fafbfe;
 }
 
 .project-member-table-head span {
   color: var(--text-3);
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 900;
 }
 
 .project-member-table-row {
-  min-height: 68px;
-  padding: 11px 16px;
+  min-height: 48px;
+  padding: 7px 14px;
   border-bottom: 1px solid var(--border);
 }
 
@@ -641,7 +714,7 @@
   min-width: 0;
   overflow: hidden;
   color: var(--text-2);
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -650,14 +723,14 @@
 .project-member-name-cell {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
 
 .project-member-name-cell strong {
   min-width: 0;
   overflow: hidden;
   color: var(--text);
-  font-size: 14px;
+  font-size: 13.5px;
   font-weight: 900;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -670,12 +743,32 @@
 
 .project-member-action-cell {
   display: flex;
-  justify-content: flex-end;
+  gap: 5px;
+  justify-content: flex-start;
+  overflow: visible !important;
+}
+
+.project-member-edit-icon,
+.project-member-remove-icon {
+  width: 30px;
+  height: 30px;
+}
+
+.project-member-edit-icon {
+  color: var(--primary);
+}
+
+.project-member-edit-icon:hover {
+  border-color: var(--primary-soft-2);
+  background: var(--primary-soft);
+}
+
+.project-member-edit-icon:disabled {
+  cursor: wait;
+  opacity: 0.55;
 }
 
 .project-member-remove-icon {
-  width: 34px;
-  height: 34px;
   color: var(--red);
 }
 
@@ -808,12 +901,12 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
   background: var(--primary-soft);
   color: var(--primary);
-  font-size: 14px;
+  font-size: 12.5px;
   font-weight: 900;
 }
 
@@ -1271,7 +1364,7 @@
 
 @media (max-width: 1180px) {
   .project-admin-layout {
-    grid-template-columns: 300px minmax(0, 1fr);
+    grid-template-columns: 220px minmax(0, 1fr);
   }
 
   .project-search {
@@ -1389,7 +1482,7 @@
   }
 
   .project-member-table {
-    min-width: 860px;
+    min-width: 680px;
   }
 
   .project-current-member,

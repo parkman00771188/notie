@@ -44,7 +44,8 @@ export function AiEngineSettings() {
   const modelTimerRef = useRef<number | null>(null)
 
   // 요약 지시사항 (프롬프트)
-  const [promptInput, setPromptInput] = useState('')
+  const [recordingPromptInput, setRecordingPromptInput] = useState('')
+  const [manualPromptInput, setManualPromptInput] = useState('')
   const [promptError, setPromptError] = useState('')
   const [promptSaving, setPromptSaving] = useState(false)
   const [promptSaved, setPromptSaved] = useState(false)
@@ -58,7 +59,8 @@ export function AiEngineSettings() {
       .then((s) => {
         if (!cancelled) {
           setSettings(s)
-          setPromptInput(s.summary_prompt)
+          setRecordingPromptInput(s.summary_prompt)
+          setManualPromptInput(s.manual_summary_prompt)
           setModelInput(s.gemini_model)
         }
       })
@@ -180,7 +182,10 @@ export function AiEngineSettings() {
     }
   }
 
-  const promptUnchanged = settings !== null && promptInput.trim() === settings.summary_prompt
+  const promptUnchanged =
+    settings !== null &&
+    recordingPromptInput.trim() === settings.summary_prompt &&
+    manualPromptInput.trim() === settings.manual_summary_prompt
 
   const handlePromptSave = async (e: FormEvent) => {
     e.preventDefault()
@@ -189,9 +194,13 @@ export function AiEngineSettings() {
     setPromptError('')
     try {
       // 빈 문자열로 저장하면 프롬프트 삭제(기본 프롬프트만 사용)
-      const next = await api.updateSettings({ summary_prompt: promptInput.trim() })
+      const next = await api.updateSettings({
+        summary_prompt: recordingPromptInput.trim(),
+        manual_summary_prompt: manualPromptInput.trim(),
+      })
       setSettings(next)
-      setPromptInput(next.summary_prompt)
+      setRecordingPromptInput(next.summary_prompt)
+      setManualPromptInput(next.manual_summary_prompt)
       setPromptSaved(true)
       if (promptTimerRef.current) window.clearTimeout(promptTimerRef.current)
       promptTimerRef.current = window.setTimeout(() => setPromptSaved(false), 2000)
@@ -429,7 +438,7 @@ export function AiEngineSettings() {
             <span aria-hidden="true">📝</span> 요약 지시사항 (프롬프트)
           </h2>
           <p className="settings-card-desc">
-            모든 사용자의 AI 요약과 회의록 생성에 함께 적용할 전역 지시사항을 적어두세요.
+            녹음·업로드와 직접 작성 회의에 적용할 전역 지시사항을 각각 적어두세요.
           </p>
         </div>
 
@@ -442,20 +451,36 @@ export function AiEngineSettings() {
         ) : settings ? (
           <>
             <form onSubmit={handlePromptSave}>
-              <label className="field-label" htmlFor="settings-summary-prompt">
-                요약 지시사항
-              </label>
-              <textarea
-                id="settings-summary-prompt"
-                className="input settings-prompt-textarea"
-                value={promptInput}
-                onChange={(e) => setPromptInput(e.target.value)}
-                placeholder={
-                  '결정 사항은 담당자와 기한을 반드시 표기해줘.\n회의록은 격식체로 작성해줘.'
-                }
-                rows={4}
-                spellCheck={false}
-              />
+              <div className="settings-prompt-grid">
+                <label className="settings-prompt-field" htmlFor="settings-summary-prompt">
+                  <span className="field-label">녹음·업로드 요약 지시사항</span>
+                  <textarea
+                    id="settings-summary-prompt"
+                    className="input settings-prompt-textarea"
+                    value={recordingPromptInput}
+                    onChange={(e) => setRecordingPromptInput(e.target.value)}
+                    placeholder={
+                      '녹취록의 발언 흐름을 주제별로 정리해줘.\n결정 사항은 담당자와 기한을 반드시 표기해줘.'
+                    }
+                    rows={5}
+                    spellCheck={false}
+                  />
+                </label>
+                <label className="settings-prompt-field" htmlFor="settings-manual-summary-prompt">
+                  <span className="field-label">직접 작성 요약 지시사항</span>
+                  <textarea
+                    id="settings-manual-summary-prompt"
+                    className="input settings-prompt-textarea"
+                    value={manualPromptInput}
+                    onChange={(e) => setManualPromptInput(e.target.value)}
+                    placeholder={
+                      '사용자가 정리한 회의 내용을 바탕으로 회의록을 구성해줘.\n원문에 없는 내용은 추측하지 말아줘.'
+                    }
+                    rows={5}
+                    spellCheck={false}
+                  />
+                </label>
+              </div>
               <div className="settings-actions">
                 <button
                   type="submit"
@@ -468,8 +493,8 @@ export function AiEngineSettings() {
             </form>
 
             <p className="muted settings-note">
-              요약 생성 시 기본 규칙과 함께 AI에게 전달돼요. 기본 규칙과 충돌하면 이 지시사항이
-              우선됩니다. 비워두고 저장하면 기본 프롬프트만 사용해요.
+              요약 생성 시 기본 규칙과 함께 AI에게 전달돼요. 직접 작성 회의는 STT 없이 입력한
+              본문을 기준으로 요약합니다. 비워두고 저장하면 기본 프롬프트만 사용해요.
             </p>
           </>
         ) : null}

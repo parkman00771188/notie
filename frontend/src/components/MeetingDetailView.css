@@ -138,7 +138,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 13.5px;
+  font-size: 15px;
   color: var(--text-2);
   font-variant-numeric: tabular-nums;
 }
@@ -532,6 +532,8 @@
   padding: 0;
   font-family: inherit;
   font-size: inherit;
+  font-weight: 700;
+  letter-spacing: -0.1px;
   color: inherit;
   cursor: pointer;
 }
@@ -543,23 +545,33 @@
 .detail-date-edit {
   display: inline-flex;
   align-items: center;
+  flex-wrap: wrap;
+  flex: 0 1 auto;
   gap: 6px;
+  max-width: 100%;
 }
 
-.detail-date-input {
-  width: 145px;
+.detail-date-edit .detail-date-input {
+  flex: 0 0 142px;
+  width: 142px !important;
+  min-width: 0;
+  max-width: 142px;
   padding: 4px 8px;
-  font-size: 13.5px;
+  font-size: 14px;
 }
 
 /* 24시간제 시/분 셀렉트 (14시 · 30분) */
-.detail-time-select {
-  width: auto;
+.detail-date-edit .detail-time-select {
+  flex: 0 0 72px;
+  width: 72px !important;
+  min-width: 0;
+  max-width: 72px;
   padding: 4px 6px;
-  font-size: 13.5px;
+  font-size: 14px;
 }
 
 .detail-date-save {
+  flex: 0 0 auto;
   padding: 5px 10px;
   font-size: 13px;
 }
@@ -768,6 +780,76 @@
 
 .segment-edit-actions .btn {
   padding: 8px 13px;
+  font-size: 13.5px;
+}
+
+.manual-content-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.manual-content-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.manual-content-head h3 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.manual-content-head p {
+  margin: 5px 0 0;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--text-3);
+}
+
+.manual-content-head .btn {
+  flex-shrink: 0;
+}
+
+.manual-content-text {
+  min-height: 260px;
+  margin: 0;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14.5px;
+  line-height: 1.75;
+  white-space: pre-wrap;
+}
+
+.manual-content-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.manual-content-textarea {
+  min-height: 340px;
+  resize: vertical;
+  font-size: 14.5px;
+  line-height: 1.75;
+}
+
+.manual-content-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.manual-content-actions .btn {
+  padding: 8px 14px;
   font-size: 13.5px;
 }
 
@@ -1057,6 +1139,32 @@
   }
 
   .segment-edit-actions .btn {
+    flex: 1 1 auto;
+  }
+
+  .manual-content-head {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .manual-content-head .btn {
+    align-self: flex-end;
+  }
+
+  .manual-content-text {
+    min-height: 220px;
+    padding: 16px;
+  }
+
+  .manual-content-textarea {
+    min-height: 300px;
+  }
+
+  .manual-content-actions {
+    flex-wrap: wrap;
+  }
+
+  .manual-content-actions .btn {
     flex: 1 1 auto;
   }
 

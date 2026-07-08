@@ -262,8 +262,10 @@ export default function UserManagementPage() {
     const list = users ?? []
     return {
       total: list.length,
-      admin: list.filter((item) => item.role === 'admin').length,
       active: list.filter((item) => item.active).length,
+      inactive: list.filter((item) => !item.active).length,
+      admin: list.filter((item) => item.role === 'admin').length,
+      user: list.filter((item) => item.role === 'user').length,
     }
   }, [users])
 
@@ -597,8 +599,16 @@ export default function UserManagementPage() {
           <strong>{stats.active}</strong>
         </div>
         <div>
+          <span>비활성</span>
+          <strong>{stats.inactive}</strong>
+        </div>
+        <div>
           <span>관리자</span>
           <strong>{stats.admin}</strong>
+        </div>
+        <div>
+          <span>사용자</span>
+          <strong>{stats.user}</strong>
         </div>
       </div>
 

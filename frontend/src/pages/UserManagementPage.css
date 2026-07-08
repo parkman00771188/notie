@@ -17,9 +17,9 @@
 
 .user-admin-stats {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 12px;
-  max-width: 520px;
+  max-width: 860px;
   margin-top: 22px;
 }
 
@@ -1246,17 +1246,46 @@
 }
 
 @media (max-width: 768px) {
+  .user-admin-page {
+    padding-bottom: calc(138px + env(safe-area-inset-bottom));
+  }
+
   .user-admin-head {
     flex-direction: column;
   }
 
   .user-admin-stats {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
     max-width: none;
+    margin-top: 16px;
+  }
+
+  .user-admin-stats > div {
+    min-height: 52px;
+    padding: 10px 12px;
+    border-radius: 14px;
+  }
+
+  .user-admin-stats > div:first-child {
+    grid-column: 1 / -1;
+  }
+
+  .user-admin-stats span {
+    font-size: 12px;
+  }
+
+  .user-admin-stats strong {
+    font-size: 21px;
+  }
+
+  .user-directory-section {
+    margin-top: 18px;
   }
 
   .user-directory-layout {
     grid-template-columns: 1fr;
+    gap: 14px;
   }
 
   .user-org-list-card,
@@ -1265,13 +1294,33 @@
     min-height: auto;
   }
 
+  .user-org-list-head {
+    padding: 14px 14px 12px;
+  }
+
   .user-org-list {
-    max-height: 320px;
+    max-height: 232px;
+    padding: 8px;
+  }
+
+  .user-org-list-item {
+    min-height: 54px;
+    padding: 9px 11px;
   }
 
   .user-detail-top {
     align-items: stretch;
     flex-direction: column;
+    gap: 14px;
+    padding: 16px;
+  }
+
+  .user-detail-title h2 {
+    font-size: 19px;
+  }
+
+  .user-detail-title p {
+    font-size: 12.5px;
   }
 
   .user-detail-actions {
@@ -1288,6 +1337,59 @@
 
   .user-table-wrap {
     max-height: none;
+  }
+
+  .user-table-wrap .user-admin-table {
+    min-width: 520px;
+    font-size: 12.5px;
+  }
+
+  .user-table-wrap .user-admin-col-index {
+    width: 38px;
+  }
+
+  .user-table-wrap .user-admin-col-role {
+    width: 76px;
+  }
+
+  .user-table-wrap .user-admin-col-name {
+    width: 88px;
+  }
+
+  .user-table-wrap .user-admin-col-username {
+    width: 84px;
+  }
+
+  .user-table-wrap .user-admin-col-department {
+    width: 78px;
+  }
+
+  .user-table-wrap .user-admin-col-position {
+    width: 72px;
+  }
+
+  .user-table-wrap .user-admin-col-email {
+    width: 84px;
+  }
+
+  .user-table-wrap .user-admin-table th,
+  .user-table-wrap .user-admin-table td {
+    padding: 7px 6px;
+  }
+
+  .user-table-wrap .user-admin-table th:first-child,
+  .user-table-wrap .user-admin-table td:first-child {
+    padding-left: 10px;
+  }
+
+  .user-table-wrap .user-name-cell strong {
+    font-size: 12.5px;
+  }
+
+  .user-table-wrap .user-role-pill {
+    min-height: 26px;
+    padding: 4px 7px;
+    font-size: 11.5px;
   }
 
   .user-admin-toolbar {

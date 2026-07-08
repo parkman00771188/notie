@@ -1401,6 +1401,10 @@
 }
 
 @media (max-width: 768px) {
+  .project-admin-page {
+    padding-bottom: calc(138px + env(safe-area-inset-bottom));
+  }
+
   .project-admin-head,
   .project-admin-actions,
   .project-total-row,
@@ -1415,6 +1419,44 @@
 
   .project-total-row {
     justify-content: flex-start;
+    margin-top: 14px;
+  }
+
+  .project-admin-layout {
+    gap: 14px;
+    margin-top: 16px;
+  }
+
+  .project-list-card {
+    max-height: 292px;
+    overflow-y: auto;
+  }
+
+  .project-list {
+    grid-template-columns: 1fr;
+    padding: 8px;
+  }
+
+  .project-list-item {
+    min-height: 52px;
+    padding: 8px 10px;
+  }
+
+  .project-list-text strong {
+    font-size: 13.5px;
+  }
+
+  .project-list-text small {
+    font-size: 12px;
+  }
+
+  .project-detail-top {
+    gap: 14px;
+    padding: 18px 16px 14px;
+  }
+
+  .project-detail-title h2 {
+    font-size: 20px;
   }
 
   .project-detail-actions {

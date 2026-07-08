@@ -461,6 +461,7 @@
 @media (max-width: 768px) {
   .participant-directory-layout {
     grid-template-columns: 1fr;
+    gap: 14px;
   }
 
   .participant-org-list-card,
@@ -468,14 +469,38 @@
     min-height: auto;
   }
 
+  .participant-directory-section {
+    margin-top: 18px;
+  }
+
+  .participant-org-list-head {
+    padding: 14px 14px 12px;
+  }
+
   .participant-org-list {
-    max-height: 320px;
+    max-height: 232px;
     overflow-y: auto;
+    padding: 8px;
+  }
+
+  .participant-org-item {
+    min-height: 54px;
+    padding: 9px 11px;
   }
 
   .participant-detail-top {
     align-items: stretch;
     flex-direction: column;
+    gap: 14px;
+    padding: 16px;
+  }
+
+  .participant-detail-title h2 {
+    font-size: 19px;
+  }
+
+  .participant-detail-title p {
+    font-size: 12.5px;
   }
 
   .participant-detail-actions {
@@ -493,6 +518,50 @@
   }
 
   .participant-admin-table {
-    min-width: 640px;
+    min-width: 520px;
+    font-size: 12.5px;
+  }
+
+  .participant-col-index {
+    width: 42px;
+  }
+
+  .participant-col-name {
+    width: 98px;
+  }
+
+  .participant-col-department {
+    width: 90px;
+  }
+
+  .participant-col-role {
+    width: 78px;
+  }
+
+  .participant-col-email {
+    width: 128px;
+  }
+
+  .participant-col-actions {
+    width: 76px;
+  }
+
+  .participant-admin-table th,
+  .participant-admin-table td {
+    padding: 7px 6px;
+  }
+
+  .participant-name-cell {
+    gap: 6px;
+  }
+
+  .participant-name-cell strong {
+    font-size: 12.5px;
+  }
+
+  .participant-edit-btn,
+  .participant-row-actions .user-delete-btn {
+    width: 28px;
+    height: 28px;
   }
 }

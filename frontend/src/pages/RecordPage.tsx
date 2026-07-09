@@ -325,6 +325,17 @@ export default function RecordPage() {
     if (file) void handleUploadFile(file)
   }
 
+  const handleUploadZoneClick = () => {
+    if (starting || uploading) return
+    uploadInputRef.current?.click()
+  }
+
+  const handleUploadZoneKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return
+    e.preventDefault()
+    handleUploadZoneClick()
+  }
+
   const handleManualSubmit = async () => {
     const text = manualText.trim()
     if (!text || starting || uploading || manualSubmitting) return
@@ -688,27 +699,33 @@ export default function RecordPage() {
 
                     <div
                       className={`record-upload-strip${uploadDragActive ? ' drag-over' : ''}`}
+                      role="button"
+                      tabIndex={starting || uploading ? -1 : 0}
+                      aria-label="오디오 파일 업로드"
+                      aria-disabled={starting || uploading}
+                      onClick={handleUploadZoneClick}
+                      onKeyDown={handleUploadZoneKeyDown}
                       onDragOver={handleUploadDragOver}
                       onDragLeave={handleUploadDragLeave}
                       onDrop={handleUploadDrop}
                     >
-                      <span className="record-upload-icon" aria-hidden="true">
-                        ☁
-                      </span>
-                      <span className="record-upload-text">이미 녹음한 파일이 있나요?</span>
-                      <button
-                        type="button"
-                        className="record-upload-link"
-                        onClick={() => uploadInputRef.current?.click()}
-                        disabled={starting || uploading}
-                      >
-                        오디오 파일 업로드
-                      </button>
+                      <div className="record-upload-copy">
+                        <div className="record-upload-title-row">
+                          <span className="record-upload-mini-icon" aria-hidden="true">
+                            ☁
+                          </span>
+                          <span className="record-upload-text">오디오 파일 업로드</span>
+                        </div>
+                        <span className="record-upload-hint">
+                          파일을 끌어오거나 클릭하여 업로드하세요
+                        </span>
+                      </div>
                       <input
                         ref={uploadInputRef}
                         type="file"
                         className="record-upload-input"
                         accept={ACCEPT_AUDIO}
+                        onClick={(e) => e.stopPropagation()}
                         onChange={handleUploadInputChange}
                         aria-hidden="true"
                         tabIndex={-1}

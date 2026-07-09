@@ -100,6 +100,10 @@
   flex-wrap: wrap;
 }
 
+.detail-mobile-actions {
+  display: none;
+}
+
 .detail-lock-btn {
   flex-shrink: 0;
 }
@@ -118,6 +122,77 @@
   background: var(--gray-soft);
   color: var(--text);
   border: 1px solid var(--border-strong);
+}
+
+.detail-manage-menu {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.detail-manage-trigger {
+  width: 48px;
+  min-width: 48px;
+  min-height: 44px;
+  padding: 0;
+  border-radius: 14px;
+  font-size: 26px;
+  line-height: 1;
+}
+
+.detail-manage-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 20;
+  width: min(270px, calc(100vw - 64px));
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+}
+
+.detail-manage-item {
+  width: 100%;
+  min-height: 58px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 16px;
+  font-weight: 800;
+  text-align: left;
+  cursor: pointer;
+}
+
+.detail-manage-item:last-child {
+  border-bottom: none;
+}
+
+.detail-manage-item:hover {
+  background: var(--primary-soft);
+}
+
+.detail-manage-item.primary {
+  color: var(--primary);
+}
+
+.detail-manage-item.danger {
+  color: var(--red);
+}
+
+.detail-manage-item:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.detail-manage-item:disabled:hover {
+  background: var(--surface);
 }
 
 .detail-lock-banner {
@@ -1042,8 +1117,34 @@
     justify-content: flex-end;
   }
 
+  .detail-actions-desktop {
+    display: none;
+  }
+
   .detail-actions .btn {
     flex: 0 0 auto;
+  }
+
+  .detail-mobile-actions {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-left: auto;
+  }
+
+  .detail-mobile-ai-btn {
+    min-height: 44px;
+    padding: 0 18px;
+    border-radius: 14px;
+    font-size: 15px;
+    font-weight: 900;
+    box-shadow: var(--shadow-sm);
+  }
+
+  .detail-mobile-ai-btn:disabled {
+    opacity: 0.6;
   }
 
   .detail-lock-banner {
@@ -1200,5 +1301,18 @@
   .summary-edit-actions .btn,
   .note-add-btn {
     width: 100%;
+  }
+
+  .detail-mobile-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .detail-mobile-ai-btn {
+    flex: 1 1 auto;
+  }
+
+  .detail-manage-trigger {
+    flex: 0 0 48px;
   }
 }

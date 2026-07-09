@@ -88,6 +88,7 @@ export function MeetingDetailView({
   const [segmentDraft, setSegmentDraft] = useState('')
   const [savingSegmentId, setSavingSegmentId] = useState<number | null>(null)
   const [cancellingProcessing, setCancellingProcessing] = useState(false)
+  const [actionMenuOpen, setActionMenuOpen] = useState(false)
 
   // AI 회의록 내용 직접 편집 (리스트는 "한 줄에 하나" 텍스트로 편집)
   const [editingSummary, setEditingSummary] = useState(false)
@@ -125,6 +126,7 @@ export function MeetingDetailView({
     setSegmentDraft('')
     setSavingSegmentId(null)
     setNoteDraft('')
+    setActionMenuOpen(false)
     if (!Number.isFinite(meetingId)) {
       setLoadError('잘못된 회의 주소예요.')
       setLoading(false)
@@ -798,7 +800,7 @@ export function MeetingDetailView({
         ) : (
           <span />
         )}
-        <div className="detail-actions">
+        <div className="detail-actions detail-actions-desktop">
           {isOwner && (
             <button
               type="button"
@@ -844,6 +846,89 @@ export function MeetingDetailView({
             >
               삭제
             </button>
+          )}
+        </div>
+        <div className="detail-mobile-actions">
+          {canResummarize && (
+            <button
+              type="button"
+              className="btn btn-primary detail-mobile-ai-btn"
+              onClick={() => void handleResummarizeWithConfirm()}
+              disabled={isLocked}
+              title={isLocked ? lockedActionMessage : aiSummaryHint}
+            >
+              ✨ AI 요약
+            </button>
+          )}
+          {(isOwner || canShareMeeting) && (
+            <div
+              className="detail-manage-menu"
+              onBlur={(e) => {
+                const nextFocus = e.relatedTarget as Node | null
+                if (!nextFocus || !e.currentTarget.contains(nextFocus)) {
+                  setActionMenuOpen(false)
+                }
+              }}
+            >
+              <button
+                type="button"
+                className="btn btn-ghost detail-manage-trigger"
+                aria-haspopup="menu"
+                aria-expanded={actionMenuOpen}
+                aria-label="회의 관리 메뉴"
+                onClick={() => setActionMenuOpen((open) => !open)}
+              >
+                ⋮
+              </button>
+              {actionMenuOpen && (
+                <div className="detail-manage-popover" role="menu">
+                  {isOwner && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="detail-manage-item"
+                      onClick={() => {
+                        setActionMenuOpen(false)
+                        void handleToggleLock()
+                      }}
+                    >
+                      <span aria-hidden="true">{isLocked ? '🔒' : '🔓'}</span>
+                      {isLocked ? '잠금됨' : '잠금'}
+                    </button>
+                  )}
+                  {canShareMeeting && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="detail-manage-item primary"
+                      onClick={() => {
+                        setActionMenuOpen(false)
+                        void handleToggleShare()
+                      }}
+                    >
+                      <span aria-hidden="true">↗</span>
+                      {meeting.is_shared ? '회의 공유 해제' : '회의 공유'}
+                    </button>
+                  )}
+                  {isOwner && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="detail-manage-item danger"
+                      onClick={() => {
+                        setActionMenuOpen(false)
+                        void handleDelete()
+                      }}
+                      disabled={isLocked}
+                      title={isLocked ? lockedActionMessage : undefined}
+                    >
+                      <span aria-hidden="true">🗑</span>
+                      삭제
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
           )}
         </div>
       </div>

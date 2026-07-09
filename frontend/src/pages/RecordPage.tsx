@@ -691,7 +691,7 @@ export default function RecordPage() {
                         onClick={() => void handleManualSubmit()}
                         disabled={!manualText.trim() || manualSubmitting}
                       >
-                        {manualSubmitting ? '요약 시작 중...' : 'AI 요약 시작'}
+                        {manualSubmitting ? '저장 중...' : '회의록 저장'}
                       </button>
                     </div>
                   </div>

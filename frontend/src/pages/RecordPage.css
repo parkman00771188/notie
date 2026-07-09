@@ -838,6 +838,18 @@
   }
 }
 
+@media (max-width: 900px) {
+  .manual-writing-panel {
+    gap: 13px;
+  }
+
+  .manual-writing-textarea {
+    height: 54vh;
+    min-height: 430px;
+    max-height: none;
+  }
+}
+
 @media (max-width: 768px) {
   .record-page {
     gap: 20px;
@@ -1003,7 +1015,8 @@
   }
 
   .manual-writing-textarea {
-    min-height: max(420px, 52vh);
+    height: 55vh;
+    min-height: 430px;
     padding: 16px;
     font-size: 16px;
     line-height: 1.65;
@@ -1097,7 +1110,8 @@
 
 @media (max-width: 380px) {
   .manual-writing-textarea {
-    min-height: max(380px, 55vh);
+    height: 52vh;
+    min-height: 390px;
   }
 
   .memo-input-footer .btn {

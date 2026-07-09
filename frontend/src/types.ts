@@ -1,3 +1,5 @@
+export type UserRole = 'admin' | 'user' | 'other'
+
 export interface User {
   id: number
   username: string
@@ -8,7 +10,7 @@ export interface User {
   department: string | null
   position: string | null
   phone: string | null
-  role: 'admin' | 'user'
+  role: UserRole
   active: boolean
 }
 

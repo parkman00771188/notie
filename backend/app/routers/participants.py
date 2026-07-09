@@ -64,12 +64,33 @@ def _to_participant(row: sqlite3.Row) -> dict:
     }
 
 
-def _sync_user_participants(conn: sqlite3.Connection, owner_user_id: int) -> None:
+def _sync_user_participants(
+    conn: sqlite3.Connection, owner_user_id: int, owner_role: str | None
+) -> None:
     """현재 사용자의 참석자 사전에 앱 사용자 계정을 삭제 불가 항목으로 동기화한다."""
+    if owner_role == "other":
+        conn.execute(
+            "DELETE FROM participants WHERE user_id = ? AND source_user_id IS NOT NULL",
+            (owner_user_id,),
+        )
+        return
+
+    conn.execute(
+        """
+        DELETE FROM participants
+        WHERE user_id = ?
+          AND source_user_id IS NOT NULL
+          AND source_user_id NOT IN (
+            SELECT id FROM users WHERE active = 1 AND role <> 'other'
+          )
+        """,
+        (owner_user_id,),
+    )
     users = conn.execute(
         """
         SELECT id, name, position, department, organization, email, phone
         FROM users
+        WHERE active = 1 AND role <> 'other'
         ORDER BY id
         """
     ).fetchall()
@@ -119,7 +140,7 @@ def list_participants(user: dict = Depends(get_current_user)) -> list[dict]:
     conn = db.get_conn()
     try:
         with conn:
-            _sync_user_participants(conn, user["id"])
+            _sync_user_participants(conn, user["id"], user.get("role"))
         rows = conn.execute(
             """
             SELECT

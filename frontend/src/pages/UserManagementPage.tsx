@@ -5,14 +5,14 @@ import { useAuth } from '../App'
 import ComboBox from '../components/ComboBox'
 import { useConfirm } from '../components/confirm'
 import Modal from '../components/Modal'
-import type { AdminUser, OrgKind, OrgOption } from '../types'
+import type { AdminUser, OrgKind, OrgOption, UserRole } from '../types'
 import './UserManagementPage.css'
 
 interface UserDraft {
   username: string
   password: string
   name: string
-  role: 'admin' | 'user'
+  role: UserRole
   email: string
   organization: string
   department: string
@@ -76,7 +76,7 @@ interface UserOrgGroup {
   items: AdminUser[]
 }
 
-type UserFilter = 'all' | 'active' | 'inactive' | 'admin' | 'user'
+type UserFilter = 'all' | 'active' | 'inactive' | 'admin' | 'user' | 'other'
 
 const USER_FILTER_LABELS: Record<UserFilter, string> = {
   all: '전체',
@@ -84,6 +84,7 @@ const USER_FILTER_LABELS: Record<UserFilter, string> = {
   inactive: '비활성',
   admin: '관리자',
   user: '사용자',
+  other: '기타',
 }
 
 const USER_FILTER_TITLES: Record<UserFilter, string> = {
@@ -92,6 +93,7 @@ const USER_FILTER_TITLES: Record<UserFilter, string> = {
   inactive: '비활성 사용자',
   admin: '관리자',
   user: '사용자',
+  other: '기타',
 }
 
 const USER_FILTER_DESCRIPTIONS: Record<UserFilter, string> = {
@@ -100,6 +102,7 @@ const USER_FILTER_DESCRIPTIONS: Record<UserFilter, string> = {
   inactive: '비활성 상태인 사용자',
   admin: '관리자 권한 사용자',
   user: '일반 사용자',
+  other: '외부 사용자',
 }
 
 function OrgColorPicker({
@@ -142,6 +145,8 @@ function OrgColorPicker({
 
 function RoleBadge({ role }: { role: AdminUser['role'] }) {
   const isAdmin = role === 'admin'
+  const isOther = role === 'other'
+  const label = isAdmin ? '관리자' : isOther ? '기타' : '사용자'
   return (
     <span className={`user-role-pill ${role}`}>
       <span className="user-role-icon" aria-hidden="true">
@@ -149,6 +154,13 @@ function RoleBadge({ role }: { role: AdminUser['role'] }) {
           <svg viewBox="0 0 24 24" focusable="false">
             <path d="M12 3.5 18 6v5.2c0 3.8-2.3 7.2-6 8.8-3.7-1.6-6-5-6-8.8V6l6-2.5Z" />
             <path d="m9.8 12 1.4 1.4 3.1-3.4" />
+          </svg>
+        ) : isOther ? (
+          <svg viewBox="0 0 24 24" focusable="false">
+            <circle cx="12" cy="8" r="3" />
+            <path d="M6.5 19c.6-3.2 2.5-4.8 5.5-4.8s4.9 1.6 5.5 4.8" />
+            <path d="M4 5.5 7 8.5" />
+            <path d="M20 5.5 17 8.5" />
           </svg>
         ) : (
           <svg viewBox="0 0 24 24" focusable="false">
@@ -159,7 +171,7 @@ function RoleBadge({ role }: { role: AdminUser['role'] }) {
           </svg>
         )}
       </span>
-      {isAdmin ? '관리자' : '사용자'}
+      {label}
     </span>
   )
 }
@@ -191,6 +203,26 @@ function PencilIcon() {
     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
       <path d="m4 20 4.2-1.1L19.1 8a2.1 2.1 0 0 0 0-3l-.1-.1a2.1 2.1 0 0 0-3 0L5.1 15.8 4 20Z" />
       <path d="m14.5 6.5 3 3" />
+    </svg>
+  )
+}
+
+function EyeIcon({ hidden }: { hidden: boolean }) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      {hidden ? (
+        <>
+          <path d="M3 3l18 18" />
+          <path d="M10.7 5.1A10.6 10.6 0 0 1 12 5c5 0 8.5 4.4 9.6 6a1.8 1.8 0 0 1 0 2c-.4.6-1.2 1.6-2.2 2.5" />
+          <path d="M14.1 14.1A3 3 0 0 1 9.9 9.9" />
+          <path d="M6.4 6.5A16 16 0 0 0 2.4 11a1.8 1.8 0 0 0 0 2C3.5 14.6 7 19 12 19c1.6 0 3-.4 4.2-1" />
+        </>
+      ) : (
+        <>
+          <path d="M2.4 11a1.8 1.8 0 0 0 0 2C3.5 14.6 7 19 12 19s8.5-4.4 9.6-6a1.8 1.8 0 0 0 0-2C20.5 9.4 17 5 12 5S3.5 9.4 2.4 11Z" />
+          <circle cx="12" cy="12" r="3" />
+        </>
+      )}
     </svg>
   )
 }
@@ -240,6 +272,7 @@ export default function UserManagementPage() {
   const [detailUserId, setDetailUserId] = useState<number | null>(null)
   const [draft, setDraft] = useState<UserDraft>(EMPTY_DRAFT)
   const [roleMenuOpen, setRoleMenuOpen] = useState(false)
+  const [showUserPassword, setShowUserPassword] = useState(false)
   const [saving, setSaving] = useState(false)
   const [orgOptions, setOrgOptions] = useState<OrgOption[]>([])
   const [orgManageOpen, setOrgManageOpen] = useState(false)
@@ -296,6 +329,7 @@ export default function UserManagementPage() {
       inactive: list.filter((item) => !item.active).length,
       admin: list.filter((item) => item.role === 'admin').length,
       user: list.filter((item) => item.role === 'user').length,
+      other: list.filter((item) => item.role === 'other').length,
     }
   }, [users])
 
@@ -309,6 +343,8 @@ export default function UserManagementPage() {
         return sortedUsers.filter((item) => item.role === 'admin')
       case 'user':
         return sortedUsers.filter((item) => item.role === 'user')
+      case 'other':
+        return sortedUsers.filter((item) => item.role === 'other')
       case 'all':
       default:
         return sortedUsers
@@ -518,6 +554,7 @@ export default function UserManagementPage() {
       organization: selectedGroup && selectedGroup.key !== NO_ORG_KEY ? selectedGroup.name : '',
     })
     setRoleMenuOpen(false)
+    setShowUserPassword(false)
     setError('')
     setModalOpen(true)
   }
@@ -527,6 +564,7 @@ export default function UserManagementPage() {
     setEditing(target)
     setDraft(toDraft(target))
     setRoleMenuOpen(false)
+    setShowUserPassword(false)
     setError('')
     setModalOpen(true)
   }
@@ -537,6 +575,7 @@ export default function UserManagementPage() {
     setEditing(null)
     setDraft(EMPTY_DRAFT)
     setRoleMenuOpen(false)
+    setShowUserPassword(false)
   }
 
   const openUserDetail = (target: AdminUser) => {
@@ -567,6 +606,7 @@ export default function UserManagementPage() {
       setModalOpen(false)
       setEditing(null)
       setDraft(EMPTY_DRAFT)
+      setShowUserPassword(false)
     } catch (err: unknown) {
       setError(errMsg(err, '사용자 정보를 저장하지 못했습니다'))
     } finally {
@@ -649,6 +689,7 @@ export default function UserManagementPage() {
           ['inactive', stats.inactive],
           ['admin', stats.admin],
           ['user', stats.user],
+          ['other', stats.other],
         ] as const).map(([filter, count]) => (
           <button
             key={filter}
@@ -880,15 +921,26 @@ export default function UserManagementPage() {
             </label>
             <label className="user-form-field">
               <span>비밀번호 {editing ? '(변경 시 입력)' : '*'}</span>
-              <input
-                className="input"
-                type="password"
-                value={draft.password}
-                onChange={(e) => setField('password', e.target.value)}
-                placeholder={editing ? '새 비밀번호' : '초기 비밀번호'}
-                autoComplete="new-password"
-                required={!editing}
-              />
+              <div className="user-password-wrap">
+                <input
+                  className="input user-password-input"
+                  type={showUserPassword ? 'text' : 'password'}
+                  value={draft.password}
+                  onChange={(e) => setField('password', e.target.value)}
+                  placeholder={editing ? '새 비밀번호' : '초기 비밀번호'}
+                  autoComplete="new-password"
+                  required={!editing}
+                />
+                <button
+                  type="button"
+                  className="user-password-toggle"
+                  onClick={() => setShowUserPassword((value) => !value)}
+                  aria-label={showUserPassword ? '비밀번호 숨기기' : '비밀번호 표시'}
+                  title={showUserPassword ? '비밀번호 숨기기' : '비밀번호 표시'}
+                >
+                  <EyeIcon hidden={showUserPassword} />
+                </button>
+              </div>
             </label>
             <label className="user-form-field">
               <span>이름 *</span>
@@ -924,7 +976,7 @@ export default function UserManagementPage() {
                 </button>
                 {roleMenuOpen && (
                   <div className="user-role-dropdown-menu" role="listbox" aria-label="권한 선택">
-                    {(['admin', 'user'] as const).map((role) => (
+                    {(['admin', 'user', 'other'] as const).map((role) => (
                       <button
                         key={role}
                         type="button"

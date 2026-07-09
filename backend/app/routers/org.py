@@ -168,6 +168,8 @@ def list_tags(user: dict = Depends(get_current_user)) -> list[dict]:
 
 @router.get("/users/directory")
 def list_user_directory(user: dict = Depends(get_current_user)) -> list[dict]:
+    if user.get("role") == "other":
+        return []
     conn = db.get_conn()
     try:
         rows = conn.execute(
@@ -175,7 +177,7 @@ def list_user_directory(user: dict = Depends(get_current_user)) -> list[dict]:
             SELECT id, username, email, name, team, organization, department,
                    position, phone, role, active
             FROM users
-            WHERE active = 1
+            WHERE active = 1 AND role <> 'other'
             ORDER BY lower(name), lower(username), id
             """
         ).fetchall()

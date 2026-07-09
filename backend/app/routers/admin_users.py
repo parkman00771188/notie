@@ -11,7 +11,7 @@ from ..auth_utils import get_current_user, hash_password, require_admin
 
 router = APIRouter()
 
-UserRole = Literal["admin", "user"]
+UserRole = Literal["admin", "user", "other"]
 
 
 class UserCreate(BaseModel):
@@ -234,22 +234,27 @@ def update_user(
             (user_id,),
         ).fetchone()
         with conn:
-            conn.execute(
-                """
-                UPDATE participants
-                SET name = ?, role = ?, department = ?, organization = ?, email = ?, phone = ?
-                WHERE source_user_id = ?
-                """,
-                (
-                    updated["name"],
-                    updated["position"],
-                    updated["department"],
-                    updated["organization"],
-                    updated["email"],
-                    updated["phone"],
-                    user_id,
-                ),
-            )
+            if updated["role"] == "other" or not updated["active"]:
+                conn.execute("DELETE FROM participants WHERE source_user_id = ?", (user_id,))
+                conn.execute("DELETE FROM project_members WHERE user_id = ?", (user_id,))
+                conn.execute("DELETE FROM tag_permissions WHERE user_id = ?", (user_id,))
+            else:
+                conn.execute(
+                    """
+                    UPDATE participants
+                    SET name = ?, role = ?, department = ?, organization = ?, email = ?, phone = ?
+                    WHERE source_user_id = ?
+                    """,
+                    (
+                        updated["name"],
+                        updated["position"],
+                        updated["department"],
+                        updated["organization"],
+                        updated["email"],
+                        updated["phone"],
+                        user_id,
+                    ),
+                )
     finally:
         conn.close()
     return _to_admin_user(updated)

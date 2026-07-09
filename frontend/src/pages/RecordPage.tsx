@@ -4,6 +4,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { api } from '../api'
 import { AvatarStack } from '../components/Avatar'
 import { useConfirm } from '../components/confirm'
+import Modal from '../components/Modal'
 import { ParticipantPicker } from '../components/ParticipantPicker'
 import { RecentMeetingsPanel } from '../components/RecentMeetingsPanel'
 import { TagPicker } from '../components/TagPicker'
@@ -16,6 +17,15 @@ import './RecordPage.css'
 const DEFAULT_TITLE = '새 회의 기록'
 const ACCEPT_AUDIO = 'audio/*,.mp3,.m4a,.wav,.webm,.ogg,.mp4,.aac,.flac'
 const AUDIO_EXTENSIONS = ['.mp3', '.m4a', '.wav', '.webm', '.ogg', '.mp4', '.aac', '.flac']
+const RECORDING_NAVIGATION_MESSAGE = '녹음 중에는 취소 또는 종료 후 이동할 수 있어요.'
+const RECORDING_NAVIGATION_TARGET_SELECTOR = [
+  'a[href]',
+  '.sidebar-new button',
+  '.mobile-logo-btn',
+  '.mobile-more-logo',
+  '.sidebar-user-menu-item',
+  '.mobile-user-menu-item',
+].join(',')
 
 function localDateTimeString(date = new Date()): string {
   const pad = (value: number) => String(value).padStart(2, '0')
@@ -91,6 +101,7 @@ export default function RecordPage() {
   const [withTime, setWithTime] = useState(true)
   const memoAreaRef = useRef<HTMLTextAreaElement>(null)
   const uploadInputRef = useRef<HTMLInputElement>(null)
+  const lastNavigationAlertRef = useRef(0)
   const [recordMode, setRecordMode] = useState<'idle' | 'manual'>('idle')
   const [manualText, setManualText] = useState('')
   const [manualSubmitting, setManualSubmitting] = useState(false)
@@ -99,6 +110,15 @@ export default function RecordPage() {
   const [uploading, setUploading] = useState(false)
   const [cancellingRecording, setCancellingRecording] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
+  const [micTestOpen, setMicTestOpen] = useState(false)
+  const [micTestLoading, setMicTestLoading] = useState(false)
+  const [micTestError, setMicTestError] = useState('')
+  const [micDevices, setMicDevices] = useState<MediaDeviceInfo[]>([])
+  const [selectedMicId, setSelectedMicId] = useState('')
+  const [micLevel, setMicLevel] = useState(0)
+  const micTestStreamRef = useRef<MediaStream | null>(null)
+  const micTestAudioContextRef = useRef<AudioContext | null>(null)
+  const micTestRafRef = useRef<number | null>(null)
 
   // ---- 메모 ⋯ 메뉴 / 인라인 수정 ----
   const [menuOpenId, setMenuOpenId] = useState<number | null>(null)
@@ -109,16 +129,199 @@ export default function RecordPage() {
   const canMemo = isLive && meetingId != null
   const processing = uploading || manualSubmitting || cancellingRecording
 
-  // 녹음/업로드 중 페이지 이탈 경고
+  const stopMicTest = useCallback(() => {
+    if (micTestRafRef.current != null) {
+      window.cancelAnimationFrame(micTestRafRef.current)
+      micTestRafRef.current = null
+    }
+    micTestStreamRef.current?.getTracks().forEach((track) => track.stop())
+    micTestStreamRef.current = null
+    void micTestAudioContextRef.current?.close().catch(() => {})
+    micTestAudioContextRef.current = null
+    setMicLevel(0)
+  }, [])
+
+  const startMicLevelMeter = useCallback((stream: MediaStream) => {
+    const AudioContextCtor =
+      window.AudioContext ??
+      (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+    if (!AudioContextCtor) {
+      setMicTestError('이 브라우저에서는 마이크 입력 레벨을 표시할 수 없어요.')
+      return
+    }
+
+    const audioContext = new AudioContextCtor()
+    const analyser = audioContext.createAnalyser()
+    analyser.fftSize = 256
+    analyser.smoothingTimeConstant = 0.72
+    const source = audioContext.createMediaStreamSource(stream)
+    source.connect(analyser)
+    const data = new Uint8Array(analyser.frequencyBinCount)
+    micTestAudioContextRef.current = audioContext
+
+    const tick = () => {
+      analyser.getByteTimeDomainData(data)
+      let sum = 0
+      for (const value of data) {
+        const normalized = (value - 128) / 128
+        sum += normalized * normalized
+      }
+      const rms = Math.sqrt(sum / data.length)
+      const nextLevel = Math.min(1, Math.max(0, (rms - 0.012) * 9))
+      setMicLevel((prev) => prev * 0.68 + nextLevel * 0.32)
+      micTestRafRef.current = window.requestAnimationFrame(tick)
+    }
+
+    tick()
+  }, [])
+
+  const startMicTestStream = useCallback(
+    async (deviceId?: string) => {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        setMicTestError('이 브라우저에서는 마이크 테스트를 사용할 수 없어요.')
+        return
+      }
+
+      stopMicTest()
+      setMicTestLoading(true)
+      setMicTestError('')
+
+      try {
+        const audioConstraint: MediaTrackConstraints | boolean = deviceId
+          ? { deviceId: { exact: deviceId } }
+          : true
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraint })
+        micTestStreamRef.current = stream
+        startMicLevelMeter(stream)
+
+        const devices = await navigator.mediaDevices.enumerateDevices()
+        const inputs = devices.filter((device) => device.kind === 'audioinput')
+        setMicDevices(inputs)
+        if (inputs.length === 0) {
+          setMicTestError('사용 가능한 마이크를 찾지 못했어요.')
+        }
+        const activeDeviceId = deviceId || stream.getAudioTracks()[0]?.getSettings().deviceId || inputs[0]?.deviceId || ''
+        setSelectedMicId(activeDeviceId)
+      } catch (err) {
+        stopMicTest()
+        setMicTestError(
+          err instanceof Error && err.name === 'NotAllowedError'
+            ? '마이크 권한이 차단되어 있어요. 브라우저 권한을 허용한 뒤 다시 시도해주세요.'
+            : '마이크를 불러오지 못했어요. 연결 상태와 브라우저 권한을 확인해주세요.',
+        )
+      } finally {
+        setMicTestLoading(false)
+      }
+    },
+    [startMicLevelMeter, stopMicTest],
+  )
+
+  const openMicTest = () => {
+    if (starting || uploading || isLive) return
+    setMicTestOpen(true)
+    void startMicTestStream()
+  }
+
+  const closeMicTest = useCallback(() => {
+    setMicTestOpen(false)
+    setMicTestError('')
+    stopMicTest()
+  }, [stopMicTest])
+
+  const handleSelectMic = (deviceId: string) => {
+    setSelectedMicId(deviceId)
+    void startMicTestStream(deviceId)
+  }
+
+  useEffect(() => {
+    return () => stopMicTest()
+  }, [stopMicTest])
+
+  // 녹음/업로드 중 새로고침/탭 닫기 경고
   useEffect(() => {
     if (!isLive && !processing) return
     const handler = (e: BeforeUnloadEvent) => {
       e.preventDefault()
-      e.returnValue = ''
+      e.returnValue = RECORDING_NAVIGATION_MESSAGE
     }
     window.addEventListener('beforeunload', handler)
     return () => window.removeEventListener('beforeunload', handler)
   }, [isLive, processing])
+
+  // 녹음 중에는 취소/종료를 거치지 않은 화면 이동을 막는다.
+  useEffect(() => {
+    if (!isLive) return
+
+    const showBlockedMessage = () => {
+      const now = Date.now()
+      if (now - lastNavigationAlertRef.current < 900) return
+      lastNavigationAlertRef.current = now
+      window.alert(RECORDING_NAVIGATION_MESSAGE)
+    }
+
+    const pushRecordingGuard = () => {
+      const currentState = window.history.state
+      const state =
+        currentState && typeof currentState === 'object'
+          ? { ...currentState, notieRecordingGuard: true }
+          : { notieRecordingGuard: true }
+      window.history.pushState(state, '', window.location.href)
+    }
+
+    pushRecordingGuard()
+
+    const blockEvent = (event: Event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      event.stopImmediatePropagation()
+      showBlockedMessage()
+    }
+
+    const handlePopState = (event: PopStateEvent) => {
+      blockEvent(event)
+      pushRecordingGuard()
+    }
+
+    const handleClickCapture = (event: globalThis.MouseEvent) => {
+      const target = event.target instanceof Element ? event.target : null
+      const navTarget = target?.closest(RECORDING_NAVIGATION_TARGET_SELECTOR)
+      if (!navTarget) return
+
+      const anchor = (navTarget instanceof HTMLAnchorElement
+        ? navTarget
+        : navTarget.closest('a[href]')) as HTMLAnchorElement | null
+      if (anchor) {
+        const href = anchor.getAttribute('href')
+        if (!href || href.startsWith('#')) return
+        const targetUrl = new URL(anchor.href)
+        const samePage =
+          targetUrl.pathname === window.location.pathname &&
+          targetUrl.search === window.location.search &&
+          targetUrl.hash === window.location.hash
+        if (samePage) return
+      }
+
+      blockEvent(event)
+    }
+
+    const handleKeyDownCapture = (event: globalThis.KeyboardEvent) => {
+      const historyKey =
+        event.key === 'BrowserBack' ||
+        event.key === 'BrowserForward' ||
+        ((event.altKey || event.metaKey) && (event.key === 'ArrowLeft' || event.key === 'ArrowRight'))
+      if (!historyKey) return
+      blockEvent(event)
+    }
+
+    window.addEventListener('popstate', handlePopState, true)
+    document.addEventListener('click', handleClickCapture, true)
+    document.addEventListener('keydown', handleKeyDownCapture, true)
+    return () => {
+      window.removeEventListener('popstate', handlePopState, true)
+      document.removeEventListener('click', handleClickCapture, true)
+      document.removeEventListener('keydown', handleKeyDownCapture, true)
+    }
+  }, [isLive])
 
   // ⋯ 메뉴 바깥 클릭 시 닫기
   useEffect(() => {
@@ -712,6 +915,15 @@ export default function RecordPage() {
                         >
                           <span className="record-start-dot" /> 녹음 시작
                         </button>
+                        <button
+                          type="button"
+                          className="btn record-mic-test-btn"
+                          onClick={openMicTest}
+                          disabled={starting || uploading}
+                        >
+                          <span aria-hidden="true">🎙️</span>
+                          마이크 테스트
+                        </button>
                       </article>
 
                       <article className="record-start-option record-start-option-manual">
@@ -923,6 +1135,55 @@ export default function RecordPage() {
           </p>
         </div>
       )}
+
+      <Modal open={micTestOpen} title="마이크 선택" width={520} onClose={closeMicTest}>
+        <div className="mic-test-modal">
+          <p className="mic-test-desc">테스트할 마이크를 선택해주세요.</p>
+          {micTestError && <div className="mic-test-error">{micTestError}</div>}
+
+          <div className="mic-device-list">
+            {micDevices.length === 0 && !micTestLoading ? (
+              <div className="mic-device-empty">표시할 마이크가 없어요.</div>
+            ) : (
+              micDevices.map((device, index) => {
+                const checked = selectedMicId === device.deviceId
+                const levelSegments = 18
+                const activeSegments = checked ? Math.round(micLevel * levelSegments) : 0
+                return (
+                  <button
+                    key={device.deviceId || `mic-${index}`}
+                    type="button"
+                    className={`mic-device-row${checked ? ' selected' : ''}`}
+                    onClick={() => handleSelectMic(device.deviceId)}
+                  >
+                    <span className="mic-radio" aria-hidden="true">
+                      <span />
+                    </span>
+                    <span className="mic-device-copy">
+                      <strong>{device.label || (index === 0 ? '기본 마이크' : `마이크 ${index + 1}`)}</strong>
+                      <span>{device.label && index === 0 ? '기본 입력 장치' : '오디오 입력 장치'}</span>
+                    </span>
+                    {checked && (
+                      <span className="mic-level-meter" aria-label={`마이크 입력 레벨 ${Math.round(micLevel * 100)}%`}>
+                        {Array.from({ length: levelSegments }).map((_, segmentIndex) => (
+                          <span key={segmentIndex} className={segmentIndex < activeSegments ? 'active' : ''} />
+                        ))}
+                      </span>
+                    )}
+                  </button>
+                )
+              })
+            )}
+          </div>
+
+          <div className="mic-test-footer">
+            <span>{micTestLoading ? '마이크를 확인하고 있어요...' : '말을 하면 오른쪽 막대가 움직입니다.'}</span>
+            <button type="button" className="btn btn-ghost" onClick={closeMicTest}>
+              닫기
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   )
 }

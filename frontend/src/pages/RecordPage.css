@@ -260,11 +260,33 @@
 }
 
 .record-start-btn {
-  margin-top: auto;
+  width: min(100%, 240px);
+  justify-content: center;
   padding: 16px 40px;
   font-size: 17px;
   border-radius: 14px;
   gap: 10px;
+}
+
+.record-mic-test-btn {
+  width: min(100%, 240px);
+  justify-content: center;
+  margin-top: 12px;
+  padding: 13px 24px;
+  border: 1px solid var(--primary-soft-2);
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--primary);
+  font-size: 15px;
+  font-weight: 900;
+  border-radius: 14px;
+  box-shadow: 0 8px 18px rgba(37, 99, 235, 0.06);
+}
+
+.record-mic-test-btn:hover:not(:disabled) {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  color: var(--primary);
+  transform: translateY(-1px);
 }
 
 .record-start-dot {
@@ -277,7 +299,8 @@
 }
 
 .manual-start-btn {
-  margin-top: auto;
+  width: min(100%, 240px);
+  justify-content: center;
   padding: 16px 40px;
   border-radius: 14px;
   background: #0fafa3;
@@ -397,6 +420,164 @@
 
 .record-upload-input {
   display: none;
+}
+
+.mic-test-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.mic-test-desc {
+  margin: -4px 0 4px;
+  color: var(--text-3);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.mic-test-error {
+  padding: 10px 12px;
+  border: 1px solid #fecaca;
+  border-radius: 12px;
+  background: #fef2f2;
+  color: #dc2626;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.45;
+}
+
+.mic-device-list {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.mic-device-empty {
+  padding: 22px 14px;
+  border: 1px dashed var(--border);
+  border-radius: 14px;
+  background: var(--gray-soft);
+  color: var(--text-3);
+  text-align: center;
+  font-weight: 800;
+}
+
+.mic-device-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 13px;
+  width: 100%;
+  min-height: 72px;
+  padding: 13px 15px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+  transition:
+    border-color 0.15s,
+    background 0.15s,
+    box-shadow 0.15s;
+}
+
+.mic-device-row:hover,
+.mic-device-row.selected {
+  border-color: var(--primary-soft-2);
+  background: #f8fbff;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.05);
+}
+
+.mic-radio {
+  display: inline-flex;
+  width: 24px;
+  height: 24px;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--border-strong);
+  border-radius: 50%;
+  background: var(--surface);
+}
+
+.mic-radio span {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: transparent;
+}
+
+.mic-device-row.selected .mic-radio {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+.mic-device-row.selected .mic-radio span {
+  background: var(--primary);
+}
+
+.mic-device-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mic-device-copy strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 900;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mic-device-copy span {
+  overflow: hidden;
+  color: var(--text-3);
+  font-size: 13px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mic-level-meter {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 126px;
+}
+
+.mic-level-meter span {
+  width: 5px;
+  height: 22px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  transition:
+    background 0.08s,
+    height 0.08s;
+}
+
+.mic-level-meter span.active {
+  background: #4ade80;
+}
+
+.mic-level-meter span:nth-child(n + 12).active {
+  background: #22c55e;
+}
+
+.mic-test-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 4px;
+  color: var(--text-3);
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .manual-writing-panel {
@@ -971,6 +1152,12 @@
     font-size: 18px;
   }
 
+  .record-mic-test-btn {
+    width: min(100%, 300px);
+    padding: 13px 18px;
+    font-size: 15px;
+  }
+
   .record-upload-strip {
     justify-items: center;
     min-height: 0;
@@ -992,6 +1179,30 @@
 
   .record-upload-hint {
     font-size: 12px;
+  }
+
+  .mic-device-row {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .mic-level-meter {
+    grid-column: 2;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .mic-level-meter span {
+    flex: 1;
+    min-width: 3px;
+  }
+
+  .mic-test-footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .mic-test-footer .btn {
+    width: 100%;
   }
 
   .manual-writing-head {

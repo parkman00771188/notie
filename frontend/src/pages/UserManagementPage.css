@@ -590,6 +590,12 @@
   color: #6f5cff;
 }
 
+.user-role-pill.other {
+  border: 1.5px solid #d5dbe5;
+  background: #f3f5f8;
+  color: #64748b;
+}
+
 .user-role-icon {
   display: inline-flex;
   align-items: center;
@@ -1007,6 +1013,52 @@
 
 .user-form-field .combobox {
   min-width: 0;
+}
+
+.user-password-wrap {
+  position: relative;
+  display: flex;
+  min-width: 0;
+}
+
+.user-password-wrap .user-password-input {
+  width: 100%;
+  padding-right: 44px;
+}
+
+.user-password-toggle {
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  display: inline-flex;
+  width: 30px;
+  height: 30px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+  transform: translateY(-50%);
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+
+.user-password-toggle:hover {
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.user-password-toggle svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .user-active-toggle {

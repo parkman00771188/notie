@@ -113,7 +113,7 @@ def _project_members(conn: sqlite3.Connection, project_id: int) -> list[dict]:
           u.department, u.position, u.phone, u.role, u.active
         FROM project_members pm
         JOIN users u ON u.id = pm.user_id
-        WHERE pm.project_id = ?
+        WHERE pm.project_id = ? AND u.role <> 'other'
         ORDER BY lower(u.name), lower(u.username), u.id
         """,
         (project_id,),
@@ -183,7 +183,7 @@ def _replace_project_members(
     conn.execute("DELETE FROM project_members WHERE project_id = ?", (project_id,))
     for user_id in _normalize_ids(user_ids):
         exists = conn.execute(
-            "SELECT id FROM users WHERE id = ? AND active = 1",
+            "SELECT id FROM users WHERE id = ? AND active = 1 AND role <> 'other'",
             (user_id,),
         ).fetchone()
         if exists is not None:
@@ -200,7 +200,7 @@ def _sync_tag_permissions(conn: sqlite3.Connection, tag_ids: list[int]) -> None:
             SELECT DISTINCT pm.user_id
             FROM project_tags pt
             JOIN project_members pm ON pm.project_id = pt.project_id
-            JOIN users u ON u.id = pm.user_id AND u.active = 1
+            JOIN users u ON u.id = pm.user_id AND u.active = 1 AND u.role <> 'other'
             WHERE pt.tag_id = ?
             ORDER BY pm.user_id
             """,

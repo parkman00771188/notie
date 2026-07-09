@@ -9,6 +9,7 @@ from ..auth_utils import (
     create_session,
     extract_token,
     get_current_user,
+    hash_password,
     serialize_user,
     verify_password,
 )
@@ -26,6 +27,10 @@ class SignupRequest(BaseModel):
 class LoginRequest(BaseModel):
     email: str
     password: str
+
+
+class PasswordChangeRequest(BaseModel):
+    new_password: str = Field(min_length=1)
 
 
 @router.post("/signup")
@@ -63,6 +68,26 @@ def login(body: LoginRequest) -> dict:
 @router.get("/me")
 def me(user: dict = Depends(get_current_user)) -> dict:
     return user
+
+
+@router.post("/password")
+def change_password(body: PasswordChangeRequest, user: dict = Depends(get_current_user)) -> dict:
+    conn = db.get_conn()
+    try:
+        row = conn.execute(
+            "SELECT id FROM users WHERE id = ?",
+            (user["id"],),
+        ).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다")
+        with conn:
+            conn.execute(
+                "UPDATE users SET password_hash = ? WHERE id = ?",
+                (hash_password(body.new_password), user["id"]),
+            )
+    finally:
+        conn.close()
+    return {"ok": True}
 
 
 @router.post("/logout")

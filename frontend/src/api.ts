@@ -13,6 +13,7 @@ import type {
   Tag,
   TranscriptSegment,
   User,
+  UserRole,
 } from './types'
 
 const TOKEN_KEY = 'gimnote_token'
@@ -69,7 +70,7 @@ export interface AdminUserInput {
   username?: string
   password?: string
   name: string
-  role: 'admin' | 'user'
+  role: UserRole
   email?: string
   organization?: string
   department?: string
@@ -111,6 +112,13 @@ export const api = {
     })
     setToken(res.token)
     return res
+  },
+
+  changePassword(data: { new_password: string }): Promise<{ ok: boolean }> {
+    return request<{ ok: boolean }>('/api/auth/password', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
   },
 
   // ---- admin users ----

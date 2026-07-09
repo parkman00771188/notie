@@ -1,16 +1,19 @@
 import { useEffect, useState } from 'react'
+import { api } from '../api'
 import { useAuth } from '../App'
 import AiEngineSettings from '../components/AiEngineSettings'
 import './SettingsPage.css'
 
 const SECTIONS = [
   { id: 'font', label: '글꼴 설정', icon: 'Aa' },
-  { id: 'ai', label: 'AI 요약 엔진', icon: '✨' },
+  { id: 'passwords', label: '비밀번호 변경', icon: 'PW' },
+  { id: 'ai', label: 'AI 요약 엔진', icon: 'AI', adminOnly: true },
 ] as const
 
 type SectionId = (typeof SECTIONS)[number]['id']
 
 const isSectionId = (id: string): id is SectionId => SECTIONS.some((s) => s.id === id)
+const isAdminOnlySection = (id: SectionId) => SECTIONS.some((s) => s.id === id && 'adminOnly' in s && s.adminOnly)
 
 const FONT_SIZE_STORAGE_KEY = 'notie_font_size'
 
@@ -27,15 +30,35 @@ type FontSizeId = (typeof FONT_SIZE_OPTIONS)[number]['id']
 const isFontSizeId = (value: string | null): value is FontSizeId =>
   FONT_SIZE_OPTIONS.some((option) => option.id === value)
 
+function EyeIcon({ hidden }: { hidden: boolean }) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      {hidden ? (
+        <>
+          <path d="M3 3l18 18" />
+          <path d="M10.7 5.1A10.6 10.6 0 0 1 12 5c5 0 8.5 4.4 9.6 6a1.8 1.8 0 0 1 0 2c-.4.6-1.2 1.6-2.2 2.5" />
+          <path d="M14.1 14.1A3 3 0 0 1 9.9 9.9" />
+          <path d="M6.4 6.5A16 16 0 0 0 2.4 11a1.8 1.8 0 0 0 0 2C3.5 14.6 7 19 12 19c1.6 0 3-.4 4.2-1" />
+        </>
+      ) : (
+        <>
+          <path d="M2.4 11a1.8 1.8 0 0 0 0 2C3.5 14.6 7 19 12 19s8.5-4.4 9.6-6a1.8 1.8 0 0 0 0-2C20.5 9.4 17 5 12 5S3.5 9.4 2.4 11Z" />
+          <circle cx="12" cy="12" r="3" />
+        </>
+      )}
+    </svg>
+  )
+}
+
 /* ---------- 설정 페이지 ---------- */
 
 export default function SettingsPage() {
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
-  const visibleSections = isAdmin ? SECTIONS : SECTIONS.filter((s) => s.id !== 'ai')
+  const visibleSections = isAdmin ? SECTIONS : SECTIONS.filter((s) => !('adminOnly' in s && s.adminOnly))
   const settingsSubtitle = isAdmin
-    ? '글꼴 설정과 모든 사용자에게 적용되는 AI 요약 엔진을 관리합니다.'
-    : '글꼴 설정을 관리합니다.'
+    ? '글꼴 설정, 내 비밀번호, 모든 사용자에게 적용되는 AI 요약 엔진을 관리합니다.'
+    : '글꼴 설정과 내 비밀번호를 관리합니다.'
 
   // 탭 — URL 해시(#font/#ai)와 동기화
   const [activeSection, setActiveSection] = useState<SectionId>(() => {
@@ -50,6 +73,13 @@ export default function SettingsPage() {
       return 'normal'
     }
   })
+  const [passwordError, setPasswordError] = useState('')
+  const [passwordSuccess, setPasswordSuccess] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [showNewPassword, setShowNewPassword] = useState(false)
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
+  const [passwordSaving, setPasswordSaving] = useState(false)
 
   // 주소창에서 해시를 직접 바꾼 경우 탭 동기화
   useEffect(() => {
@@ -62,7 +92,7 @@ export default function SettingsPage() {
   }, [])
 
   useEffect(() => {
-    if (!isAdmin && activeSection === 'ai') {
+    if (!isAdmin && isAdminOnlySection(activeSection)) {
       setActiveSection('font')
       window.history.replaceState(null, '', '#font')
     }
@@ -83,6 +113,36 @@ export default function SettingsPage() {
   const goToSection = (id: SectionId) => {
     setActiveSection(id)
     window.history.replaceState(null, '', `#${id}`)
+  }
+
+  const saveOwnPassword = async () => {
+    const next = newPassword.trim()
+    const confirm = confirmPassword.trim()
+    setPasswordError('')
+    setPasswordSuccess('')
+
+    if (!next || !confirm) {
+      setPasswordError('새 비밀번호를 입력해주세요.')
+      return
+    }
+    if (next !== confirm) {
+      setPasswordError('새 비밀번호가 서로 일치하지 않습니다.')
+      return
+    }
+
+    setPasswordSaving(true)
+    try {
+      await api.changePassword({ new_password: next })
+      setNewPassword('')
+      setConfirmPassword('')
+      setShowNewPassword(false)
+      setShowConfirmPassword(false)
+      setPasswordSuccess('비밀번호가 변경되었습니다. 다음 로그인부터 새 비밀번호를 사용해주세요.')
+    } catch (err) {
+      setPasswordError(err instanceof Error ? err.message : '비밀번호 변경에 실패했어요')
+    } finally {
+      setPasswordSaving(false)
+    }
   }
 
   /* ----- 렌더 ----- */
@@ -133,6 +193,104 @@ export default function SettingsPage() {
     )
   }
 
+  const renderPasswordSection = () => (
+    <section className="card settings-card password-settings-card">
+      <div className="settings-card-head">
+        <h2 className="settings-card-title">
+          <span className="password-title-icon" aria-hidden="true">
+            PW
+          </span>
+          비밀번호 변경
+        </h2>
+        <p className="settings-card-desc">
+          현재 로그인한 계정의 비밀번호를 변경합니다.
+        </p>
+      </div>
+
+      {passwordError && <div className="sp-error">{passwordError}</div>}
+      {passwordSuccess && <div className="sp-success">{passwordSuccess}</div>}
+
+      <form
+        className="password-self-form"
+        onSubmit={(event) => {
+          event.preventDefault()
+          void saveOwnPassword()
+        }}
+      >
+        <div className="password-account-box">
+          <span className="password-account-label">현재 계정</span>
+          <strong>{user?.name ?? '-'}</strong>
+          <span>{user?.username ?? '-'}</span>
+        </div>
+
+        <div className="password-field-grid">
+          <label className="password-field">
+            <span>새 비밀번호</span>
+            <div className="password-input-wrap">
+              <input
+                className="input password-input"
+                type={showNewPassword ? 'text' : 'password'}
+                value={newPassword}
+                onChange={(event) => {
+                  setNewPassword(event.target.value)
+                  setPasswordError('')
+                  setPasswordSuccess('')
+                }}
+                placeholder="새 비밀번호를 입력하세요"
+                autoComplete="new-password"
+              />
+              <button
+                type="button"
+                className="password-visibility-button"
+                onClick={() => setShowNewPassword((value) => !value)}
+                aria-label={showNewPassword ? '새 비밀번호 숨기기' : '새 비밀번호 표시'}
+                title={showNewPassword ? '새 비밀번호 숨기기' : '새 비밀번호 표시'}
+              >
+                <EyeIcon hidden={showNewPassword} />
+              </button>
+            </div>
+          </label>
+          <label className="password-field">
+            <span>새 비밀번호 확인</span>
+            <div className="password-input-wrap">
+              <input
+                className="input password-input"
+                type={showConfirmPassword ? 'text' : 'password'}
+                value={confirmPassword}
+                onChange={(event) => {
+                  setConfirmPassword(event.target.value)
+                  setPasswordError('')
+                  setPasswordSuccess('')
+                }}
+                placeholder="새 비밀번호를 다시 입력하세요"
+                autoComplete="new-password"
+              />
+              <button
+                type="button"
+                className="password-visibility-button"
+                onClick={() => setShowConfirmPassword((value) => !value)}
+                aria-label={showConfirmPassword ? '새 비밀번호 확인 숨기기' : '새 비밀번호 확인 표시'}
+                title={showConfirmPassword ? '새 비밀번호 확인 숨기기' : '새 비밀번호 확인 표시'}
+              >
+                <EyeIcon hidden={showConfirmPassword} />
+              </button>
+            </div>
+          </label>
+        </div>
+
+        <div className="password-form-actions">
+          <button
+            type="submit"
+            className="btn btn-primary"
+            disabled={!newPassword.trim() || !confirmPassword.trim() || passwordSaving}
+          >
+            {passwordSaving ? '변경 중...' : '비밀번호 변경'}
+          </button>
+        </div>
+      </form>
+    </section>
+  )
+
   return (
     <div className="page settings-page">
       <h1 className="page-title">설정</h1>
@@ -155,7 +313,7 @@ export default function SettingsPage() {
               </span>
               <span className="sp-nav-label">
                 {s.label}
-                {s.id === 'ai' && <span className="sp-nav-admin-badge">관리자</span>}
+                {'adminOnly' in s && s.adminOnly && <span className="sp-nav-admin-badge">관리자</span>}
               </span>
             </button>
           ))}
@@ -164,6 +322,7 @@ export default function SettingsPage() {
         {/* 우측 — 선택된 섹션만 렌더 */}
         <div className="sp-sections">
           {activeSection === 'font' && renderFontSection()}
+          {activeSection === 'passwords' && renderPasswordSection()}
           {activeSection === 'ai' && isAdmin && <AiEngineSettings />}
         </div>
       </div>

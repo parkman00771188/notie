@@ -307,6 +307,157 @@
   line-height: 1.65;
 }
 
+/* ---------- 비밀번호 관리 ---------- */
+.password-settings-card {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.password-title-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.sp-success {
+  background: #ecfdf3;
+  color: var(--green);
+  border: 1px solid #bbf7d0;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.password-self-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.password-account-box {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: #fafbfe;
+}
+
+.password-account-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px 9px;
+  border-radius: var(--radius-full);
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-size: 11.5px;
+  font-weight: 900;
+}
+
+.password-account-box strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.password-account-box > span:last-child {
+  color: var(--text-3);
+  font-size: 12.5px;
+  font-weight: 800;
+}
+
+.password-field-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.password-field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 0;
+  color: var(--text-2);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.password-field .input {
+  min-width: 0;
+}
+
+.password-input-wrap {
+  position: relative;
+  display: flex;
+  min-width: 0;
+}
+
+.password-input-wrap .password-input {
+  width: 100%;
+  padding-right: 44px;
+}
+
+.password-visibility-button {
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  display: inline-flex;
+  width: 30px;
+  height: 30px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+  transform: translateY(-50%);
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+
+.password-visibility-button:hover {
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.password-visibility-button svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.password-form-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.password-form-actions .btn {
+  min-width: 140px;
+}
+
 /* ---------- 태그 · 프로젝트 ---------- */
 .sp-tag-add {
   display: flex;
@@ -1169,6 +1320,21 @@
   }
 
   .sp-edit-actions .btn {
+    width: 100%;
+  }
+
+  .password-account-box {
+    grid-template-columns: 1fr;
+    align-items: flex-start;
+    gap: 7px;
+  }
+
+  .password-field-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .password-form-actions,
+  .password-form-actions .btn {
     width: 100%;
   }
 }

@@ -105,6 +105,23 @@ def payload_fields(model: BaseModel) -> dict:
     return model.dict(exclude_unset=True)
 
 
+def _audio_file_path(filename: str) -> Path:
+    audio_root = config.AUDIO_DIR.resolve()
+    path = (audio_root / filename).resolve()
+    if path != audio_root and audio_root in path.parents:
+        return path
+    raise HTTPException(status_code=400, detail="Invalid audio file path")
+
+
+def _delete_audio_file(filename: str | None) -> None:
+    if not filename:
+        return
+    try:
+        _audio_file_path(filename).unlink(missing_ok=True)
+    except (HTTPException, OSError):
+        pass
+
+
 def get_owned_meeting(
     conn: sqlite3.Connection, meeting_id: int, user_id: int, include_deleted: bool = False
 ) -> sqlite3.Row:
@@ -267,9 +284,15 @@ def serialize_meeting(conn: sqlite3.Connection, row: sqlite3.Row) -> dict:
     row_keys = row.keys()
     participants = conn.execute(
         """
-        SELECT p.id, p.name, p.role, p.department, p.organization, p.email, p.phone, p.color
+        SELECT
+          p.id, p.name, p.role, p.department, p.organization, p.email, p.phone,
+          COALESCE(o.color, p.color) AS color
         FROM meeting_participants mp
         JOIN participants p ON p.id = mp.participant_id
+        LEFT JOIN org_options o
+          ON o.user_id = p.user_id
+         AND o.kind = 'organization'
+         AND o.name = p.organization
         WHERE mp.meeting_id = ?
         ORDER BY p.id
         """,
@@ -588,11 +611,7 @@ def purge_meeting(meeting_id: int, user: dict = Depends(get_current_user)) -> di
         audio_filename = row["audio_filename"]
         with conn:
             conn.execute("DELETE FROM meetings WHERE id = ?", (meeting_id,))
-    if audio_filename:
-        try:
-            (config.AUDIO_DIR / audio_filename).unlink(missing_ok=True)
-        except OSError:
-            pass  # 파일 삭제 실패는 무시 (DB에서는 이미 삭제됨)
+    _delete_audio_file(audio_filename)
     return {"ok": True}
 
 
@@ -615,15 +634,12 @@ def upload_audio(
         row = get_owned_meeting(conn, meeting_id, user["id"])
         old_filename = row["audio_filename"]
 
-        dest = config.AUDIO_DIR / filename
+        dest = _audio_file_path(filename)
         with dest.open("wb") as out:
             shutil.copyfileobj(file.file, out)
 
         if old_filename and old_filename != filename:
-            try:
-                (config.AUDIO_DIR / old_filename).unlink(missing_ok=True)
-            except OSError:
-                pass
+            _delete_audio_file(old_filename)
 
         with conn:
             conn.execute(
@@ -690,7 +706,7 @@ def get_audio(meeting_id: int, user: dict = Depends(get_current_user)) -> FileRe
 
     if not audio_filename:
         raise HTTPException(status_code=404, detail="오디오 파일이 없습니다")
-    path = config.AUDIO_DIR / audio_filename
+    path = _audio_file_path(audio_filename)
     if not path.is_file():
         raise HTTPException(status_code=404, detail="오디오 파일이 없습니다")
 
@@ -709,7 +725,7 @@ def get_waveform(meeting_id: int, user: dict = Depends(get_current_user)) -> dic
 
     if not audio_filename:
         raise HTTPException(status_code=404, detail="오디오 파일이 없습니다")
-    path = config.AUDIO_DIR / audio_filename
+    path = _audio_file_path(audio_filename)
     if not path.is_file():
         raise HTTPException(status_code=404, detail="오디오 파일이 없습니다")
 
@@ -989,7 +1005,7 @@ def retry_audio_processing(meeting_id: int, user: dict = Depends(get_current_use
         if row["status"] != "failed":
             raise HTTPException(status_code=400, detail="실패로 임시저장된 음성만 다시 처리할 수 있습니다")
 
-        audio_path = config.AUDIO_DIR / audio_filename
+        audio_path = _audio_file_path(audio_filename)
         if not audio_path.is_file():
             raise HTTPException(status_code=404, detail="임시저장된 음성 파일을 찾을 수 없습니다")
 

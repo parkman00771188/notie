@@ -395,21 +395,6 @@
   white-space: nowrap;
 }
 
-.participant-color-field {
-  min-width: 0;
-}
-
-.participant-color-row {
-  display: flex;
-  min-height: 48px;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  background: #f8fafc;
-}
-
 .participant-admin-table th:nth-child(6),
 .participant-admin-table td:nth-child(6) {
   overflow: visible;

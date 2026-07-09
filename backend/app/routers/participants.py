@@ -64,6 +64,23 @@ def _to_participant(row: sqlite3.Row) -> dict:
     }
 
 
+def _organization_color(
+    conn: sqlite3.Connection, user_id: int, organization: str | None
+) -> str | None:
+    if not organization:
+        return None
+    row = conn.execute(
+        """
+        SELECT color
+        FROM org_options
+        WHERE user_id = ? AND kind = 'organization' AND name = ?
+        LIMIT 1
+        """,
+        (user_id, organization),
+    ).fetchone()
+    return row["color"] if row and row["color"] else None
+
+
 def _sync_user_participants(
     conn: sqlite3.Connection, owner_user_id: int, owner_role: str | None
 ) -> None:
@@ -145,9 +162,13 @@ def list_participants(user: dict = Depends(get_current_user)) -> list[dict]:
             """
             SELECT
               p.id, p.source_user_id, su.username AS source_username, p.name, p.role,
-              p.department, p.organization, p.email, p.phone, p.color
+              p.department, p.organization, p.email, p.phone, COALESCE(o.color, p.color) AS color
             FROM participants p
             LEFT JOIN users su ON su.id = p.source_user_id
+            LEFT JOIN org_options o
+              ON o.user_id = p.user_id
+             AND o.kind = 'organization'
+             AND o.name = p.organization
             WHERE p.user_id = ?
             ORDER BY p.id
             """,
@@ -176,11 +197,13 @@ def create_participant(
     )
     email = body.email.strip() if body.email and body.email.strip() else None
     phone = body.phone.strip() if body.phone and body.phone.strip() else None
-    color = body.color.strip() if body.color and body.color.strip() else None
 
     conn = db.get_conn()
     try:
         with conn:
+            color = _organization_color(conn, user["id"], organization)
+            if color is None:
+                color = body.color.strip() if body.color and body.color.strip() else None
             if color is None:
                 count = conn.execute(
                     "SELECT COUNT(*) FROM participants WHERE user_id = ?",

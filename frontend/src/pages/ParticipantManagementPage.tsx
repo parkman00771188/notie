@@ -477,11 +477,15 @@ export default function ParticipantManagementPage() {
     setSaving(true)
     setError('')
     try {
+      const payload = {
+        ...cleanPayload(draft),
+        color: organizationColor(draft.organization),
+      }
       if (editing) {
-        const updated = await api.updateParticipant(editing.id, cleanPayload(draft))
+        const updated = await api.updateParticipant(editing.id, payload)
         setParticipants((prev) => (prev ?? []).map((item) => (item.id === updated.id ? updated : item)))
       } else {
-        const created = await api.createParticipant(cleanPayload(draft))
+        const created = await api.createParticipant(payload)
         setParticipants((prev) => [...(prev ?? []), created])
       }
       setModalOpen(false)
@@ -717,13 +721,6 @@ export default function ParticipantManagementPage() {
                 required
               />
             </label>
-            <div className="user-form-field participant-color-field">
-              <span>참석자 색상</span>
-              <div className="participant-color-row">
-                <Avatar name={draft.name || '참'} color={draft.color} size={30} />
-                <ParticipantColorPicker value={draft.color} onChange={(color) => setField('color', color)} />
-              </div>
-            </div>
             <label className="user-form-field">
               <span>소속</span>
               <ComboBox

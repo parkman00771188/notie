@@ -22,22 +22,24 @@ from pathlib import Path
 
 from .export_doc import _fmt_datetime, format_participants_grouped
 
-FONT = "Malgun"
+FONT = "NotieKR"
 LABEL_BG = (231, 230, 230)
 LABEL_W = 24  # 좌측 라벨 셀 폭 (mm)
 PAD = 2.5     # 내용 셀 안쪽 여백 (mm)
 
-# 맑은 고딕 우선, 없으면 OS별 한글 폰트 폴백
+# 맑은 고딕 우선, 없으면 OS별 한글 폰트 폴백.
+# Linux에서는 TTC 컬렉션 폰트보다 단일 TTF인 NanumGothic이 fpdf2 임베딩에 더 안정적이다.
 _FONT_CANDIDATES = [
     (r"C:\Windows\Fonts\malgun.ttf", r"C:\Windows\Fonts\malgunbd.ttf"),
     (r"C:\Windows\Fonts\gulim.ttc", None),
     ("/System/Library/Fonts/Supplemental/Arial Unicode.ttf", None),
     ("/Library/Fonts/Arial Unicode.ttf", None),
     ("/System/Library/Fonts/AppleSDGothicNeo.ttc", None),
-    ("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc", None),
-    ("/usr/share/fonts/opentype/noto/NotoSansCJKkr-Regular.otf", None),
-    ("/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc", None),
     ("/usr/share/fonts/truetype/nanum/NanumGothic.ttf", "/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf"),
+    ("/usr/share/fonts/truetype/nanum/NanumBarunGothic.ttf", "/usr/share/fonts/truetype/nanum/NanumBarunGothicBold.ttf"),
+    ("/usr/share/fonts/opentype/noto/NotoSansCJKkr-Regular.otf", None),
+    ("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc", None),
+    ("/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc", None),
 ]
 
 

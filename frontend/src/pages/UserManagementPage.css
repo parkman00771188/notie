@@ -859,6 +859,7 @@
 
 .user-detail-modal-actions {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
   gap: 9px;
 }
@@ -869,7 +870,16 @@
   gap: 7px;
 }
 
-.user-detail-edit-action svg {
+.user-detail-delete-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  order: -1;
+  margin-right: auto;
+}
+
+.user-detail-edit-action svg,
+.user-detail-delete-action svg {
   width: 16px;
   height: 16px;
   fill: none;
@@ -1523,6 +1533,11 @@
 
   .user-detail-modal-badges {
     justify-content: flex-start;
+  }
+
+  .user-detail-delete-action {
+    order: 10;
+    margin-right: 0;
   }
 
   .user-detail-list {

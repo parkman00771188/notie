@@ -6,7 +6,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from .. import db
+from .. import config, db
 from ..auth_utils import get_current_user, hash_password, require_admin
 
 router = APIRouter()
@@ -58,6 +58,18 @@ def _clean_username(value: str) -> str:
 
 def _fallback_email(username: str) -> str:
     return f"{username}@notie.local"
+
+
+def _delete_audio_file(filename: str | None) -> None:
+    if not filename:
+        return
+    try:
+        audio_root = config.AUDIO_DIR.resolve()
+        path = (audio_root / filename).resolve()
+        if path != audio_root and audio_root in path.parents:
+            path.unlink(missing_ok=True)
+    except OSError:
+        pass
 
 
 def _admin_count(conn: sqlite3.Connection) -> int:
@@ -287,9 +299,18 @@ def delete_user(user_id: int, current: dict = Depends(get_current_user)) -> dict
         if row["role"] == "admin" and row["active"] and _admin_count(conn) <= 1:
             raise HTTPException(status_code=400, detail="마지막 관리자는 삭제할 수 없습니다")
 
+        audio_filenames = [
+            item["audio_filename"]
+            for item in conn.execute(
+                "SELECT audio_filename FROM meetings WHERE user_id = ? AND audio_filename IS NOT NULL",
+                (user_id,),
+            ).fetchall()
+        ]
         with conn:
             conn.execute("DELETE FROM participants WHERE source_user_id = ?", (user_id,))
             conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
     finally:
         conn.close()
+    for filename in audio_filenames:
+        _delete_audio_file(filename)
     return {"ok": True}

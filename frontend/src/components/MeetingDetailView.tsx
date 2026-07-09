@@ -916,13 +916,10 @@ export function MeetingDetailView({
           {isOwner && editingDate ? (
             <span className="detail-date-edit">
               <input
-                type="text"
+                type="date"
                 className="input detail-date-input"
                 value={dateDraft}
-                inputMode="numeric"
-                placeholder="YYYY-MM-DD"
-                pattern="[0-9]{4}-[0-9]{2}-[0-9]{2}"
-                maxLength={10}
+                aria-label="회의 날짜"
                 autoFocus
                 onChange={(e) => setDateDraft(e.target.value)}
               />

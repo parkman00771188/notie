@@ -207,6 +207,18 @@ function PencilIcon() {
   )
 }
 
+function TrashIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M4 7h16" />
+      <path d="M10 11v6" />
+      <path d="M14 11v6" />
+      <path d="M6 7l1 13h10l1-13" />
+      <path d="M9 7V4h6v3" />
+    </svg>
+  )
+}
+
 function EyeIcon({ hidden }: { hidden: boolean }) {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -636,6 +648,30 @@ export default function UserManagementPage() {
     }
   }
 
+  const deleteUser = async (target: AdminUser) => {
+    const ok = await confirm({
+      title: `${target.name} 계정을 삭제하시겠습니까?`,
+      message:
+        '삭제하면 해당 사용자는 더 이상 로그인할 수 없고, 해당 계정의 회의 기록과 연결된 녹음 파일도 함께 삭제됩니다. 이 작업은 되돌릴 수 없습니다.',
+      confirmLabel: '삭제',
+      danger: true,
+    })
+    if (!ok) return
+    setError('')
+    try {
+      await api.deleteAdminUser(target.id)
+      setUsers((prev) => (prev ?? []).filter((item) => item.id !== target.id))
+      setDetailUserId(null)
+      if (editing?.id === target.id) {
+        setEditing(null)
+        setModalOpen(false)
+        setDraft(EMPTY_DRAFT)
+      }
+    } catch (err: unknown) {
+      setError(errMsg(err, '사용자를 삭제하지 못했습니다'))
+    }
+  }
+
   const renderUserRow = (item: AdminUser, groupIndex: number) => (
     <tr
       key={item.id}
@@ -892,6 +928,16 @@ export default function UserManagementPage() {
               >
                 {detailUser.active ? '비활성화' : '활성화'}
               </button>
+              {detailUser.id !== user?.id && (
+                <button
+                  type="button"
+                  className="btn btn-danger user-detail-delete-action"
+                  onClick={() => void deleteUser(detailUser)}
+                >
+                  <TrashIcon />
+                  삭제
+                </button>
+              )}
             </div>
           </div>
         )}

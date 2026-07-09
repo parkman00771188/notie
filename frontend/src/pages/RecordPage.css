@@ -99,12 +99,17 @@
 }
 
 .record-date-edit .record-date-input {
-  flex: 0 0 142px;
-  width: 142px !important;
+  flex: 0 0 154px;
+  width: 154px !important;
   min-width: 0;
-  max-width: 142px;
+  max-width: 154px;
   padding: 7px 10px;
   font-size: 14px;
+  color-scheme: light;
+}
+
+.record-date-edit .record-date-input::-webkit-calendar-picker-indicator {
+  cursor: pointer;
 }
 
 .record-date-edit .record-time-select {

@@ -810,13 +810,10 @@ export default function RecordPage() {
             {editingDate ? (
               <span className="record-date-edit">
                 <input
-                  type="text"
+                  type="date"
                   className="input record-date-input"
                   value={dateDraft}
-                  inputMode="numeric"
-                  placeholder="YYYY-MM-DD"
-                  pattern="[0-9]{4}-[0-9]{2}-[0-9]{2}"
-                  maxLength={10}
+                  aria-label="회의 날짜"
                   onChange={(e) => setDateDraft(e.target.value)}
                   autoFocus
                 />

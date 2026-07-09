@@ -109,8 +109,23 @@ def _to_tag(
     return data
 
 
-def _to_org_option(row: sqlite3.Row) -> dict:
-    return {"id": row["id"], "kind": row["kind"], "name": row["name"], "color": row["color"]}
+def _can_manage_org_option(row: sqlite3.Row, user: dict) -> bool:
+    return row["user_id"] == user["id"] or (
+        user.get("role") == "admin" and row["owner_role"] == "admin"
+    )
+
+
+def _to_org_option(row: sqlite3.Row, user: dict | None = None) -> dict:
+    data = {
+        "id": row["id"],
+        "kind": row["kind"],
+        "name": row["name"],
+        "color": row["color"],
+        "is_shared": row["owner_role"] == "admin",
+    }
+    if user is not None:
+        data["can_manage"] = _can_manage_org_option(row, user)
+    return data
 
 
 def _can_manage_tag(row: sqlite3.Row, user: dict) -> bool:
@@ -305,19 +320,42 @@ def delete_tag(tag_id: int, user: dict = Depends(get_current_user)) -> dict:
     conn = db.get_conn()
     try:
         row = conn.execute(
-            "SELECT id, user_id, is_global FROM tags WHERE id = ?", (tag_id,)
+            "SELECT id, user_id, name, is_global FROM tags WHERE id = ?", (tag_id,)
         ).fetchone()
         if row is None:
             raise HTTPException(status_code=404, detail="태그를 찾을 수 없습니다")
         if not _can_manage_tag(row, user):
             raise HTTPException(status_code=403, detail="관리자 공유 태그는 삭제할 수 없습니다")
-        if user.get("role") != "admin" and _is_project_tag(conn, tag_id):
+        is_project_tag = _is_project_tag(conn, tag_id)
+        if user.get("role") != "admin" and is_project_tag:
             raise HTTPException(
                 status_code=403,
                 detail="프로젝트에 연결된 태그는 일반 사용자가 삭제할 수 없습니다",
             )
 
         with conn:
+            if row["is_global"] or is_project_tag:
+                conn.execute(
+                    """
+                    UPDATE meetings
+                    SET tag = NULL,
+                        is_shared = 0,
+                        locked = CASE WHEN is_shared = 1 THEN 0 ELSE locked END
+                    WHERE tag = ?
+                    """,
+                    (row["name"],),
+                )
+            else:
+                conn.execute(
+                    """
+                    UPDATE meetings
+                    SET tag = NULL,
+                        is_shared = 0,
+                        locked = CASE WHEN is_shared = 1 THEN 0 ELSE locked END
+                    WHERE user_id = ? AND tag = ?
+                    """,
+                    (user["id"], row["name"]),
+                )
             conn.execute("DELETE FROM tags WHERE id = ?", (tag_id,))
     finally:
         conn.close()
@@ -338,26 +376,28 @@ def list_org_options(
         if kind:
             rows = conn.execute(
                 """
-                SELECT id, kind, name, color
-                FROM org_options
-                WHERE user_id = ? AND kind = ?
-                ORDER BY name ASC
+                SELECT o.id, o.user_id, o.kind, o.name, o.color, u.role AS owner_role
+                FROM org_options o
+                JOIN users u ON u.id = o.user_id
+                WHERE o.kind = ? AND (u.role = 'admin' OR o.user_id = ?)
+                ORDER BY CASE WHEN u.role = 'admin' THEN 0 ELSE 1 END, o.name ASC
                 """,
-                (user["id"], kind),
+                (kind, user["id"]),
             ).fetchall()
         else:
             rows = conn.execute(
                 """
-                SELECT id, kind, name, color
-                FROM org_options
-                WHERE user_id = ?
-                ORDER BY kind ASC, name ASC
+                SELECT o.id, o.user_id, o.kind, o.name, o.color, u.role AS owner_role
+                FROM org_options o
+                JOIN users u ON u.id = o.user_id
+                WHERE u.role = 'admin' OR o.user_id = ?
+                ORDER BY o.kind ASC, CASE WHEN u.role = 'admin' THEN 0 ELSE 1 END, o.name ASC
                 """,
                 (user["id"],),
             ).fetchall()
     finally:
         conn.close()
-    return [_to_org_option(row) for row in rows]
+    return [_to_org_option(row, user) for row in rows]
 
 
 @router.post("/org-options")
@@ -372,6 +412,18 @@ def create_org_option(
     conn = db.get_conn()
     try:
         with conn:
+            existing = conn.execute(
+                """
+                SELECT 1
+                FROM org_options o
+                JOIN users u ON u.id = o.user_id
+                WHERE o.kind = ? AND o.name = ? AND (u.role = 'admin' OR o.user_id = ?)
+                LIMIT 1
+                """,
+                (body.kind, name, user["id"]),
+            ).fetchone()
+            if existing is not None:
+                raise HTTPException(status_code=400, detail="이미 등록되어 있습니다")
             try:
                 cur = conn.execute(
                     "INSERT INTO org_options (user_id, kind, name, color) VALUES (?, ?, ?, ?)",
@@ -380,10 +432,19 @@ def create_org_option(
             except sqlite3.IntegrityError:
                 raise HTTPException(status_code=400, detail="이미 등록되어 있습니다")
             option_id = cur.lastrowid
+            row = conn.execute(
+                """
+                SELECT o.id, o.user_id, o.kind, o.name, o.color, u.role AS owner_role
+                FROM org_options o
+                JOIN users u ON u.id = o.user_id
+                WHERE o.id = ?
+                """,
+                (option_id,),
+            ).fetchone()
     finally:
         conn.close()
 
-    return {"id": option_id, "kind": body.kind, "name": name, "color": color}
+    return _to_org_option(row, user)
 
 
 @router.patch("/org-options/{option_id}")
@@ -394,10 +455,15 @@ def update_org_option(
     conn = db.get_conn()
     try:
         row = conn.execute(
-            "SELECT id, kind, name, color FROM org_options WHERE id = ? AND user_id = ?",
-            (option_id, user["id"]),
+            """
+            SELECT o.id, o.user_id, o.kind, o.name, o.color, u.role AS owner_role
+            FROM org_options o
+            JOIN users u ON u.id = o.user_id
+            WHERE o.id = ?
+            """,
+            (option_id,),
         ).fetchone()
-        if row is None:
+        if row is None or not _can_manage_org_option(row, user):
             raise HTTPException(status_code=404, detail="항목을 찾을 수 없습니다")
 
         fields: list[str] = []
@@ -409,6 +475,18 @@ def update_org_option(
             name = (updates["name"] or "").strip()
             if not name:
                 raise HTTPException(status_code=400, detail="이름을 입력해주세요")
+            existing = conn.execute(
+                """
+                SELECT 1
+                FROM org_options o
+                JOIN users u ON u.id = o.user_id
+                WHERE o.id <> ? AND o.kind = ? AND o.name = ? AND (u.role = 'admin' OR o.user_id = ?)
+                LIMIT 1
+                """,
+                (option_id, row["kind"], name, user["id"]),
+            ).fetchone()
+            if existing is not None:
+                raise HTTPException(status_code=400, detail="이미 등록되어 있습니다")
             new_name = name
             fields.append("name = ?")
             values.append(name)
@@ -421,8 +499,8 @@ def update_org_option(
             try:
                 with conn:
                     conn.execute(
-                        f"UPDATE org_options SET {', '.join(fields)} WHERE id = ? AND user_id = ?",
-                        (*values, option_id, user["id"]),
+                        f"UPDATE org_options SET {', '.join(fields)} WHERE id = ?",
+                        (*values, option_id),
                     )
                     if (
                         new_name is not None
@@ -437,11 +515,17 @@ def update_org_option(
             except sqlite3.IntegrityError:
                 raise HTTPException(status_code=400, detail="이미 등록되어 있습니다")
         row = conn.execute(
-            "SELECT id, kind, name, color FROM org_options WHERE id = ?", (option_id,)
+            """
+            SELECT o.id, o.user_id, o.kind, o.name, o.color, u.role AS owner_role
+            FROM org_options o
+            JOIN users u ON u.id = o.user_id
+            WHERE o.id = ?
+            """,
+            (option_id,),
         ).fetchone()
     finally:
         conn.close()
-    return _to_org_option(row)
+    return _to_org_option(row, user)
 
 
 @router.delete("/org-options/{option_id}")
@@ -451,9 +535,20 @@ def delete_org_option(
     conn = db.get_conn()
     try:
         with conn:
+            row = conn.execute(
+                """
+                SELECT o.id, o.user_id, o.kind, o.name, o.color, u.role AS owner_role
+                FROM org_options o
+                JOIN users u ON u.id = o.user_id
+                WHERE o.id = ?
+                """,
+                (option_id,),
+            ).fetchone()
+            if row is None or not _can_manage_org_option(row, user):
+                raise HTTPException(status_code=404, detail="항목을 찾을 수 없습니다")
             cur = conn.execute(
-                "DELETE FROM org_options WHERE id = ? AND user_id = ?",
-                (option_id, user["id"]),
+                "DELETE FROM org_options WHERE id = ?",
+                (option_id,),
             )
         if cur.rowcount == 0:
             raise HTTPException(status_code=404, detail="항목을 찾을 수 없습니다")

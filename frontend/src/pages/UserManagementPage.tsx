@@ -52,6 +52,7 @@ const ORG_COLOR_PALETTE = [
 ]
 
 const NO_ORG_KEY = '__no_organization__'
+const ALL_USERS_KEY = '__all_users__'
 const DEFAULT_ORG_COLOR = '#8b95a1'
 const ORG_USER_FIELD: Record<OrgKind, 'organization' | 'department' | 'position'> = {
   organization: 'organization',
@@ -65,12 +66,40 @@ const sortOrgOptions = (list: OrgOption[]) =>
   [...list].sort((a, b) =>
     a.kind === b.kind ? a.name.localeCompare(b.name, 'ko') : a.kind.localeCompare(b.kind),
   )
+const uniqueSortedNames = (list: string[]) =>
+  [...new Set(list)].sort((a, b) => a.localeCompare(b, 'ko'))
 
 interface UserOrgGroup {
   key: string
   name: string
   color: string
   items: AdminUser[]
+}
+
+type UserFilter = 'all' | 'active' | 'inactive' | 'admin' | 'user'
+
+const USER_FILTER_LABELS: Record<UserFilter, string> = {
+  all: '전체',
+  active: '활성',
+  inactive: '비활성',
+  admin: '관리자',
+  user: '사용자',
+}
+
+const USER_FILTER_TITLES: Record<UserFilter, string> = {
+  all: '전체 사용자',
+  active: '활성 사용자',
+  inactive: '비활성 사용자',
+  admin: '관리자',
+  user: '사용자',
+}
+
+const USER_FILTER_DESCRIPTIONS: Record<UserFilter, string> = {
+  all: '등록된 전체 사용자',
+  active: '활성 상태인 사용자',
+  inactive: '비활성 상태인 사용자',
+  admin: '관리자 권한 사용자',
+  user: '일반 사용자',
 }
 
 function OrgColorPicker({
@@ -224,7 +253,8 @@ export default function UserManagementPage() {
   const [orgDraftColor, setOrgDraftColor] = useState(ORG_COLOR_PALETTE[0])
   const [orgSavingKind, setOrgSavingKind] = useState<OrgKind | null>(null)
   const [orgEditing, setOrgEditing] = useState<{ id: number; name: string } | null>(null)
-  const [selectedGroupKey, setSelectedGroupKey] = useState<string | null>(null)
+  const [selectedGroupKey, setSelectedGroupKey] = useState<string>(ALL_USERS_KEY)
+  const [userFilter, setUserFilter] = useState<UserFilter>('all')
 
   useEffect(() => {
     if (user?.role !== 'admin') return
@@ -269,6 +299,22 @@ export default function UserManagementPage() {
     }
   }, [users])
 
+  const filteredUsers = useMemo(() => {
+    switch (userFilter) {
+      case 'active':
+        return sortedUsers.filter((item) => item.active)
+      case 'inactive':
+        return sortedUsers.filter((item) => !item.active)
+      case 'admin':
+        return sortedUsers.filter((item) => item.role === 'admin')
+      case 'user':
+        return sortedUsers.filter((item) => item.role === 'user')
+      case 'all':
+      default:
+        return sortedUsers
+    }
+  }, [sortedUsers, userFilter])
+
   const organizationOptions = useMemo(
     () => orgOptions.filter((option) => option.kind === 'organization'),
     [orgOptions],
@@ -281,7 +327,7 @@ export default function UserManagementPage() {
 
   const organizationGroups = useMemo<UserOrgGroup[]>(() => {
     const byOrg = new Map<string, AdminUser[]>()
-    for (const item of sortedUsers) {
+    for (const item of filteredUsers) {
       const key = (item.organization ?? '').trim()
       const list = byOrg.get(key)
       if (list) list.push(item)
@@ -301,23 +347,30 @@ export default function UserManagementPage() {
       color: organizationColor(key),
       items: byOrg.get(key) ?? [],
     }))
-  }, [organizationOptions, sortedUsers])
+  }, [filteredUsers, organizationOptions])
 
   useEffect(() => {
     if (users === null) return
+    if (selectedGroupKey === ALL_USERS_KEY) return
     if (organizationGroups.length === 0) {
-      setSelectedGroupKey(null)
+      setSelectedGroupKey(ALL_USERS_KEY)
       return
     }
     if (!selectedGroupKey || !organizationGroups.some((group) => group.key === selectedGroupKey)) {
-      setSelectedGroupKey(organizationGroups[0].key)
+      setSelectedGroupKey(ALL_USERS_KEY)
     }
   }, [organizationGroups, selectedGroupKey, users])
 
   const selectedGroup =
-    selectedGroupKey === null
+    selectedGroupKey === ALL_USERS_KEY
       ? null
       : organizationGroups.find((group) => group.key === selectedGroupKey) ?? null
+  const displayedUsers = selectedGroup ? selectedGroup.items : filteredUsers
+  const tableFilterDescription = USER_FILTER_DESCRIPTIONS[userFilter]
+  const tableTitle = selectedGroup ? selectedGroup.name : USER_FILTER_TITLES[userFilter]
+  const tableDescription = selectedGroup
+    ? `이 소속의 ${tableFilterDescription} ${displayedUsers.length}명`
+    : `${tableFilterDescription} ${displayedUsers.length}명`
   const detailUser =
     detailUserId === null ? null : (users ?? []).find((item) => item.id === detailUserId) ?? null
 
@@ -330,7 +383,7 @@ export default function UserManagementPage() {
   }
 
   const orgOptionNames = (kind: OrgKind) =>
-    orgOptions.filter((option) => option.kind === kind).map((option) => option.name)
+    uniqueSortedNames(orgOptions.filter((option) => option.kind === kind).map((option) => option.name))
 
   const openOrgManage = () => {
     setOrgManageError('')
@@ -589,27 +642,28 @@ export default function UserManagementPage() {
         </div>
       </div>
 
-      <div className="user-admin-stats" aria-label="사용자 현황">
-        <div>
-          <span>전체</span>
-          <strong>{stats.total}</strong>
-        </div>
-        <div>
-          <span>활성</span>
-          <strong>{stats.active}</strong>
-        </div>
-        <div>
-          <span>비활성</span>
-          <strong>{stats.inactive}</strong>
-        </div>
-        <div>
-          <span>관리자</span>
-          <strong>{stats.admin}</strong>
-        </div>
-        <div>
-          <span>사용자</span>
-          <strong>{stats.user}</strong>
-        </div>
+      <div className="user-admin-stats" aria-label="사용자 현황 필터">
+        {([
+          ['all', stats.total],
+          ['active', stats.active],
+          ['inactive', stats.inactive],
+          ['admin', stats.admin],
+          ['user', stats.user],
+        ] as const).map(([filter, count]) => (
+          <button
+            key={filter}
+            type="button"
+            className={`user-admin-stat-card${userFilter === filter ? ' active' : ''}`}
+            aria-pressed={userFilter === filter}
+            onClick={() => {
+              setUserFilter(filter)
+              setSelectedGroupKey(ALL_USERS_KEY)
+            }}
+          >
+            <span>{USER_FILTER_LABELS[filter]}</span>
+            <strong>{count}</strong>
+          </button>
+        ))}
       </div>
 
       <section className="user-directory-section">
@@ -619,7 +673,7 @@ export default function UserManagementPage() {
           <div className="user-admin-loading">
             <span className="spinner" />
           </div>
-        ) : organizationGroups.length === 0 ? (
+        ) : users.length === 0 ? (
           <div className="card user-admin-empty-card">
             <div className="user-admin-empty">등록된 사용자가 없습니다.</div>
           </div>
@@ -646,7 +700,10 @@ export default function UserManagementPage() {
                 </button>
               </div>
               <div className="user-org-list">
-                {organizationGroups.map((group) => {
+                {organizationGroups.length === 0 ? (
+                  <div className="user-org-list-empty">조건에 맞는 소속이 없습니다.</div>
+                ) : (
+                  organizationGroups.map((group) => {
                   const adminCount = group.items.filter((item) => item.role === 'admin').length
                   const activeCount = group.items.filter((item) => item.active).length
                   return (
@@ -667,12 +724,11 @@ export default function UserManagementPage() {
                     <span className="user-org-count">{group.items.length}</span>
                   </button>
                   )
-                })}
+                }))}
               </div>
             </aside>
 
-            <section className="card user-detail-card" aria-label="소속별 사용자 목록">
-              {selectedGroup ? (
+            <section className="card user-detail-card" aria-label="사용자 목록">
                 <>
                   <div className="user-detail-top">
                     <div className="user-detail-title">
@@ -680,8 +736,8 @@ export default function UserManagementPage() {
                         <UsersIcon />
                       </span>
                       <div>
-                        <h2>{selectedGroup.name}</h2>
-                        <p>이 소속에 등록된 사용자 {selectedGroup.items.length}명</p>
+                        <h2>{tableTitle}</h2>
+                        <p>{tableDescription}</p>
                       </div>
                     </div>
                     <div className="user-detail-actions">
@@ -715,11 +771,11 @@ export default function UserManagementPage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {selectedGroup.items.length > 0 ? (
-                            selectedGroup.items.map((item, index) => renderUserRow(item, index + 1))
+                          {displayedUsers.length > 0 ? (
+                            displayedUsers.map((item, index) => renderUserRow(item, index + 1))
                           ) : (
                             <tr className="user-admin-empty-row">
-                              <td colSpan={7}>이 소속에는 등록된 사용자가 없습니다.</td>
+                              <td colSpan={7}>조건에 맞는 사용자가 없습니다.</td>
                             </tr>
                           )}
                         </tbody>
@@ -727,14 +783,6 @@ export default function UserManagementPage() {
                     </div>
                   </div>
                 </>
-              ) : (
-                <div className="user-detail-empty">
-                  <UsersIcon />
-                  <strong>선택된 소속이 없습니다.</strong>
-                  <span>소속을 선택하면 사용자 목록이 표시됩니다.</span>
-                </div>
-              )
-              }
             </section>
           </div>
         )}

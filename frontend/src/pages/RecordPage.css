@@ -520,6 +520,17 @@
   background: #dc2626;
 }
 
+.record-cancel-btn {
+  border-color: color-mix(in srgb, var(--red) 28%, var(--border));
+  color: var(--red);
+  background: #fff;
+}
+
+.record-cancel-btn:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--red) 48%, var(--border));
+  background: var(--red-soft);
+}
+
 /* ===== Waveform (components/Waveform.tsx) — 연파랑 전폭 점 파형 패널 ===== */
 .waveform {
   position: relative;
@@ -973,29 +984,34 @@
 
   .manual-writing-head {
     align-items: flex-start;
+    gap: 11px;
   }
 
   .manual-writing-icon {
-    width: 50px;
-    height: 50px;
-    font-size: 26px;
+    width: 44px;
+    height: 44px;
+    font-size: 23px;
   }
 
   .manual-writing-head h2 {
-    font-size: 20px;
+    font-size: 19px;
   }
 
   .manual-writing-head p {
-    font-size: 15px;
+    font-size: 14px;
+    line-height: 1.45;
   }
 
   .manual-writing-textarea {
-    min-height: 240px;
+    min-height: max(420px, 52vh);
+    padding: 16px;
     font-size: 16px;
+    line-height: 1.65;
   }
 
   .manual-writing-actions {
     flex-wrap: wrap;
+    gap: 8px;
   }
 
   .manual-writing-actions .btn {
@@ -1080,6 +1096,10 @@
 }
 
 @media (max-width: 380px) {
+  .manual-writing-textarea {
+    min-height: max(380px, 55vh);
+  }
+
   .memo-input-footer .btn {
     width: 100%;
     margin-left: 0;

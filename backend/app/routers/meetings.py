@@ -121,20 +121,91 @@ def get_owned_meeting(
     return row
 
 
-def _meeting_tag_row(conn: sqlite3.Connection, row: sqlite3.Row) -> sqlite3.Row | None:
-    tag_name = (row["tag"] or "").strip()
+def _normalize_meeting_tag(value: str | None) -> str | None:
+    tag_name = (value or "").strip()
     if not tag_name:
         return None
+    return tag_name
+
+
+def _meeting_tag_rows(
+    conn: sqlite3.Connection,
+    tag_name: str | None,
+    owner_user_id: int,
+) -> list[sqlite3.Row]:
+    tag_name = _normalize_meeting_tag(tag_name)
+    if tag_name is None:
+        return []
     return conn.execute(
         """
-        SELECT id, user_id, name, is_global
-        FROM tags
-        WHERE name = ? AND (is_global = 1 OR user_id = ?)
-        ORDER BY is_global DESC, id DESC
-        LIMIT 1
+        SELECT DISTINCT
+          t.id, t.user_id, t.name, t.is_global,
+          CASE
+            WHEN EXISTS (SELECT 1 FROM project_tags pt WHERE pt.tag_id = t.id)
+            THEN 1
+            ELSE 0
+          END AS is_project_tag
+        FROM tags t
+        LEFT JOIN tag_permissions owner_perm
+          ON owner_perm.tag_id = t.id AND owner_perm.user_id = ?
+        WHERE t.name = ?
+          AND (
+            t.user_id = ?
+            OR owner_perm.user_id IS NOT NULL
+            OR t.is_global = 1
+          )
+        ORDER BY is_project_tag DESC, t.is_global DESC, t.id DESC
         """,
-        (tag_name, row["user_id"]),
-    ).fetchone()
+        (owner_user_id, tag_name, owner_user_id),
+    ).fetchall()
+
+
+def _meeting_tag_row(conn: sqlite3.Connection, row: sqlite3.Row) -> sqlite3.Row | None:
+    rows = _meeting_tag_rows(conn, row["tag"], row["user_id"])
+    return rows[0] if rows else None
+
+
+def _tag_has_share_scope(conn: sqlite3.Connection, tag_id: int) -> bool:
+    return conn.execute(
+        "SELECT 1 FROM tag_permissions WHERE tag_id = ? LIMIT 1",
+        (tag_id,),
+    ).fetchone() is not None
+
+
+def _tag_allows_user(conn: sqlite3.Connection, tag_id: int, user_id: int) -> bool:
+    return conn.execute(
+        "SELECT 1 FROM tag_permissions WHERE tag_id = ? AND user_id = ?",
+        (tag_id, user_id),
+    ).fetchone() is not None
+
+
+def _meeting_has_share_scope(
+    conn: sqlite3.Connection,
+    tag_name: str | None,
+    owner_user_id: int,
+) -> bool:
+    return any(_tag_has_share_scope(conn, tag["id"]) for tag in _meeting_tag_rows(conn, tag_name, owner_user_id))
+
+
+def _assert_shareable_tag(
+    conn: sqlite3.Connection,
+    tag_name: str | None,
+    owner_user_id: int,
+) -> None:
+    tag_name = _normalize_meeting_tag(tag_name)
+    if tag_name is None:
+        raise HTTPException(status_code=400, detail="태그를 설정하세요")
+    if not _meeting_has_share_scope(conn, tag_name, owner_user_id):
+        raise HTTPException(
+            status_code=400,
+            detail="프로젝트에 연결된 태그를 설정한 다음 공유해주세요",
+        )
+
+
+def _effective_is_shared(conn: sqlite3.Connection, row: sqlite3.Row) -> bool:
+    if not row["is_shared"]:
+        return False
+    return _meeting_has_share_scope(conn, row["tag"], row["user_id"])
 
 
 def _can_read_meeting_row(conn: sqlite3.Connection, row: sqlite3.Row, user: dict) -> bool:
@@ -142,22 +213,10 @@ def _can_read_meeting_row(conn: sqlite3.Connection, row: sqlite3.Row, user: dict
         return True
     if not row["is_shared"]:
         return False
-    tag_row = _meeting_tag_row(conn, row)
-    if tag_row is None:
-        return True
-    has_restriction = conn.execute(
-        "SELECT 1 FROM tag_permissions WHERE tag_id = ? LIMIT 1",
-        (tag_row["id"],),
-    ).fetchone()
-    if has_restriction is None:
-        return True
-    if user.get("role") == "admin":
-        return True
-    allowed = conn.execute(
-        "SELECT 1 FROM tag_permissions WHERE tag_id = ? AND user_id = ?",
-        (tag_row["id"], user["id"]),
-    ).fetchone()
-    return allowed is not None
+    return any(
+        _tag_allows_user(conn, tag["id"], user["id"])
+        for tag in _meeting_tag_rows(conn, row["tag"], row["user_id"])
+    )
 
 
 def get_readable_meeting(
@@ -214,7 +273,7 @@ def serialize_meeting(conn: sqlite3.Connection, row: sqlite3.Row) -> dict:
         "duration_sec": row["duration_sec"],
         "audio_filename": row["audio_filename"],
         "locked": bool(row["locked"]),
-        "is_shared": bool(row["is_shared"]),
+        "is_shared": _effective_is_shared(conn, row),
         "owner_name": row["owner_name"] if "owner_name" in row_keys else None,
         "created_at": row["created_at"],
         "participants": [dict(p) for p in participants],
@@ -377,30 +436,59 @@ def update_meeting(
 ) -> dict:
     data = payload_fields(payload)
     with closing(db.get_conn()) as conn:
-        get_owned_meeting(conn, meeting_id, user["id"])
+        current = get_owned_meeting(conn, meeting_id, user["id"])
         with conn:
-            sets = []
-            values: list = []
+            updates: dict[str, object] = {}
             if "title" in data and data["title"] is not None:
-                sets.append("title = ?")
-                values.append(data["title"])
+                updates["title"] = data["title"]
+
+            next_tag = _normalize_meeting_tag(current["tag"])
             if "tag" in data:
-                sets.append("tag = ?")
-                values.append(data["tag"])
+                next_tag = _normalize_meeting_tag(data["tag"])
+                updates["tag"] = next_tag
+
             if "started_at" in data and data["started_at"]:
                 try:
                     parsed = datetime.fromisoformat(data["started_at"])
                 except ValueError:
                     raise HTTPException(status_code=400, detail="날짜 형식이 올바르지 않습니다")
-                sets.append("started_at = ?")
-                values.append(parsed.isoformat(timespec="seconds"))
-            if "locked" in data and data["locked"] is not None:
-                sets.append("locked = ?")
-                values.append(1 if data["locked"] else 0)
-            if "is_shared" in data and data["is_shared"] is not None:
-                sets.append("is_shared = ?")
-                values.append(1 if data["is_shared"] else 0)
-            if sets:
+                updates["started_at"] = parsed.isoformat(timespec="seconds")
+
+            share_requested = "is_shared" in data and data["is_shared"] is not None
+            locked_requested = "locked" in data and data["locked"] is not None
+            next_shared = bool(current["is_shared"])
+            next_locked = bool(current["locked"])
+            if share_requested:
+                next_shared = bool(data["is_shared"])
+            if locked_requested:
+                next_locked = bool(data["locked"])
+
+            auto_unshare = False
+            if next_shared:
+                has_share_scope = _meeting_has_share_scope(conn, next_tag, current["user_id"])
+                if not has_share_scope:
+                    if share_requested and bool(data["is_shared"]):
+                        _assert_shareable_tag(conn, next_tag, current["user_id"])
+                    next_shared = False
+                    auto_unshare = True
+                    if not locked_requested:
+                        next_locked = False
+
+            if share_requested:
+                if next_shared:
+                    _assert_shareable_tag(conn, next_tag, current["user_id"])
+                next_locked = next_shared
+                updates["is_shared"] = 1 if next_shared else 0
+                updates["locked"] = 1 if next_locked else 0
+            elif auto_unshare:
+                updates["is_shared"] = 0
+                updates["locked"] = 1 if next_locked else 0
+            elif locked_requested:
+                updates["locked"] = 1 if next_locked else 0
+
+            if updates:
+                sets = [f"{field} = ?" for field in updates]
+                values = list(updates.values())
                 values.append(meeting_id)
                 conn.execute(f"UPDATE meetings SET {', '.join(sets)} WHERE id = ?", values)
             if data.get("participant_ids") is not None:

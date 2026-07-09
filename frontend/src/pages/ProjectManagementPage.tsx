@@ -796,12 +796,6 @@ export default function ProjectManagementPage() {
                           태그 설정
                         </button>
                       )}
-                      {selectedProject.research_institution && (
-                        <>
-                          <span className="project-detail-meta-dot">·</span>
-                          <span className="project-detail-meta-text">{selectedProject.research_institution}</span>
-                        </>
-                      )}
                     </div>
                   </div>
                 </div>

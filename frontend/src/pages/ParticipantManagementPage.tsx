@@ -66,6 +66,8 @@ const sortOrgOptions = (list: OrgOption[]) =>
   [...list].sort((a, b) =>
     a.kind === b.kind ? a.name.localeCompare(b.name, 'ko') : a.kind.localeCompare(b.kind),
   )
+const uniqueSortedNames = (list: string[]) =>
+  [...new Set(list)].sort((a, b) => a.localeCompare(b, 'ko'))
 
 const cleanPayload = (draft: ParticipantDraft) => ({
   name: draft.name.trim(),
@@ -231,21 +233,20 @@ export default function ParticipantManagementPage() {
     [orgOptions],
   )
 
-  const organizationNames = useMemo(() => organizationOptions.map((option) => option.name), [organizationOptions])
+  const organizationNames = useMemo(
+    () => uniqueSortedNames(organizationOptions.map((option) => option.name)),
+    [organizationOptions],
+  )
   const departmentNames = useMemo(
     () =>
-      orgOptions
-        .filter((option) => option.kind === 'department')
-        .map((option) => option.name)
-        .sort((a, b) => a.localeCompare(b, 'ko')),
+      uniqueSortedNames(
+        orgOptions.filter((option) => option.kind === 'department').map((option) => option.name),
+      ),
     [orgOptions],
   )
   const roleNames = useMemo(
     () =>
-      orgOptions
-        .filter((option) => option.kind === 'role')
-        .map((option) => option.name)
-        .sort((a, b) => a.localeCompare(b, 'ko')),
+      uniqueSortedNames(orgOptions.filter((option) => option.kind === 'role').map((option) => option.name)),
     [orgOptions],
   )
 
@@ -357,6 +358,7 @@ export default function ParticipantManagementPage() {
   }
 
   const updateOrgOptionColor = async (option: OrgOption, color: string) => {
+    if (option.can_manage === false) return
     setOrgManageError('')
     try {
       const updated = await api.updateOrgOption(option.id, { color })
@@ -367,6 +369,7 @@ export default function ParticipantManagementPage() {
   }
 
   const saveOrgOptionName = async (option: OrgOption) => {
+    if (option.can_manage === false) return
     if (orgEditing?.id !== option.id) return
     const name = orgEditing.name.trim()
     if (!name) {
@@ -398,6 +401,7 @@ export default function ParticipantManagementPage() {
   }
 
   const deleteOrgOption = async (option: OrgOption) => {
+    if (option.can_manage === false) return
     const ok = await confirm({
       title: `'${option.name}' 항목을 삭제할까요?`,
       message: '선택 목록에서만 삭제되며, 이미 참석자 정보에 입력된 값은 그대로 유지됩니다.',
@@ -538,11 +542,6 @@ export default function ParticipantManagementPage() {
             회의 목록과 회의 기록에서 선택할 참석자를 미리 저장하고 관리합니다.
           </p>
         </div>
-        <div className="user-admin-head-actions">
-          <button type="button" className="btn btn-primary" onClick={openCreate}>
-            참석자 추가
-          </button>
-        </div>
       </div>
 
       <section className="participant-directory-section">
@@ -612,7 +611,7 @@ export default function ParticipantManagementPage() {
                     </div>
                     <div className="participant-detail-actions">
                       <button type="button" className="btn btn-primary" onClick={openCreate}>
-                        + 추가
+                        + 참석자 추가
                       </button>
                     </div>
                   </div>
@@ -828,6 +827,7 @@ export default function ParticipantManagementPage() {
                 ) : (
                   activeOrgManageOptions.map((option) => {
                     const isEditingOption = orgEditing?.id === option.id
+                    const canManageOption = option.can_manage !== false
                     return (
                       <div key={option.id} className="org-manage-item">
                         {activeOrgManageGroup.kind === 'organization' && (
@@ -836,7 +836,7 @@ export default function ParticipantManagementPage() {
                             style={{ background: option.color ?? DEFAULT_ORG_COLOR }}
                           />
                         )}
-                        {isEditingOption ? (
+                        {isEditingOption && canManageOption ? (
                           <input
                             className="input org-manage-edit-input"
                             value={orgEditing.name}
@@ -855,7 +855,7 @@ export default function ParticipantManagementPage() {
                         ) : (
                           <span className="org-manage-name">{option.name}</span>
                         )}
-                        {activeOrgManageGroup.kind === 'organization' && (
+                        {activeOrgManageGroup.kind === 'organization' && canManageOption && (
                           <ParticipantColorPicker
                             value={option.color ?? DEFAULT_ORG_COLOR}
                             ariaLabel={`${option.name} 소속 색 선택`}
@@ -863,7 +863,9 @@ export default function ParticipantManagementPage() {
                           />
                         )}
                         <div className="org-manage-actions">
-                          {isEditingOption ? (
+                          {!canManageOption ? (
+                            <span className="org-manage-shared-badge">공용</span>
+                          ) : isEditingOption ? (
                             <>
                               <button
                                 type="button"

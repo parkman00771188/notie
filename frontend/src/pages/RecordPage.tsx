@@ -97,6 +97,7 @@ export default function RecordPage() {
   const [uploadDragActive, setUploadDragActive] = useState(false)
   const [starting, setStarting] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [cancellingRecording, setCancellingRecording] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
 
   // ---- 메모 ⋯ 메뉴 / 인라인 수정 ----
@@ -106,7 +107,7 @@ export default function RecordPage() {
 
   const isLive = recorder.status === 'recording' || recorder.status === 'paused'
   const canMemo = isLive && meetingId != null
-  const processing = uploading || manualSubmitting
+  const processing = uploading || manualSubmitting || cancellingRecording
 
   // 녹음/업로드 중 페이지 이탈 경고
   useEffect(() => {
@@ -275,6 +276,39 @@ export default function RecordPage() {
       return
     }
     await uploadAndGo(result.blob, result.durationSec)
+  }
+
+  const handleCancelRecording = async () => {
+    if ((!isLive && meetingId == null) || uploading || cancellingRecording) return
+    const ok = await confirm({
+      title: '녹음을 취소할까요?',
+      message: '현재 녹음과 이 회의에 남긴 메모가 삭제되고 저장되지 않습니다.',
+      confirmLabel: '녹음 취소',
+      danger: true,
+    })
+    if (!ok) return
+
+    setCancellingRecording(true)
+    const currentMeetingId = meetingId
+    try {
+      await recorder.cancel()
+      if (currentMeetingId != null) {
+        await api.purgeMeeting(currentMeetingId).catch(async () => {
+          await api.deleteMeeting(currentMeetingId).catch(() => {})
+        })
+      }
+      setMeetingId(null)
+      setBookmarks([])
+      setMemoText('')
+      setMenuOpenId(null)
+      setEditingBookmarkId(null)
+      setEditDraft('')
+      setRefreshKey((k) => k + 1)
+    } catch (err) {
+      alert(err instanceof Error ? err.message : '녹음 취소에 실패했어요')
+    } finally {
+      setCancellingRecording(false)
+    }
   }
 
   const handleUploadFile = async (file: File) => {
@@ -759,11 +793,17 @@ export default function RecordPage() {
                         type="button"
                         className="btn btn-primary"
                         onClick={recorder.resume}
+                        disabled={cancellingRecording}
                       >
                         ▶ 재개
                       </button>
                     ) : (
-                      <button type="button" className="btn btn-ghost" onClick={recorder.pause}>
+                      <button
+                        type="button"
+                        className="btn btn-ghost"
+                        onClick={recorder.pause}
+                        disabled={cancellingRecording}
+                      >
                         ⏸ 일시정지
                       </button>
                     )}
@@ -771,15 +811,23 @@ export default function RecordPage() {
                       type="button"
                       className="btn record-stop-btn"
                       onClick={() => void handleStop()}
-                      disabled={uploading}
+                      disabled={uploading || cancellingRecording}
                     >
                       ■ 종료
                     </button>
                     <button
                       type="button"
+                      className="btn btn-ghost record-cancel-btn"
+                      onClick={() => void handleCancelRecording()}
+                      disabled={uploading || cancellingRecording}
+                    >
+                      {cancellingRecording ? '취소 중...' : '취소'}
+                    </button>
+                    <button
+                      type="button"
                       className="btn btn-soft"
                       onClick={() => void handleAddMark()}
-                      disabled={!canMemo}
+                      disabled={!canMemo || cancellingRecording}
                     >
                       🔖 마크 추가
                     </button>
@@ -867,7 +915,9 @@ export default function RecordPage() {
         <div className="upload-overlay">
           <span className="spinner" />
           <p>
-            {manualSubmitting
+            {cancellingRecording
+              ? '현재 녹음을 취소하고 기록을 정리하고 있어요...'
+              : manualSubmitting
               ? '작성한 회의 내용으로 AI 요약을 시작하고 있어요...'
               : '음성 파일을 업로드하고 분석을 시작하고 있어요...'}
           </p>

@@ -139,7 +139,10 @@ export function MeetingDetailView({
         if (alive) setMeeting(m)
       })
       .catch((e: unknown) => {
-        if (alive) setLoadError(e instanceof Error ? e.message : '회의를 불러오지 못했어요.')
+        if (alive) {
+          setLoadError(e instanceof Error ? e.message : '회의를 불러오지 못했어요.')
+          onChangedRef.current?.()
+        }
       })
       .finally(() => {
         if (alive) setLoading(false)
@@ -437,7 +440,19 @@ export function MeetingDetailView({
     // 태그 제거(null)는 API 계약대로 빈 문자열로 전송
     api
       .updateMeeting(meeting.id, { tag: tag ?? '' })
-      .then(() => notifyChanged())
+      .then((updated) => {
+        setMeeting((prev) =>
+          prev
+            ? {
+                ...prev,
+                tag: updated.tag,
+                locked: updated.locked,
+                is_shared: updated.is_shared,
+              }
+            : prev,
+        )
+        notifyChanged()
+      })
       .catch(() => {
         api.getMeeting(meetingId).then(setMeeting).catch(() => {})
       })
@@ -566,11 +581,15 @@ export function MeetingDetailView({
   const handleToggleShare = async () => {
     if (!meeting || user?.id !== meeting.user_id) return
     const nextShared = !meeting.is_shared
+    if (nextShared && !meeting.tag) {
+      alert('태그를 설정하세요')
+      return
+    }
     const ok = await confirm({
       title: nextShared ? '회의를 공유하시겠습니까?' : '회의 공유를 해제하시겠습니까?',
       message: nextShared
-        ? '공유하면 해당 회의록과 회의 내용이 모든 사용자에게 공개됩니다. 공개된 회의는 내용 보호를 위해 자동으로 잠금 처리됩니다.'
-        : '공유를 해제하면 해당 회의록은 더 이상 다른 사용자에게 공개되지 않습니다. 공유 해제와 함께 회의 잠금도 해제됩니다.',
+        ? '공유하면 해당 회의록과 회의 내용이 같은 프로젝트 참여자에게 공개됩니다. 공유된 회의는 내용 보호를 위해 자동으로 잠금 처리됩니다.'
+        : '공유를 해제하면 해당 회의록은 더 이상 프로젝트 참여자에게 공개되지 않습니다. 공유 해제와 함께 회의 잠금도 해제됩니다.',
       confirmLabel: nextShared ? '회의 공유' : '회의 공유 해제',
       danger: !nextShared,
     })
@@ -581,7 +600,17 @@ export function MeetingDetailView({
     setMeeting((prev) => (prev ? { ...prev, is_shared: nextShared, locked: nextShared } : prev))
     if (nextShared) setEditingSummary(false)
     try {
-      await api.updateMeeting(meeting.id, { is_shared: nextShared, locked: nextShared })
+      const updated = await api.updateMeeting(meeting.id, { is_shared: nextShared, locked: nextShared })
+      setMeeting((prev) =>
+        prev
+          ? {
+              ...prev,
+              tag: updated.tag,
+              locked: updated.locked,
+              is_shared: updated.is_shared,
+            }
+          : prev,
+      )
       notifyChanged()
     } catch (e) {
       setMeeting((prev) => (prev ? { ...prev, is_shared: prevShared, locked: prevLocked } : prev))
@@ -751,8 +780,9 @@ export function MeetingDetailView({
     isOwner &&
     (meeting.status === 'queued' || meeting.status === 'transcribing' || meeting.status === 'summarizing')
   const canResummarize =
-    temporaryAudioFailure ||
-    (meeting.segments.length > 0 && (meeting.status === 'done' || meeting.status === 'failed'))
+    isOwner &&
+    (temporaryAudioFailure ||
+      (meeting.segments.length > 0 && (meeting.status === 'done' || meeting.status === 'failed')))
   const aiSummaryHint = temporaryAudioFailure
     ? `임시저장된 음성 파일로 텍스트 추출부터 다시 시도합니다. 예상 소요 시간: ${processingEstimate}`
     : resummarizeHint
@@ -768,15 +798,17 @@ export function MeetingDetailView({
           <span />
         )}
         <div className="detail-actions">
-          <button
-            type="button"
-            className={`btn detail-lock-btn${isLocked ? ' locked' : ' btn-ghost'}`}
-            aria-pressed={isLocked}
-            title={isLocked ? '잠금을 해제합니다' : `회의 삭제와 AI 수정을 잠급니다. ${resummarizeHint}`}
-            onClick={() => void handleToggleLock()}
-          >
-            {isLocked ? '🔒 잠금됨' : '🔓 잠금'}
-          </button>
+          {isOwner && (
+            <button
+              type="button"
+              className={`btn detail-lock-btn${isLocked ? ' locked' : ' btn-ghost'}`}
+              aria-pressed={isLocked}
+              title={isLocked ? '잠금을 해제합니다' : `회의 삭제와 AI 수정을 잠급니다. ${resummarizeHint}`}
+              onClick={() => void handleToggleLock()}
+            >
+              {isLocked ? '🔒 잠금됨' : '🔓 잠금'}
+            </button>
+          )}
           {isOwner && (
             <button
               type="button"
@@ -785,7 +817,7 @@ export function MeetingDetailView({
               title={
                 meeting.is_shared
                   ? '회의 공유를 해제합니다'
-                  : '회의록과 회의 내용을 모든 사용자에게 공유합니다'
+                  : '회의록과 회의 내용을 같은 프로젝트 참여자에게 공유합니다'
               }
               onClick={() => void handleToggleShare()}
             >
@@ -802,14 +834,16 @@ export function MeetingDetailView({
               ✨ AI 요약
             </button>
           )}
-          <button
-            className="btn btn-danger"
-            onClick={handleDelete}
-            disabled={isLocked}
-            title={isLocked ? lockedActionMessage : undefined}
-          >
-            삭제
-          </button>
+          {isOwner && (
+            <button
+              className="btn btn-danger"
+              onClick={handleDelete}
+              disabled={isLocked}
+              title={isLocked ? lockedActionMessage : undefined}
+            >
+              삭제
+            </button>
+          )}
         </div>
       </div>
 
@@ -817,9 +851,28 @@ export function MeetingDetailView({
       <div className="detail-header">
         <div className="detail-title-row">
           <span className="detail-title-tag">
-            <TagPicker compact value={meeting.tag} onChange={handleTagChange} />
+            {isOwner ? (
+              <TagPicker compact value={meeting.tag} onChange={handleTagChange} />
+            ) : (
+              meeting.tag &&
+              (() => {
+                const color = tags.find((t) => t.name === meeting.tag)?.color ?? '#16a34a'
+                return (
+                  <span
+                    className="tag-pill"
+                    style={{
+                      color,
+                      borderColor: color,
+                      background: `color-mix(in srgb, ${color} 10%, transparent)`,
+                    }}
+                  >
+                    #{meeting.tag}
+                  </span>
+                )
+              })()
+            )}
           </span>
-          {editingTitle ? (
+          {isOwner && editingTitle ? (
             <input
               className="input detail-title-input"
               value={titleDraft}
@@ -843,9 +896,11 @@ export function MeetingDetailView({
           ) : (
             <span className="detail-title-edit-wrap">
               <h1 className="page-title detail-title">{meeting.title}</h1>
-              <button className="btn-icon" aria-label="제목 수정" title="제목 수정" onClick={startEditTitle}>
-                ✏️
-              </button>
+              {isOwner && (
+                <button className="btn-icon" aria-label="제목 수정" title="제목 수정" onClick={startEditTitle}>
+                  ✏️
+                </button>
+              )}
             </span>
           )}
           <StatusBadge status={meeting.status} />
@@ -857,7 +912,7 @@ export function MeetingDetailView({
         )}
 
         <div className="detail-meta">
-          {editingDate ? (
+          {isOwner && editingDate ? (
             <span className="detail-date-edit">
               <input
                 type="text"
@@ -909,7 +964,7 @@ export function MeetingDetailView({
                 취소
               </button>
             </span>
-          ) : (
+          ) : isOwner ? (
             <button
               type="button"
               className="detail-date-btn"
@@ -918,6 +973,8 @@ export function MeetingDetailView({
             >
               {formatKoreanDateTime(meeting.started_at)} ✎
             </button>
+          ) : (
+            <span>{formatKoreanDateTime(meeting.started_at)}</span>
           )}
           {meeting.duration_sec != null && (
             <>
@@ -932,9 +989,11 @@ export function MeetingDetailView({
             <AvatarStack participants={meeting.participants} max={6} />
           )}
           <span className="muted">참석자 {meeting.participants.length}명</span>
-          <button className="btn btn-ghost detail-people-edit" onClick={() => setPickerOpen(true)}>
-            참석자
-          </button>
+          {isOwner && (
+            <button className="btn btn-ghost detail-people-edit" onClick={() => setPickerOpen(true)}>
+              참석자
+            </button>
+          )}
         </div>
       </div>
 
@@ -981,14 +1040,16 @@ export function MeetingDetailView({
               </p>
             )}
           </div>
-          <button
-            className={`btn ${temporaryAudioFailure ? 'btn-primary' : 'btn-danger'}`}
-            onClick={() => void handleResummarizeWithConfirm()}
-            disabled={isLocked}
-            title={isLocked ? lockedActionMessage : undefined}
-          >
-            {temporaryAudioFailure ? '텍스트 추출 다시 시도' : '다시 시도'}
-          </button>
+          {isOwner && (
+            <button
+              className={`btn ${temporaryAudioFailure ? 'btn-primary' : 'btn-danger'}`}
+              onClick={() => void handleResummarizeWithConfirm()}
+              disabled={isLocked}
+              title={isLocked ? lockedActionMessage : undefined}
+            >
+              {temporaryAudioFailure ? '텍스트 추출 다시 시도' : '다시 시도'}
+            </button>
+          )}
         </div>
       )}
 
@@ -1008,7 +1069,7 @@ export function MeetingDetailView({
           meetingId={meeting.id}
           durationSec={meeting.duration_sec}
           bookmarks={timedBookmarks}
-          onAddMark={(timeSec) => void handleAddMark(timeSec)}
+          onAddMark={isOwner ? (timeSec) => void handleAddMark(timeSec) : undefined}
         />
       ) : null}
 
@@ -1090,14 +1151,16 @@ export function MeetingDetailView({
             ) : (
             <div className="minutes-panel ai-minutes-panel">
               <div className="minutes-toolbar">
-                <button
-                  className="btn btn-ghost"
-                  onClick={beginEditSummary}
-                  disabled={isLocked}
-                  title={isLocked ? lockedActionMessage : undefined}
-                >
-                  {isLocked ? '🔒 수정 잠김' : '✏️ 수정'}
-                </button>
+                {isOwner && (
+                  <button
+                    className="btn btn-ghost"
+                    onClick={beginEditSummary}
+                    disabled={isLocked}
+                    title={isLocked ? lockedActionMessage : undefined}
+                  >
+                    {isLocked ? '🔒 수정 잠김' : '✏️ 수정'}
+                  </button>
+                )}
                 <button
                   className="btn btn-soft"
                   title="회의록 양식(Word .docx)으로 다운로드합니다"
@@ -1419,41 +1482,7 @@ export function MeetingDetailView({
                       </p>
                       {b.note && <p className="muted">{b.note}</p>}
                     </div>
-                    <div className="note-actions">
-                      <button
-                        className="btn-icon"
-                        aria-label="메모 수정"
-                        title="수정"
-                        onClick={() => handleEditBookmark(b)}
-                      >
-                        ✏️
-                      </button>
-                      <button
-                        className="btn-icon note-delete"
-                        aria-label="메모 삭제"
-                        title="삭제"
-                        onClick={() => handleDeleteBookmark(b)}
-                      >
-                        🗑️
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* 일반 메모 (시간 기록 없음) */}
-            {noteBookmarks.length > 0 && (
-              <div className="note-group">
-                <h3 className="note-group-title">일반 메모</h3>
-                <div className="note-list">
-                  {noteBookmarks.map((b) => (
-                    <div key={b.id} className="note-row note-plain">
-                      <span className="badge badge-gray note-plain-badge">📝 메모</span>
-                      <div className="note-body">
-                        <p className="note-title">{b.title}</p>
-                        {b.note && <p className="muted">{b.note}</p>}
-                      </div>
+                    {isOwner && (
                       <div className="note-actions">
                         <button
                           className="btn-icon"
@@ -1472,6 +1501,44 @@ export function MeetingDetailView({
                           🗑️
                         </button>
                       </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* 일반 메모 (시간 기록 없음) */}
+            {noteBookmarks.length > 0 && (
+              <div className="note-group">
+                <h3 className="note-group-title">일반 메모</h3>
+                <div className="note-list">
+                  {noteBookmarks.map((b) => (
+                    <div key={b.id} className="note-row note-plain">
+                      <span className="badge badge-gray note-plain-badge">📝 메모</span>
+                      <div className="note-body">
+                        <p className="note-title">{b.title}</p>
+                        {b.note && <p className="muted">{b.note}</p>}
+                      </div>
+                      {isOwner && (
+                        <div className="note-actions">
+                          <button
+                            className="btn-icon"
+                            aria-label="메모 수정"
+                            title="수정"
+                            onClick={() => handleEditBookmark(b)}
+                          >
+                            ✏️
+                          </button>
+                          <button
+                            className="btn-icon note-delete"
+                            aria-label="메모 삭제"
+                            title="삭제"
+                            onClick={() => handleDeleteBookmark(b)}
+                          >
+                            🗑️
+                          </button>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -1479,25 +1546,27 @@ export function MeetingDetailView({
             )}
 
             {/* 일반 메모 추가 */}
-            <div className="note-add">
-              <textarea
-                className="input note-add-textarea"
-                rows={2}
-                placeholder="회의에 대한 메모를 남겨보세요..."
-                value={noteDraft}
-                onChange={(e) => setNoteDraft(e.target.value)}
-                onKeyDown={onNoteKeyDown}
-                aria-label="일반 메모 입력"
-              />
-              <button
-                type="button"
-                className="btn btn-soft note-add-btn"
-                onClick={() => void handleAddNote()}
-                disabled={!noteDraft.trim() || addingNote}
-              >
-                메모 추가
-              </button>
-            </div>
+            {isOwner && (
+              <div className="note-add">
+                <textarea
+                  className="input note-add-textarea"
+                  rows={2}
+                  placeholder="회의에 대한 메모를 남겨보세요..."
+                  value={noteDraft}
+                  onChange={(e) => setNoteDraft(e.target.value)}
+                  onKeyDown={onNoteKeyDown}
+                  aria-label="일반 메모 입력"
+                />
+                <button
+                  type="button"
+                  className="btn btn-soft note-add-btn"
+                  onClick={() => void handleAddNote()}
+                  disabled={!noteDraft.trim() || addingNote}
+                >
+                  메모 추가
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>

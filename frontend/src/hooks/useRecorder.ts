@@ -15,6 +15,7 @@ export interface UseRecorderReturn {
   pause: () => void
   resume: () => void
   stop: () => Promise<RecorderResult>
+  cancel: () => Promise<void>
 }
 
 /** 브라우저가 지원하는 webm 오디오 mimeType 선택 */
@@ -224,7 +225,37 @@ export function useRecorder(): UseRecorderReturn {
     })
   }, [cleanup, currentElapsedMs])
 
-  return { status, elapsedSec, analyser, start, pause, resume, stop }
+  const cancel = useCallback((): Promise<void> => {
+    return new Promise<void>((resolve) => {
+      const rec = recorderRef.current
+      chunksRef.current = []
+      accumulatedMsRef.current = 0
+      segmentStartRef.current = null
+
+      const finish = () => {
+        chunksRef.current = []
+        cleanup()
+        setElapsedSec(0)
+        setStatus('idle')
+        resolve()
+      }
+
+      if (!rec || rec.state === 'inactive') {
+        finish()
+        return
+      }
+
+      rec.ondataavailable = null
+      rec.onstop = finish
+      try {
+        rec.stop()
+      } catch {
+        finish()
+      }
+    })
+  }, [cleanup])
+
+  return { status, elapsedSec, analyser, start, pause, resume, stop, cancel }
 }
 
 export default useRecorder

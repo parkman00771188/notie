@@ -163,7 +163,7 @@ export function ParticipantPicker({ open, onClose, selected, onChange }: Partici
   }
 
   const sortNames = (list: OrgOption[]) =>
-    list.map((o) => o.name).sort((a, b) => a.localeCompare(b, 'ko'))
+    [...new Set(list.map((o) => o.name))].sort((a, b) => a.localeCompare(b, 'ko'))
   const organizationNames = sortNames(orgOptions.filter((o) => o.kind === 'organization'))
   const departmentNames = sortNames(orgOptions.filter((o) => o.kind === 'department'))
   const roleNames = sortNames(orgOptions.filter((o) => o.kind === 'role'))

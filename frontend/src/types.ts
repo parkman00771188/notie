@@ -68,6 +68,10 @@ export interface OrgOption {
   name: string
   /** 소속(organization)에 지정한 색 — 같은 소속 참석자를 같은 색으로 표시 */
   color: string | null
+  /** 관리자 계정이 만든 공용 항목 */
+  is_shared?: boolean
+  /** 현재 사용자가 수정/삭제할 수 있는 항목인지 여부 */
+  can_manage?: boolean
 }
 
 export type MeetingStatus =

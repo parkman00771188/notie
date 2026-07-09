@@ -23,7 +23,7 @@
   margin-top: 22px;
 }
 
-.user-admin-stats > div {
+.user-admin-stat-card {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -33,18 +33,49 @@
   border-radius: 12px;
   background: var(--surface);
   box-shadow: var(--shadow-card);
+  color: inherit;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+  transition:
+    border-color 0.15s,
+    background 0.15s,
+    box-shadow 0.15s,
+    transform 0.15s;
 }
 
-.user-admin-stats span {
+.user-admin-stat-card:hover {
+  border-color: var(--primary-soft-2);
+  background: #f8fbff;
+  box-shadow:
+    var(--shadow-card),
+    0 0 0 3px rgba(37, 99, 235, 0.06);
+  transform: translateY(-1px);
+}
+
+.user-admin-stat-card.active {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  box-shadow:
+    var(--shadow-card),
+    inset 0 0 0 1px rgba(37, 99, 235, 0.08);
+}
+
+.user-admin-stat-card span {
   color: var(--text-3);
   font-size: 13px;
   font-weight: 800;
 }
 
-.user-admin-stats strong {
+.user-admin-stat-card strong {
   color: var(--text);
   font-size: 24px;
   font-weight: 900;
+}
+
+.user-admin-stat-card.active span,
+.user-admin-stat-card.active strong {
+  color: var(--primary);
 }
 
 .user-admin-section {
@@ -172,6 +203,14 @@
   gap: 6px;
   overflow-y: auto;
   padding: 10px;
+}
+
+.user-org-list-empty {
+  padding: 18px 10px;
+  color: var(--text-3);
+  font-size: 13px;
+  font-weight: 800;
+  text-align: center;
 }
 
 .user-org-list-item {
@@ -1238,6 +1277,20 @@
   font-size: 12.5px;
 }
 
+.org-manage-shared-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 4px 9px;
+  border: 1px solid var(--primary-soft-2);
+  border-radius: 999px;
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 900;
+}
+
 .org-manage-empty {
   margin: 0;
   padding: 18px 2px;
@@ -1261,21 +1314,21 @@
     margin-top: 16px;
   }
 
-  .user-admin-stats > div {
+  .user-admin-stat-card {
     min-height: 52px;
     padding: 10px 12px;
     border-radius: 14px;
   }
 
-  .user-admin-stats > div:first-child {
+  .user-admin-stat-card:first-child {
     grid-column: 1 / -1;
   }
 
-  .user-admin-stats span {
+  .user-admin-stat-card span {
     font-size: 12px;
   }
 
-  .user-admin-stats strong {
+  .user-admin-stat-card strong {
     font-size: 21px;
   }
 

@@ -306,10 +306,6 @@
   white-space: nowrap;
 }
 
-.project-detail-meta-dot {
-  color: var(--border-strong);
-}
-
 .project-detail-meta-tags {
   display: inline-flex;
   min-width: 0;

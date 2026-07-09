@@ -580,6 +580,13 @@
   font-weight: 700;
 }
 
+.mic-test-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
 .manual-writing-panel {
   display: flex;
   flex-direction: column;

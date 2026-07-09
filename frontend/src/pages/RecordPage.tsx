@@ -18,6 +18,8 @@ const DEFAULT_TITLE = '새 회의 기록'
 const ACCEPT_AUDIO = 'audio/*,.mp3,.m4a,.wav,.webm,.ogg,.mp4,.aac,.flac'
 const AUDIO_EXTENSIONS = ['.mp3', '.m4a', '.wav', '.webm', '.ogg', '.mp4', '.aac', '.flac']
 const RECORDING_NAVIGATION_MESSAGE = '녹음 중에는 취소 또는 종료 후 이동할 수 있어요.'
+const PREFERRED_MIC_ID_KEY = 'notie.preferredMicId'
+const PREFERRED_MIC_LABEL_KEY = 'notie.preferredMicLabel'
 const RECORDING_NAVIGATION_TARGET_SELECTOR = [
   'a[href]',
   '.sidebar-new button',
@@ -115,6 +117,8 @@ export default function RecordPage() {
   const [micTestError, setMicTestError] = useState('')
   const [micDevices, setMicDevices] = useState<MediaDeviceInfo[]>([])
   const [selectedMicId, setSelectedMicId] = useState('')
+  const [confirmedMicId, setConfirmedMicId] = useState(() => localStorage.getItem(PREFERRED_MIC_ID_KEY) ?? '')
+  const [confirmedMicLabel, setConfirmedMicLabel] = useState(() => localStorage.getItem(PREFERRED_MIC_LABEL_KEY) ?? '')
   const [micLevel, setMicLevel] = useState(0)
   const micTestStreamRef = useRef<MediaStream | null>(null)
   const micTestAudioContextRef = useRef<AudioContext | null>(null)
@@ -218,8 +222,9 @@ export default function RecordPage() {
 
   const openMicTest = () => {
     if (starting || uploading || isLive) return
+    setSelectedMicId(confirmedMicId)
     setMicTestOpen(true)
-    void startMicTestStream()
+    void startMicTestStream(confirmedMicId || undefined)
   }
 
   const closeMicTest = useCallback(() => {
@@ -231,6 +236,20 @@ export default function RecordPage() {
   const handleSelectMic = (deviceId: string) => {
     setSelectedMicId(deviceId)
     void startMicTestStream(deviceId)
+  }
+
+  const handleConfirmMic = () => {
+    const device = micDevices.find((item) => item.deviceId === selectedMicId)
+    if (!selectedMicId || !device) {
+      setMicTestError('녹음에 사용할 마이크를 선택해주세요.')
+      return
+    }
+    const label = device.label || '선택한 마이크'
+    setConfirmedMicId(selectedMicId)
+    setConfirmedMicLabel(label)
+    localStorage.setItem(PREFERRED_MIC_ID_KEY, selectedMicId)
+    localStorage.setItem(PREFERRED_MIC_LABEL_KEY, label)
+    closeMicTest()
   }
 
   useEffect(() => {
@@ -430,9 +449,13 @@ export default function RecordPage() {
     setRecordMode('idle')
     setStarting(true)
     try {
-      await recorder.start()
+      await recorder.start(confirmedMicId || undefined)
     } catch {
-      alert('마이크를 사용할 수 없어요. 브라우저의 마이크 권한을 확인해주세요.')
+      alert(
+        confirmedMicId
+          ? '선택한 마이크를 사용할 수 없어요. 마이크 테스트에서 다시 선택하거나 브라우저 권한을 확인해주세요.'
+          : '마이크를 사용할 수 없어요. 브라우저의 마이크 권한을 확인해주세요.',
+      )
       setStarting(false)
       return
     }
@@ -1177,10 +1200,26 @@ export default function RecordPage() {
           </div>
 
           <div className="mic-test-footer">
-            <span>{micTestLoading ? '마이크를 확인하고 있어요...' : '말을 하면 오른쪽 막대가 움직입니다.'}</span>
-            <button type="button" className="btn btn-ghost" onClick={closeMicTest}>
-              닫기
-            </button>
+            <span>
+              {micTestLoading
+                ? '마이크를 확인하고 있어요...'
+                : confirmedMicLabel
+                  ? `현재 녹음 마이크: ${confirmedMicLabel}`
+                  : '확인을 누르면 선택한 마이크로 녹음합니다.'}
+            </span>
+            <div className="mic-test-actions">
+              <button type="button" className="btn btn-ghost" onClick={closeMicTest}>
+                닫기
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={handleConfirmMic}
+                disabled={micTestLoading || !selectedMicId}
+              >
+                확인
+              </button>
+            </div>
           </div>
         </div>
       </Modal>

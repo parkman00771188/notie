@@ -11,7 +11,7 @@ export interface UseRecorderReturn {
   status: RecorderStatus
   elapsedSec: number
   analyser: AnalyserNode | null
-  start: () => Promise<void>
+  start: (deviceId?: string) => Promise<void>
   pause: () => void
   resume: () => void
   stop: () => Promise<RecorderResult>
@@ -136,10 +136,13 @@ export function useRecorder(): UseRecorderReturn {
     }
   }, [cleanup])
 
-  const start = useCallback(async () => {
+  const start = useCallback(async (deviceId?: string) => {
     if (recorderRef.current && recorderRef.current.state !== 'inactive') return
 
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    const audioConstraint: MediaTrackConstraints | boolean = deviceId
+      ? { deviceId: { exact: deviceId } }
+      : true
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraint })
     streamRef.current = stream
 
     // 파형용 AnalyserNode

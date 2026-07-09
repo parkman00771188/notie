@@ -238,6 +238,16 @@ def update_user(
                 conn.execute("DELETE FROM participants WHERE source_user_id = ?", (user_id,))
                 conn.execute("DELETE FROM project_members WHERE user_id = ?", (user_id,))
                 conn.execute("DELETE FROM tag_permissions WHERE user_id = ?", (user_id,))
+                conn.execute(
+                    """
+                    UPDATE meetings
+                    SET
+                      locked = CASE WHEN is_shared = 1 THEN 0 ELSE locked END,
+                      is_shared = 0
+                    WHERE user_id = ?
+                    """,
+                    (user_id,),
+                )
             else:
                 conn.execute(
                     """

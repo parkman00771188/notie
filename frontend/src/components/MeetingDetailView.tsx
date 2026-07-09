@@ -579,7 +579,7 @@ export function MeetingDetailView({
 
   // ----- 회의 공유 -----
   const handleToggleShare = async () => {
-    if (!meeting || user?.id !== meeting.user_id) return
+    if (!meeting || user?.id !== meeting.user_id || user?.role === 'other') return
     const nextShared = !meeting.is_shared
     if (nextShared && !meeting.tag) {
       alert('태그를 설정하세요')
@@ -770,6 +770,7 @@ export function MeetingDetailView({
   const shouldBlockAudioPlayback = audioPlaybackDisabled || isRecordingMeeting
   const isLocked = meeting.locked
   const isOwner = user?.id === meeting.user_id
+  const canShareMeeting = isOwner && (user?.role === 'admin' || user?.role === 'user')
   const lockedActionMessage = '잠금 상태에서는 AI 회의록 수정/재생성과 삭제를 할 수 없어요.'
   const resummarizeHint = isManualMeeting
     ? '메모와 직접 작성 내용을 기준으로 다시 요약합니다'
@@ -809,7 +810,7 @@ export function MeetingDetailView({
               {isLocked ? '🔒 잠금됨' : '🔓 잠금'}
             </button>
           )}
-          {isOwner && (
+          {canShareMeeting && (
             <button
               type="button"
               className={`btn detail-share-btn${meeting.is_shared ? ' active' : ' btn-ghost'}`}

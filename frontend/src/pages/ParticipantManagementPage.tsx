@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { api } from '../api'
+import { useAuth } from '../App'
 import Avatar from '../components/Avatar'
 import ComboBox from '../components/ComboBox'
 import { useConfirm } from '../components/confirm'
@@ -178,6 +179,7 @@ function UsersIcon() {
 }
 
 export default function ParticipantManagementPage() {
+  const { user } = useAuth()
   const confirm = useConfirm()
   const [participants, setParticipants] = useState<Participant[] | null>(null)
   const [orgOptions, setOrgOptions] = useState<OrgOption[]>([])
@@ -198,13 +200,28 @@ export default function ParticipantManagementPage() {
   const [orgDraftColor, setOrgDraftColor] = useState(PARTICIPANT_COLORS[0])
   const [orgSavingKind, setOrgSavingKind] = useState<OrgKind | null>(null)
   const [orgEditing, setOrgEditing] = useState<{ id: number; name: string } | null>(null)
+  const isExternalUser = user?.role === 'other'
 
   useEffect(() => {
     let alive = true
+    setParticipants(null)
+    setError('')
+    setOrgOptions([])
+    if (!user) {
+      return () => {
+        alive = false
+      }
+    }
     api
       .listParticipants()
       .then((list) => {
-        if (alive) setParticipants(list)
+        if (alive) {
+          setParticipants(
+            isExternalUser
+              ? list.filter((participant) => participant.source_user_id === null)
+              : list,
+          )
+        }
       })
       .catch((err: unknown) => {
         if (alive) {
@@ -215,7 +232,15 @@ export default function ParticipantManagementPage() {
     api
       .listOrgOptions()
       .then((list) => {
-        if (alive) setOrgOptions(sortOrgOptions(list))
+        if (alive) {
+          setOrgOptions(
+            sortOrgOptions(
+              isExternalUser
+                ? list.filter((option) => !option.is_shared && option.can_manage !== false)
+                : list,
+            ),
+          )
+        }
       })
       .catch(() => {
         if (alive) setOrgOptions([])
@@ -223,7 +248,7 @@ export default function ParticipantManagementPage() {
     return () => {
       alive = false
     }
-  }, [])
+  }, [isExternalUser, user?.id])
 
   const organizationOptions = useMemo(
     () =>
@@ -551,10 +576,6 @@ export default function ParticipantManagementPage() {
           <div className="user-admin-loading">
             <span className="spinner" />
           </div>
-        ) : groups.length === 0 ? (
-          <div className="card user-admin-empty-card">
-            <div className="user-admin-empty">등록된 참석자가 없습니다.</div>
-          </div>
         ) : (
           <div className="participant-directory-layout">
             <aside className="card participant-org-list-card" aria-label="소속 목록">
@@ -578,21 +599,28 @@ export default function ParticipantManagementPage() {
                 </button>
               </div>
               <div className="participant-org-list">
-                {groups.map((group) => (
-                  <button
-                    key={group.key}
-                    type="button"
-                    className={`participant-org-item${selectedGroup?.key === group.key ? ' active' : ''}`}
-                    onClick={() => setSelectedGroupKey(group.key)}
-                  >
-                    <span className="participant-org-dot" style={{ background: group.color }} />
-                    <span className="participant-org-item-text">
-                      <strong>{group.name}</strong>
-                      <small>{group.items.length}명 등록</small>
-                    </span>
-                    <span className="participant-org-count">{group.items.length}</span>
-                  </button>
-                ))}
+                {groups.length === 0 ? (
+                  <div className="participant-org-empty">
+                    <strong>소속이 없습니다.</strong>
+                    <span>관리에서 소속을 먼저 추가할 수 있어요.</span>
+                  </div>
+                ) : (
+                  groups.map((group) => (
+                    <button
+                      key={group.key}
+                      type="button"
+                      className={`participant-org-item${selectedGroup?.key === group.key ? ' active' : ''}`}
+                      onClick={() => setSelectedGroupKey(group.key)}
+                    >
+                      <span className="participant-org-dot" style={{ background: group.color }} />
+                      <span className="participant-org-item-text">
+                        <strong>{group.name}</strong>
+                        <small>{group.items.length}명 등록</small>
+                      </span>
+                      <span className="participant-org-count">{group.items.length}</span>
+                    </button>
+                  ))
+                )}
               </div>
             </aside>
 
@@ -654,7 +682,15 @@ export default function ParticipantManagementPage() {
                 <div className="participant-detail-empty">
                   <UsersIcon />
                   <strong>선택된 소속이 없습니다.</strong>
-                  <span>소속을 선택하면 참석자 목록이 표시됩니다.</span>
+                  <span>소속을 추가하거나 참석자를 직접 등록할 수 있어요.</span>
+                  <div className="participant-detail-empty-actions">
+                    <button type="button" className="btn btn-ghost" onClick={openOrgManage}>
+                      소속 관리
+                    </button>
+                    <button type="button" className="btn btn-primary" onClick={openCreate}>
+                      + 참석자 추가
+                    </button>
+                  </div>
                 </div>
               )
               }

@@ -187,6 +187,14 @@ def _meeting_has_share_scope(
     return any(_tag_has_share_scope(conn, tag["id"]) for tag in _meeting_tag_rows(conn, tag_name, owner_user_id))
 
 
+def _meeting_owner_can_share(conn: sqlite3.Connection, owner_user_id: int) -> bool:
+    owner = conn.execute(
+        "SELECT role, active FROM users WHERE id = ?",
+        (owner_user_id,),
+    ).fetchone()
+    return owner is not None and owner["active"] and owner["role"] != "other"
+
+
 def _assert_shareable_tag(
     conn: sqlite3.Connection,
     tag_name: str | None,
@@ -205,6 +213,8 @@ def _assert_shareable_tag(
 def _effective_is_shared(conn: sqlite3.Connection, row: sqlite3.Row) -> bool:
     if not row["is_shared"]:
         return False
+    if not _meeting_owner_can_share(conn, row["user_id"]):
+        return False
     return _meeting_has_share_scope(conn, row["tag"], row["user_id"])
 
 
@@ -212,6 +222,8 @@ def _can_read_meeting_row(conn: sqlite3.Connection, row: sqlite3.Row, user: dict
     if row["user_id"] == user["id"]:
         return True
     if not row["is_shared"]:
+        return False
+    if not _meeting_owner_can_share(conn, row["user_id"]):
         return False
     return any(
         _tag_allows_user(conn, tag["id"], user["id"])
@@ -456,6 +468,8 @@ def update_meeting(
 
             share_requested = "is_shared" in data and data["is_shared"] is not None
             locked_requested = "locked" in data and data["locked"] is not None
+            if share_requested and user.get("role") not in ("admin", "user"):
+                raise HTTPException(status_code=403, detail="기타 권한은 회의 공유를 사용할 수 없습니다")
             next_shared = bool(current["is_shared"])
             next_locked = bool(current["locked"])
             if share_requested:

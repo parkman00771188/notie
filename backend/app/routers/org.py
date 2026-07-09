@@ -375,7 +375,30 @@ def list_org_options(
         )
     conn = db.get_conn()
     try:
-        if kind:
+        if user.get("role") == "other":
+            if kind:
+                rows = conn.execute(
+                    """
+                    SELECT o.id, o.user_id, o.kind, o.name, o.color, u.role AS owner_role
+                    FROM org_options o
+                    JOIN users u ON u.id = o.user_id
+                    WHERE o.kind = ? AND o.user_id = ?
+                    ORDER BY o.name ASC
+                    """,
+                    (kind, user["id"]),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    """
+                    SELECT o.id, o.user_id, o.kind, o.name, o.color, u.role AS owner_role
+                    FROM org_options o
+                    JOIN users u ON u.id = o.user_id
+                    WHERE o.user_id = ?
+                    ORDER BY o.kind ASC, o.name ASC
+                    """,
+                    (user["id"],),
+                ).fetchall()
+        elif kind:
             rows = conn.execute(
                 """
                 SELECT o.id, o.user_id, o.kind, o.name, o.color, u.role AS owner_role
@@ -414,16 +437,27 @@ def create_org_option(
     conn = db.get_conn()
     try:
         with conn:
-            existing = conn.execute(
-                """
-                SELECT 1
-                FROM org_options o
-                JOIN users u ON u.id = o.user_id
-                WHERE o.kind = ? AND o.name = ? AND (u.role = 'admin' OR o.user_id = ?)
-                LIMIT 1
-                """,
-                (body.kind, name, user["id"]),
-            ).fetchone()
+            if user.get("role") == "other":
+                existing = conn.execute(
+                    """
+                    SELECT 1
+                    FROM org_options
+                    WHERE kind = ? AND name = ? AND user_id = ?
+                    LIMIT 1
+                    """,
+                    (body.kind, name, user["id"]),
+                ).fetchone()
+            else:
+                existing = conn.execute(
+                    """
+                    SELECT 1
+                    FROM org_options o
+                    JOIN users u ON u.id = o.user_id
+                    WHERE o.kind = ? AND o.name = ? AND (u.role = 'admin' OR o.user_id = ?)
+                    LIMIT 1
+                    """,
+                    (body.kind, name, user["id"]),
+                ).fetchone()
             if existing is not None:
                 raise HTTPException(status_code=400, detail="이미 등록되어 있습니다")
             try:
@@ -477,16 +511,27 @@ def update_org_option(
             name = (updates["name"] or "").strip()
             if not name:
                 raise HTTPException(status_code=400, detail="이름을 입력해주세요")
-            existing = conn.execute(
-                """
-                SELECT 1
-                FROM org_options o
-                JOIN users u ON u.id = o.user_id
-                WHERE o.id <> ? AND o.kind = ? AND o.name = ? AND (u.role = 'admin' OR o.user_id = ?)
-                LIMIT 1
-                """,
-                (option_id, row["kind"], name, user["id"]),
-            ).fetchone()
+            if user.get("role") == "other":
+                existing = conn.execute(
+                    """
+                    SELECT 1
+                    FROM org_options
+                    WHERE id <> ? AND kind = ? AND name = ? AND user_id = ?
+                    LIMIT 1
+                    """,
+                    (option_id, row["kind"], name, user["id"]),
+                ).fetchone()
+            else:
+                existing = conn.execute(
+                    """
+                    SELECT 1
+                    FROM org_options o
+                    JOIN users u ON u.id = o.user_id
+                    WHERE o.id <> ? AND o.kind = ? AND o.name = ? AND (u.role = 'admin' OR o.user_id = ?)
+                    LIMIT 1
+                    """,
+                    (option_id, row["kind"], name, user["id"]),
+                ).fetchone()
             if existing is not None:
                 raise HTTPException(status_code=400, detail="이미 등록되어 있습니다")
             new_name = name

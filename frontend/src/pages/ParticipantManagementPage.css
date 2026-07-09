@@ -115,6 +115,30 @@
   padding: 10px;
 }
 
+.participant-org-empty {
+  display: flex;
+  min-height: 110px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 18px 12px;
+  color: var(--text-3);
+  text-align: center;
+}
+
+.participant-org-empty strong {
+  color: var(--text-2);
+  font-size: 13.5px;
+  font-weight: 900;
+}
+
+.participant-org-empty span {
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
 .participant-org-item {
   display: grid;
   grid-template-columns: 11px minmax(0, 1fr) auto;
@@ -456,6 +480,18 @@
 .participant-detail-empty span {
   font-size: 13px;
   font-weight: 700;
+}
+
+.participant-detail-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.participant-detail-empty-actions .btn {
+  min-width: 128px;
 }
 
 @media (max-width: 768px) {

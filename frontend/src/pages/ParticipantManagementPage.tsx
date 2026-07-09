@@ -100,7 +100,7 @@ function ParticipantColorPicker({
   value,
   onChange,
   compact = false,
-  ariaLabel = '참여자 색 선택',
+  ariaLabel = '참석자 색 선택',
 }: ParticipantColorPickerProps) {
   const isCustom = !PARTICIPANT_COLORS.includes(value)
   return (
@@ -207,7 +207,7 @@ export default function ParticipantManagementPage() {
       .catch((err: unknown) => {
         if (alive) {
           setParticipants([])
-          setError(errMsg(err, '참여자 목록을 불러오지 못했습니다.'))
+          setError(errMsg(err, '참석자 목록을 불러오지 못했습니다.'))
         }
       })
     api
@@ -400,7 +400,7 @@ export default function ParticipantManagementPage() {
   const deleteOrgOption = async (option: OrgOption) => {
     const ok = await confirm({
       title: `'${option.name}' 항목을 삭제할까요?`,
-      message: '선택 목록에서만 삭제되며, 이미 참여자 정보에 입력된 값은 그대로 유지됩니다.',
+      message: '선택 목록에서만 삭제되며, 이미 참석자 정보에 입력된 값은 그대로 유지됩니다.',
       confirmLabel: '삭제',
       danger: true,
     })
@@ -459,7 +459,7 @@ export default function ParticipantManagementPage() {
       setEditing(null)
       setDraft(EMPTY_DRAFT)
     } catch (err: unknown) {
-      setError(errMsg(err, '참여자 정보를 저장하지 못했습니다.'))
+      setError(errMsg(err, '참석자 정보를 저장하지 못했습니다.'))
     } finally {
       setSaving(false)
     }
@@ -468,8 +468,8 @@ export default function ParticipantManagementPage() {
   const deleteParticipant = async (item: Participant) => {
     if (item.source_user_id !== null && item.source_user_id !== undefined) return
     const ok = await confirm({
-      title: `${item.name} 참여자를 삭제할까요?`,
-      message: '참여자 사전에서만 제거됩니다. 기존 회의 기록에 이미 표시된 참석자 정보는 유지됩니다.',
+      title: `${item.name} 참석자를 삭제할까요?`,
+      message: '참석자 사전에서만 제거됩니다. 기존 회의 기록에 이미 표시된 참석자 정보는 유지됩니다.',
       confirmLabel: '삭제',
       danger: true,
     })
@@ -479,7 +479,7 @@ export default function ParticipantManagementPage() {
       await api.deleteParticipant(item.id)
       setParticipants((prev) => (prev ?? []).filter((target) => target.id !== item.id))
     } catch (err: unknown) {
-      setError(errMsg(err, '참여자를 삭제하지 못했습니다.'))
+      setError(errMsg(err, '참석자를 삭제하지 못했습니다.'))
     }
   }
 
@@ -508,7 +508,7 @@ export default function ParticipantManagementPage() {
               className="btn-icon participant-edit-btn"
               disabled={synced}
               title={synced ? '사용자 관리에서 수정되는 항목입니다.' : '수정'}
-              aria-label={`${item.name} 참여자 수정`}
+              aria-label={`${item.name} 참석자 수정`}
               onClick={() => openEdit(item)}
             >
               <PencilIcon />
@@ -517,8 +517,8 @@ export default function ParticipantManagementPage() {
               type="button"
               className="btn-icon user-delete-btn"
               disabled={synced}
-              title={synced ? '사용자 계정에서 동기화된 참여자는 삭제할 수 없습니다.' : '삭제'}
-              aria-label={`${item.name} 참여자 삭제`}
+              title={synced ? '사용자 계정에서 동기화된 참석자는 삭제할 수 없습니다.' : '삭제'}
+              aria-label={`${item.name} 참석자 삭제`}
               onClick={() => void deleteParticipant(item)}
             >
               <TrashIcon />
@@ -533,14 +533,14 @@ export default function ParticipantManagementPage() {
     <div className="page user-admin-page participant-admin-page">
       <div className="user-admin-head">
         <div>
-          <h1 className="page-title">참여자 관리</h1>
+          <h1 className="page-title">참석자 관리</h1>
           <p className="user-admin-subtitle">
-            회의 목록과 회의 기록에서 선택할 참여자를 미리 저장하고 관리합니다.
+            회의 목록과 회의 기록에서 선택할 참석자를 미리 저장하고 관리합니다.
           </p>
         </div>
         <div className="user-admin-head-actions">
           <button type="button" className="btn btn-primary" onClick={openCreate}>
-            참여자 추가
+            참석자 추가
           </button>
         </div>
       </div>
@@ -554,7 +554,7 @@ export default function ParticipantManagementPage() {
           </div>
         ) : groups.length === 0 ? (
           <div className="card user-admin-empty-card">
-            <div className="user-admin-empty">등록된 참여자가 없습니다.</div>
+            <div className="user-admin-empty">등록된 참석자가 없습니다.</div>
           </div>
         ) : (
           <div className="participant-directory-layout">
@@ -597,7 +597,7 @@ export default function ParticipantManagementPage() {
               </div>
             </aside>
 
-            <section className="card participant-detail-card" aria-label="소속별 참여자 목록">
+            <section className="card participant-detail-card" aria-label="소속별 참석자 목록">
               {selectedGroup ? (
                 <>
                   <div className="participant-detail-top">
@@ -607,7 +607,7 @@ export default function ParticipantManagementPage() {
                       </span>
                       <div>
                         <h2>{selectedGroup.name}</h2>
-                        <p>이 소속에 등록된 참여자 {selectedGroup.items.length}명</p>
+                        <p>이 소속에 등록된 참석자 {selectedGroup.items.length}명</p>
                       </div>
                     </div>
                     <div className="participant-detail-actions">
@@ -643,7 +643,7 @@ export default function ParticipantManagementPage() {
                             selectedGroup.items.map((item, index) => renderRow(item, index + 1))
                           ) : (
                             <tr className="user-admin-empty-row">
-                              <td colSpan={6}>이 소속에는 등록된 참여자가 없습니다.</td>
+                              <td colSpan={6}>이 소속에는 등록된 참석자가 없습니다.</td>
                             </tr>
                           )}
                         </tbody>
@@ -655,7 +655,7 @@ export default function ParticipantManagementPage() {
                 <div className="participant-detail-empty">
                   <UsersIcon />
                   <strong>선택된 소속이 없습니다.</strong>
-                  <span>소속을 선택하면 참여자 목록이 표시됩니다.</span>
+                  <span>소속을 선택하면 참석자 목록이 표시됩니다.</span>
                 </div>
               )
               }
@@ -666,7 +666,7 @@ export default function ParticipantManagementPage() {
 
       <Modal
         open={modalOpen}
-        title={editing ? '참여자 수정' : '참여자 추가'}
+        title={editing ? '참석자 수정' : '참석자 추가'}
         width={780}
         onClose={closeModal}
       >
@@ -678,12 +678,12 @@ export default function ParticipantManagementPage() {
                 className="input"
                 value={draft.name}
                 onChange={(event) => setField('name', event.target.value)}
-                placeholder="참여자 이름을 입력해주세요"
+                placeholder="참석자 이름을 입력해주세요"
                 required
               />
             </label>
             <div className="user-form-field participant-color-field">
-              <span>참여자 색상</span>
+              <span>참석자 색상</span>
               <div className="participant-color-row">
                 <Avatar name={draft.name || '참'} color={draft.color} size={30} />
                 <ParticipantColorPicker value={draft.color} onChange={(color) => setField('color', color)} />
@@ -756,12 +756,12 @@ export default function ParticipantManagementPage() {
       >
         <div className="org-manage-modal">
           <p className="org-manage-desc">
-            참여자 추가/수정 폼에서 선택할 목록을 관리합니다. 목록에서 삭제해도 이미 저장된 참여자 정보는 유지됩니다.
+            참석자 추가/수정 폼에서 선택할 목록을 관리합니다. 목록에서 삭제해도 이미 저장된 참석자 정보는 유지됩니다.
           </p>
           {orgManageError && <div className="user-admin-error org-manage-error">{orgManageError}</div>}
 
           <div className="org-manage-layout">
-            <nav className="org-manage-tabs" aria-label="참여자 소속 정보 관리">
+            <nav className="org-manage-tabs" aria-label="참석자 소속 정보 관리">
               {ORG_OPTION_GROUPS.map((group) => (
                 <button
                   key={group.kind}

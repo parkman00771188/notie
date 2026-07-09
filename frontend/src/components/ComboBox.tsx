@@ -178,7 +178,10 @@ export function ComboBox({
               className={`combobox-option${i === activeIndex ? ' active' : ''}${
                 o === trimmed ? ' selected' : ''
               }`}
-              onClick={() => selectOption(o)}
+              onPointerDown={(e) => {
+                e.preventDefault()
+                selectOption(o)
+              }}
               onMouseEnter={() => setActiveIndex(i)}
             >
               <span className="combobox-option-name">{o}</span>
@@ -193,6 +196,10 @@ export function ComboBox({
                   className="combobox-option-x"
                   aria-label={`${o} 삭제`}
                   title="목록에서 삭제"
+                  onPointerDown={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                  }}
                   onClick={async (e) => {
                     e.stopPropagation()
                     const ok = await confirm({
@@ -221,7 +228,10 @@ export function ComboBox({
               type="button"
               data-idx={createIndex}
               className={`combobox-create${activeIndex === createIndex ? ' active' : ''}`}
-              onClick={handleCreate}
+              onPointerDown={(e) => {
+                e.preventDefault()
+                handleCreate()
+              }}
               onMouseEnter={() => setActiveIndex(createIndex)}
             >
               <span aria-hidden="true">+</span>

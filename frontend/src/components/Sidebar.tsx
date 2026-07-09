@@ -207,7 +207,7 @@ export function Sidebar() {
   const mobileUserAreaRef = useRef<HTMLDivElement>(null)
   const adminNavItem: NavItem = { to: '/users', label: '사용자 관리', icon: <UsersIcon />, end: false }
   const projectNavItem: NavItem = { to: '/projects', label: '프로젝트 관리', icon: <ProjectIcon />, end: false }
-  const participantNavItem: NavItem = { to: '/participants', label: '참여자 관리', icon: <UsersIcon />, end: false }
+  const participantNavItem: NavItem = { to: '/participants', label: '참석자 관리', icon: <UsersIcon />, end: false }
   const isAdmin = user?.role === 'admin'
   const navItems: NavItem[] = isAdmin
     ? [...NAV_ITEMS.slice(0, 4), adminNavItem, projectNavItem, participantNavItem, NAV_ITEMS[4]]

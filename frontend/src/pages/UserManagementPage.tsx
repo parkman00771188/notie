@@ -952,14 +952,16 @@ export default function UserManagementPage() {
                 placeholder="name@example.com"
               />
             </label>
-            <label className="user-active-toggle">
-              <input
-                type="checkbox"
-                checked={draft.active}
-                onChange={(e) => setField('active', e.target.checked)}
-              />
-              <span>활성 계정</span>
-            </label>
+            {editing && (
+              <label className="user-active-toggle">
+                <input
+                  type="checkbox"
+                  checked={draft.active}
+                  onChange={(e) => setField('active', e.target.checked)}
+                />
+                <span>활성 계정</span>
+              </label>
+            )}
           </div>
 
           <div className="user-form-actions">

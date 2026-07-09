@@ -32,8 +32,12 @@ _GENERATE_TIMEOUT = 600.0
 # 긴 오디오는 조각으로 나눠 전사 — 응답이 출력 토큰 한도에 잘려 JSON이 깨지는 것을 방지
 _CHUNK_SECONDS = 600  # 10분
 _MAX_OUTPUT_TOKENS = 65536
-# 이 진폭(int16 최대 32767 기준) 이하면 무음으로 보고 전사하지 않음 — 환각 방지
-_SILENCE_PEAK = 350
+# 이 기준 이하이면 무음/잡음으로 보고 전사하지 않음 — 생성형 STT 환각 방지
+_MIN_AUDIO_SECONDS = 2.0
+_SILENCE_PEAK = 500
+_SILENCE_RMS = 25.0
+_VOICE_FRAME_RMS = 120.0
+_MIN_VOICED_RATIO = 0.01
 
 _TS_RE = re.compile(r"^\s*(?:(\d+):)?(\d{1,2}):(\d{2}(?:\.\d+)?)\s*$")
 
@@ -210,20 +214,42 @@ def _parse_segments(text: str) -> list[dict]:
     return segments
 
 
-def _wav_peak(wav_path: Path) -> int:
-    """16bit WAV의 최대 절대 진폭(0~32767). 무음 판정용."""
+def _wav_activity(wav_path: Path) -> tuple[int, float, float]:
+    """16bit WAV의 peak, 전체 RMS, 유성 프레임 비율을 구한다.
+
+    peak 하나만 보면 클릭음/잡음 한 번으로도 무음을 놓칠 수 있어, 전체 에너지와
+    30ms 단위 RMS 프레임 비율을 함께 본다.
+    """
     import numpy as np
 
     peak = 0
+    total_sq = 0.0
+    total_samples = 0
+    voiced_frames = 0
+    total_frames = 0
+    frame_size = 480  # 16kHz 기준 30ms
     with wave.open(str(wav_path), "rb") as w:
         while True:
             frames = w.readframes(160000)  # ~10초씩
             if not frames:
                 break
-            arr = np.frombuffer(frames, dtype=np.int16)
+            arr = np.frombuffer(frames, dtype=np.int16).astype(np.int32)
             if arr.size:
                 peak = max(peak, int(np.abs(arr).max()))
-    return peak
+                arr_float = arr.astype(np.float64)
+                total_sq += float(np.square(arr_float).sum())
+                total_samples += int(arr.size)
+
+                usable = (arr.size // frame_size) * frame_size
+                if usable:
+                    chunks = arr_float[:usable].reshape(-1, frame_size)
+                    frame_rms = np.sqrt(np.mean(np.square(chunks), axis=1))
+                    voiced_frames += int((frame_rms >= _VOICE_FRAME_RMS).sum())
+                    total_frames += int(frame_rms.size)
+
+    rms = (total_sq / total_samples) ** 0.5 if total_samples else 0.0
+    voiced_ratio = voiced_frames / total_frames if total_frames else 0.0
+    return peak, rms, voiced_ratio
 
 
 def _split_wav(src: Path, chunk_seconds: int) -> list[tuple[Path, float]]:
@@ -329,10 +355,18 @@ def transcribe(audio_path: str) -> list[dict]:
     try:
         duration = _transcode_to_wav(src, tmp)
 
-        # 무음/거의 무음이면 전사하지 않는다 — 생성형 모델이 무음을 환각으로 받아 적는 것 방지
-        peak = _wav_peak(tmp)
-        if peak < _SILENCE_PEAK:
-            logger.info("gemini_stt: 무음 감지(peak=%d) — 전사 생략", peak)
+        # 짧은 무음/거의 무음이면 전사하지 않는다 — 생성형 모델이 무음을 환각으로 받아 적는 것 방지
+        if duration < _MIN_AUDIO_SECONDS:
+            logger.info("gemini_stt: 녹음이 너무 짧음(duration=%.2fs) — 전사 생략", duration)
+            return []
+        peak, rms, voiced_ratio = _wav_activity(tmp)
+        if peak < _SILENCE_PEAK or rms < _SILENCE_RMS or voiced_ratio < _MIN_VOICED_RATIO:
+            logger.info(
+                "gemini_stt: 무음/잡음 감지(peak=%d, rms=%.1f, voiced_ratio=%.3f) — 전사 생략",
+                peak,
+                rms,
+                voiced_ratio,
+            )
             return []
 
         if duration > _CHUNK_SECONDS * 1.2:

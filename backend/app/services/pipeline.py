@@ -6,7 +6,7 @@
   → status='summarizing' → summarizer.summarize → summaries upsert → status='done'.
 - enqueue_summary(meeting_id): 요약 단계만 재실행.
 - 각 잡은 자체 db.get_conn() 사용(스레드 안전). 예외 시 status='failed' + error_message
-  저장, traceback 로그 출력. 세그먼트 0개(무음)도 정상 done 처리.
+  저장, traceback 로그 출력. 세그먼트 0개(무음/잡음)는 실패 상태로 남겨 가짜 요약을 막는다.
 - summaries upsert는 INSERT OR REPLACE, JSON 컬럼은 json.dumps(ensure_ascii=False).
 """
 
@@ -86,7 +86,12 @@ def _run_full_job(meeting_id: int) -> None:
         except Exception as exc:
             raise RuntimeError(f"음성 변환 실패: {exc}") from exc
 
-        # 세그먼트 삽입 (무음이면 0개 — 정상 진행)
+        if not segments:
+            raise RuntimeError(
+                "인식 가능한 음성이 없습니다. 마이크 입력을 확인한 뒤 다시 녹음해주세요."
+            )
+
+        # 세그먼트 삽입
         _ensure_status(conn, meeting_id, "transcribing")
         with conn:
             current = conn.execute("SELECT status FROM meetings WHERE id = ?", (meeting_id,)).fetchone()

@@ -36,10 +36,6 @@ export default function AuthPage() {
   const [loading, setLoading] = useState(false)
   const [showIntro, setShowIntro] = useState(() => isMobileViewport())
 
-  const notSupported = () => {
-    alert('로컬 버전에서는 지원되지 않아요')
-  }
-
   const switchMode = (next: Mode) => {
     if (next === mode) return
     setMode(next)
@@ -299,7 +295,7 @@ export default function AuthPage() {
                   type="text"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="admin"
+                  placeholder="아이디를 입력하세요"
                   autoComplete="username"
                   required
                 />
@@ -341,9 +337,6 @@ export default function AuthPage() {
                   />
                   로그인 상태 유지
                 </label>
-                <button type="button" className="auth-link" onClick={notSupported}>
-                  비밀번호를 잊으셨나요?
-                </button>
               </div>
 
               <button type="submit" className="btn btn-primary btn-lg auth-submit" disabled={loading}>

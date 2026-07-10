@@ -670,7 +670,7 @@
 
 .meeting-row {
   display: grid;
-  grid-template-columns: minmax(280px, 1.45fr) 78px minmax(174px, 210px) 72px 82px 32px;
+  grid-template-columns: minmax(280px, 1.45fr) 78px minmax(240px, 300px) 82px 32px;
   align-items: center;
   gap: 10px;
   padding: 12px 16px;
@@ -746,6 +746,9 @@
 .row-date {
   grid-column: 3;
   width: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   overflow: hidden;
   font-size: 12.5px;
   color: var(--text-3);
@@ -753,17 +756,24 @@
   white-space: nowrap;
 }
 
-.row-dur {
-  grid-column: 4;
-  width: auto;
+.row-date-duration {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
   font-size: 13px;
   color: var(--text-2);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
+.row-date-duration::before {
+  content: '·';
+  margin-right: 8px;
+  color: var(--text-4);
+}
+
 .row-people {
-  grid-column: 5;
+  grid-column: 4;
   width: auto;
   display: flex;
   align-items: center;
@@ -771,13 +781,13 @@
 }
 
 .row-delete {
-  grid-column: 6;
+  grid-column: 5;
   flex-shrink: 0;
   font-size: 15px;
 }
 
 .row-delete-placeholder {
-  grid-column: 6;
+  grid-column: 5;
   width: 34px;
   height: 34px;
   pointer-events: none;
@@ -1074,16 +1084,13 @@
   .row-date {
     grid-column: 1 / -1;
     width: auto;
+    flex-wrap: wrap;
     white-space: normal;
-  }
-
-  .row-dur {
-    grid-column: 1 / 2;
-    width: auto;
   }
 
   .row-people {
     grid-column: 1 / 2;
+    justify-content: flex-start;
     width: auto;
   }
 
@@ -1177,12 +1184,12 @@
 
   .upload-entry-actions {
     display: grid;
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(112px, 0.32fr) minmax(0, 0.68fr);
     gap: 8px;
   }
 
   .meetings-search {
-    grid-column: auto;
+    grid-column: 2;
     width: 100%;
     flex: initial;
     min-height: 48px;
@@ -1199,6 +1206,7 @@
 
   .tag-filter-mobile {
     display: flex;
+    grid-column: 1;
     width: 100%;
     min-height: 48px;
     align-items: center;
@@ -1218,6 +1226,7 @@
   .tag-filter-mobile-copy {
     display: flex;
     min-width: 0;
+    max-width: 100%;
     flex-direction: column;
     gap: 3px;
   }
@@ -1282,6 +1291,7 @@
   }
 
   .view-toggle {
+    grid-column: 1 / -1;
     align-self: flex-end;
     width: 100%;
     border-radius: 12px;
@@ -1348,17 +1358,13 @@
     grid-column: 1 / -1;
     width: auto;
     font-size: 14px;
+    flex-wrap: wrap;
     white-space: normal;
-  }
-
-  .row-dur {
-    grid-column: 1 / 2;
-    width: auto;
-    font-size: 14px;
   }
 
   .row-people {
     grid-column: 1 / 2;
+    justify-content: flex-start;
     width: auto;
   }
 
@@ -1419,7 +1425,7 @@
     grid-row: 3;
   }
 
-  .row-dur {
+  .row-people {
     grid-row: 4;
   }
 

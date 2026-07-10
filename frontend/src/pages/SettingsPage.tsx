@@ -80,6 +80,7 @@ export default function SettingsPage() {
   const [showNewPassword, setShowNewPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [passwordSaving, setPasswordSaving] = useState(false)
+  const [settingsMenuOpen, setSettingsMenuOpen] = useState(false)
 
   // 주소창에서 해시를 직접 바꾼 경우 탭 동기화
   useEffect(() => {
@@ -112,6 +113,7 @@ export default function SettingsPage() {
 
   const goToSection = (id: SectionId) => {
     setActiveSection(id)
+    setSettingsMenuOpen(false)
     window.history.replaceState(null, '', `#${id}`)
   }
 
@@ -291,12 +293,69 @@ export default function SettingsPage() {
     </section>
   )
 
+  const activeSectionMeta = visibleSections.find((section) => section.id === activeSection) ?? SECTIONS[0]
+
   return (
     <div className="page settings-page">
       <h1 className="page-title">설정</h1>
       <p className="sp-subtitle">{settingsSubtitle}</p>
 
       <div className="sp-layout">
+        <div
+          className="sp-mobile-section-menu"
+          onBlur={(event) => {
+            const nextFocus = event.relatedTarget as Node | null
+            if (!nextFocus || !event.currentTarget.contains(nextFocus)) {
+              setSettingsMenuOpen(false)
+            }
+          }}
+        >
+          <span className="sp-mobile-section-caption">설정 메뉴</span>
+          <button
+            type="button"
+            className={`sp-mobile-section-trigger${settingsMenuOpen ? ' open' : ''}`}
+            aria-haspopup="listbox"
+            aria-expanded={settingsMenuOpen}
+            onClick={() => setSettingsMenuOpen((open) => !open)}
+          >
+            <span className="sp-nav-icon" aria-hidden="true">
+              {activeSectionMeta.icon}
+            </span>
+            <span className="sp-mobile-section-current">
+              {activeSectionMeta.label}
+              {'adminOnly' in activeSectionMeta && activeSectionMeta.adminOnly && (
+                <span className="sp-nav-admin-badge">관리자</span>
+              )}
+            </span>
+            <span className="sp-mobile-section-chevron" aria-hidden="true">
+              ▾
+            </span>
+          </button>
+          {settingsMenuOpen && (
+            <div className="sp-mobile-section-popover" role="listbox" aria-label="설정 메뉴 선택">
+              {visibleSections.map((section) => (
+                <button
+                  key={section.id}
+                  type="button"
+                  role="option"
+                  aria-selected={activeSection === section.id}
+                  className={`sp-mobile-section-option${activeSection === section.id ? ' selected' : ''}`}
+                  onClick={() => goToSection(section.id)}
+                >
+                  <span className="sp-nav-icon" aria-hidden="true">
+                    {section.icon}
+                  </span>
+                  <span>
+                    {section.label}
+                    {'adminOnly' in section && section.adminOnly && (
+                      <span className="sp-nav-admin-badge">관리자</span>
+                    )}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
         {/* 좌측 탭 네비 */}
         <nav className="sp-nav" role="tablist" aria-label="설정 섹션">
           {visibleSections.map((s) => (

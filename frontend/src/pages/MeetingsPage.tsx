@@ -365,8 +365,12 @@ export default function MeetingsPage() {
         <span className="row-badge">
           <StatusBadge status={m.status} />
         </span>
-        <span className="row-date">{formatKoreanDateTime(m.started_at)}</span>
-        <span className="row-dur">{m.status === 'scheduled' ? '예정' : formatClock(m.duration_sec)}</span>
+        <span className="row-date">
+          <span>{formatKoreanDateTime(m.started_at)}</span>
+          <span className="row-date-duration">
+            {m.status === 'scheduled' ? '예정' : formatClock(m.duration_sec)}
+          </span>
+        </span>
         <span className="row-people">
           {m.participants.length > 0 ? (
             <AvatarStack participants={m.participants} max={3} />

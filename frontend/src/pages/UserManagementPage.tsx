@@ -78,6 +78,8 @@ interface UserOrgGroup {
 
 type UserFilter = 'all' | 'active' | 'inactive' | 'admin' | 'user' | 'other'
 
+const USER_FILTERS: UserFilter[] = ['all', 'active', 'inactive', 'admin', 'user', 'other']
+
 const USER_FILTER_LABELS: Record<UserFilter, string> = {
   all: '전체',
   active: '활성',
@@ -300,6 +302,7 @@ export default function UserManagementPage() {
   const [orgEditing, setOrgEditing] = useState<{ id: number; name: string } | null>(null)
   const [selectedGroupKey, setSelectedGroupKey] = useState<string>(ALL_USERS_KEY)
   const [userFilter, setUserFilter] = useState<UserFilter>('all')
+  const [userFilterMenuOpen, setUserFilterMenuOpen] = useState(false)
 
   useEffect(() => {
     if (user?.role !== 'admin') return
@@ -706,6 +709,20 @@ export default function UserManagementPage() {
   const activeOrgManageGroup =
     ORG_OPTION_GROUPS.find((group) => group.kind === orgManageTab) ?? ORG_OPTION_GROUPS[0]
   const activeOrgManageOptions = orgOptions.filter((option) => option.kind === activeOrgManageGroup.kind)
+  const userFilterCounts: Record<UserFilter, number> = {
+    all: stats.total,
+    active: stats.active,
+    inactive: stats.inactive,
+    admin: stats.admin,
+    user: stats.user,
+    other: stats.other,
+  }
+
+  const handleUserFilterChange = (filter: UserFilter) => {
+    setUserFilter(filter)
+    setSelectedGroupKey(ALL_USERS_KEY)
+    setUserFilterMenuOpen(false)
+  }
 
   return (
     <div className="page user-admin-page">
@@ -719,28 +736,60 @@ export default function UserManagementPage() {
       </div>
 
       <div className="user-admin-stats" aria-label="사용자 현황 필터">
-        {([
-          ['all', stats.total],
-          ['active', stats.active],
-          ['inactive', stats.inactive],
-          ['admin', stats.admin],
-          ['user', stats.user],
-          ['other', stats.other],
-        ] as const).map(([filter, count]) => (
+        {USER_FILTERS.map((filter) => (
           <button
             key={filter}
             type="button"
             className={`user-admin-stat-card${userFilter === filter ? ' active' : ''}`}
             aria-pressed={userFilter === filter}
-            onClick={() => {
-              setUserFilter(filter)
-              setSelectedGroupKey(ALL_USERS_KEY)
-            }}
+            onClick={() => handleUserFilterChange(filter)}
           >
             <span>{USER_FILTER_LABELS[filter]}</span>
-            <strong>{count}</strong>
+            <strong>{userFilterCounts[filter]}</strong>
           </button>
         ))}
+      </div>
+
+      <div
+        className="user-admin-filter-menu"
+        onBlur={(event) => {
+          const nextFocus = event.relatedTarget as Node | null
+          if (!nextFocus || !event.currentTarget.contains(nextFocus)) {
+            setUserFilterMenuOpen(false)
+          }
+        }}
+      >
+        <span>사용자 필터</span>
+        <button
+          type="button"
+          className={`user-admin-filter-trigger${userFilterMenuOpen ? ' open' : ''}`}
+          aria-haspopup="listbox"
+          aria-expanded={userFilterMenuOpen}
+          onClick={() => setUserFilterMenuOpen((open) => !open)}
+        >
+          <span>{USER_FILTER_LABELS[userFilter]}</span>
+          <strong>{userFilterCounts[userFilter]}명</strong>
+          <span className="user-admin-filter-chevron" aria-hidden="true">
+            ▾
+          </span>
+        </button>
+        {userFilterMenuOpen && (
+          <div className="user-admin-filter-popover" role="listbox" aria-label="사용자 필터 선택">
+            {USER_FILTERS.map((filter) => (
+              <button
+                key={filter}
+                type="button"
+                className={`user-admin-filter-option${userFilter === filter ? ' selected' : ''}`}
+                role="option"
+                aria-selected={userFilter === filter}
+                onClick={() => handleUserFilterChange(filter)}
+              >
+                <span>{USER_FILTER_LABELS[filter]}</span>
+                <strong>{userFilterCounts[filter]}명</strong>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       <section className="user-directory-section">

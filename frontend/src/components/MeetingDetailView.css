@@ -1135,6 +1135,9 @@
   }
 
   .detail-mobile-ai-btn {
+    flex: 0 1 180px;
+    width: 180px;
+    max-width: calc(100vw - 132px);
     min-height: 44px;
     padding: 0 18px;
     border-radius: 14px;
@@ -1309,7 +1312,9 @@
   }
 
   .detail-mobile-ai-btn {
-    flex: 1 1 auto;
+    flex: 0 1 180px;
+    width: 180px;
+    max-width: calc(100% - 56px);
   }
 
   .detail-manage-trigger {

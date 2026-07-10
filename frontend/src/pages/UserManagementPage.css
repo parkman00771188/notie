@@ -78,6 +78,122 @@
   color: var(--primary);
 }
 
+.user-admin-filter-menu {
+  display: none;
+}
+
+.user-admin-filter-menu > span {
+  color: var(--text-3);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.user-admin-filter-trigger {
+  width: 100%;
+  min-height: 50px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-card);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 900;
+  text-align: left;
+  transition:
+    border-color 0.15s,
+    background 0.15s,
+    box-shadow 0.15s;
+}
+
+.user-admin-filter-trigger:hover,
+.user-admin-filter-trigger.open,
+.user-admin-filter-trigger:focus-visible {
+  border-color: var(--primary);
+  background: #f8fbff;
+  box-shadow:
+    var(--shadow-card),
+    0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+.user-admin-filter-trigger:focus-visible {
+  outline: none;
+}
+
+.user-admin-filter-trigger strong {
+  margin-left: auto;
+  color: var(--primary);
+  font-size: 19px;
+  font-weight: 900;
+}
+
+.user-admin-filter-chevron {
+  flex: 0 0 auto;
+  color: var(--text-3);
+  font-size: 16px;
+  line-height: 1;
+  transition: transform 0.15s;
+}
+
+.user-admin-filter-trigger.open .user-admin-filter-chevron {
+  transform: rotate(180deg);
+}
+
+.user-admin-filter-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  z-index: 30;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+}
+
+.user-admin-filter-option {
+  width: 100%;
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 14px;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 14.5px;
+  font-weight: 800;
+  text-align: left;
+}
+
+.user-admin-filter-option:last-child {
+  border-bottom: none;
+}
+
+.user-admin-filter-option:hover {
+  background: #f8fbff;
+}
+
+.user-admin-filter-option.selected {
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.user-admin-filter-option strong {
+  font-size: 15px;
+  font-weight: 900;
+}
+
 .user-admin-section {
   margin-top: 18px;
 }
@@ -1370,28 +1486,17 @@
   }
 
   .user-admin-stats {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 8px;
+    display: none;
+  }
+
+  .user-admin-filter-menu {
+    position: relative;
+    display: flex;
+    width: 100%;
     max-width: none;
+    flex-direction: column;
+    gap: 7px;
     margin-top: 16px;
-  }
-
-  .user-admin-stat-card {
-    min-height: 52px;
-    padding: 10px 12px;
-    border-radius: 14px;
-  }
-
-  .user-admin-stat-card:first-child {
-    grid-column: 1 / -1;
-  }
-
-  .user-admin-stat-card span {
-    font-size: 12px;
-  }
-
-  .user-admin-stat-card strong {
-    font-size: 21px;
   }
 
   .user-directory-section {
@@ -1525,23 +1630,70 @@
     grid-template-columns: 1fr;
   }
 
-  .user-detail-modal-head,
-  .user-detail-modal-actions {
-    flex-direction: column;
-    align-items: stretch;
+  .user-detail-modal {
+    gap: 12px;
+  }
+
+  .user-detail-modal-head {
+    align-items: center;
+    gap: 10px;
+    padding: 12px;
+    border-radius: 14px;
+  }
+
+  .user-detail-identity strong {
+    font-size: 18px;
   }
 
   .user-detail-modal-badges {
-    justify-content: flex-start;
+    flex: 0 0 auto;
+    gap: 6px;
+    justify-content: flex-end;
+  }
+
+  .user-detail-modal-badges .user-role-pill,
+  .user-detail-modal-badges .user-status-pill {
+    min-width: auto;
+    min-height: 32px;
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+
+  .user-detail-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .user-detail-list div {
+    padding: 10px 11px;
+    border-radius: 12px;
+  }
+
+  .user-detail-list dt {
+    margin-bottom: 4px;
+    font-size: 11.5px;
+  }
+
+  .user-detail-list dd {
+    font-size: 13px;
+  }
+
+  .user-detail-modal-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .user-detail-modal-actions .btn {
+    width: 100%;
+    min-height: 42px;
+    justify-content: center;
+    padding: 0 10px;
   }
 
   .user-detail-delete-action {
     order: 10;
     margin-right: 0;
-  }
-
-  .user-detail-list {
-    grid-template-columns: 1fr;
   }
 
   .user-form-field-wide {

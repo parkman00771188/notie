@@ -21,6 +21,7 @@ import wave
 from pathlib import Path
 
 from .. import config
+from . import usage
 from .summarizer import extract_first_json, get_gemini_key, get_gemini_model
 
 logger = logging.getLogger("gimnote.gemini_stt")
@@ -276,7 +277,9 @@ def _split_wav(src: Path, chunk_seconds: int) -> list[tuple[Path, float]]:
     return chunks
 
 
-def _transcribe_one(httpx, api_key: str, model: str, wav_path: Path) -> list[dict]:
+def _transcribe_one(
+    httpx, api_key: str, model: str, wav_path: Path, usage_ctx: dict | None = None
+) -> list[dict]:
     """WAV 파일 하나를 전사 (작으면 인라인, 크면 Files API 업로드)."""
     uploaded_name: str | None = None
     try:
@@ -316,6 +319,14 @@ def _transcribe_one(httpx, api_key: str, model: str, wav_path: Path) -> list[dic
             )
             resp.raise_for_status()
             body = resp.json()
+            # 파싱 성공 여부와 무관하게 시도마다 토큰이 소모되므로 여기서 기록
+            usage.record(
+                "stt",
+                model,
+                body.get("usageMetadata") if isinstance(body, dict) else None,
+                user_id=(usage_ctx or {}).get("user_id"),
+                meeting_id=(usage_ctx or {}).get("meeting_id"),
+            )
             try:
                 parts = body["candidates"][0]["content"]["parts"]
                 text = "".join(
@@ -333,11 +344,12 @@ def _transcribe_one(httpx, api_key: str, model: str, wav_path: Path) -> list[dic
             _delete_file(httpx, api_key, uploaded_name)
 
 
-def transcribe(audio_path: str) -> list[dict]:
+def transcribe(audio_path: str, usage_ctx: dict | None = None) -> list[dict]:
     """Gemini로 오디오 전사 → [{"start", "end", "text"}]. 실패 시 RuntimeError.
 
     긴 오디오는 10분 조각으로 나눠 순차 전사한다 — 조각별 응답이 짧아
     출력 토큰 한도에 잘리지 않고, 타임스탬프 오차 누적도 줄어든다.
+    usage_ctx: {"user_id", "meeting_id"} — API 사용량 기록용 컨텍스트(없어도 동작).
     """
     try:
         import httpx
@@ -377,7 +389,7 @@ def transcribe(audio_path: str) -> list[dict]:
 
         segments: list[dict] = []
         for i, (part_path, offset) in enumerate(chunks):
-            part_segments = _transcribe_one(httpx, api_key, model, part_path)
+            part_segments = _transcribe_one(httpx, api_key, model, part_path, usage_ctx)
             for s in part_segments:
                 start = s["start"] + offset
                 end = s["end"] + offset

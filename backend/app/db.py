@@ -155,7 +155,28 @@ CREATE TABLE IF NOT EXISTS app_settings (
   updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
 );
 
+CREATE TABLE IF NOT EXISTS api_usage (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  user_name TEXT,
+  user_role TEXT,
+  user_organization TEXT,
+  user_department TEXT,
+  meeting_id INTEGER REFERENCES meetings(id) ON DELETE SET NULL,
+  kind TEXT NOT NULL DEFAULT 'other',
+  model TEXT NOT NULL DEFAULT '',
+  prompt_tokens INTEGER NOT NULL DEFAULT 0,
+  prompt_audio_tokens INTEGER NOT NULL DEFAULT 0,
+  output_tokens INTEGER NOT NULL DEFAULT 0,
+  thoughts_tokens INTEGER NOT NULL DEFAULT 0,
+  total_tokens INTEGER NOT NULL DEFAULT 0,
+  est_cost_usd REAL NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+);
+
 CREATE INDEX IF NOT EXISTS idx_meetings_user ON meetings(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_api_usage_created ON api_usage(created_at);
+CREATE INDEX IF NOT EXISTS idx_api_usage_user ON api_usage(user_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_bookmarks_meeting ON bookmarks(meeting_id, time_sec);
 CREATE INDEX IF NOT EXISTS idx_segments_meeting ON transcript_segments(meeting_id, start_sec);
 CREATE INDEX IF NOT EXISTS idx_projects_active ON projects(active, created_at DESC);
@@ -229,6 +250,28 @@ def _migrate(conn: sqlite3.Connection) -> None:
     if "active" not in ucols:
         conn.execute("ALTER TABLE users ADD COLUMN active INTEGER NOT NULL DEFAULT 1")
     conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username_unique ON users(username)")
+
+    # 사용량 레코드에는 호출 당시의 사용자/소속 정보를 스냅샷으로 남긴다.
+    # 기존 설치에서 api_usage가 먼저 생성된 경우에도 컬럼과 초기 스냅샷을 보강한다.
+    acols = [row[1] for row in conn.execute("PRAGMA table_info(api_usage)")]
+    for col in ("user_role", "user_organization", "user_department"):
+        if col not in acols:
+            conn.execute(f"ALTER TABLE api_usage ADD COLUMN {col} TEXT")
+    conn.execute(
+        """
+        UPDATE api_usage
+        SET
+          user_name = COALESCE(NULLIF(user_name, ''), (SELECT name FROM users WHERE users.id = api_usage.user_id), ''),
+          user_role = COALESCE(user_role, (SELECT role FROM users WHERE users.id = api_usage.user_id), ''),
+          user_organization = COALESCE(user_organization, (SELECT organization FROM users WHERE users.id = api_usage.user_id), ''),
+          user_department = COALESCE(user_department, (SELECT department FROM users WHERE users.id = api_usage.user_id), '')
+        WHERE user_name IS NULL
+           OR user_name = ''
+           OR user_role IS NULL
+           OR user_organization IS NULL
+           OR user_department IS NULL
+        """
+    )
 
     tcols = [row[1] for row in conn.execute("PRAGMA table_info(tags)")]
     if "is_global" not in tcols:

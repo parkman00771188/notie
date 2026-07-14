@@ -503,6 +503,41 @@ props: {
   Google 변환 실패 시 자동으로 로컬 Whisper로 대체됩니다."
   api.ts에 updateSettings 필드 확장 + testGoogleStt() 추가(뼈대 반영 예정).
 
+## Gemini API 사용량 요약 (M) — 관리자 전용 통계 대시보드
+
+### DB
+- `api_usage` 테이블 신설: user_id(SET NULL)/user_name(스냅샷)/meeting_id(SET NULL)/kind('stt'|'summary'|'test'|'other')/
+  user_role/user_organization/user_department(호출 당시 스냅샷)/model/prompt_tokens/
+  prompt_audio_tokens(프롬프트 중 오디오)/output_tokens(응답+사고)/thoughts_tokens/total_tokens/
+  est_cost_usd/created_at. 인덱스: created_at, (user_id, created_at).
+
+### `services/usage.py`
+- `PRICING`: 공식 가격표(ai.google.dev/gemini-api/docs/pricing) 기준 모델별 단가(USD/1M 토큰,
+  입력/오디오 입력/출력, pro 계열은 >200K 프롬프트 tier 단가). 접두사 매칭(긴 것 우선),
+  미등록 모델은 기본 단가(입력 $0.50/오디오 $1.00/출력 $3.00)로 추정. `PRICING_ASOF`에 확인일 기록.
+- `record(kind, model, usage_metadata, user_id, meeting_id)`: generateContent 응답의 usageMetadata를
+  파싱(promptTokensDetails의 AUDIO modality 포함)해 비용과 함께 INSERT. **어떤 경우에도 예외를 던지지 않는다.**
+- 기록 지점: `gemini_stt._transcribe_one`(kind='stt', transcribe에 usage_ctx 파라미터 추가 — pipeline이
+  {user_id, meeting_id} 전달), `summarizer._try_gemini`(kind='summary', 재시도마다 기록 — 시도마다 과금되므로),
+  `summarizer.test_gemini_key`(kind='test', settings 라우터가 user_id 전달).
+
+### usage API (`routers/usage.py`, prefix `/api/usage`, **관리자 전용**)
+- `GET /summary?start&end&user_ids=1,2&organization=<이름|__none__>&role=<admin|user|other>&kind=` → 기간 기본값 이번 달(1일~오늘).
+  `{start, end, totals{requests, prompt_tokens, prompt_audio_tokens, output_tokens, total_tokens, cost_usd, avg_cost_usd},
+  previous(같은 길이 직전 기간 — 증감률용), daily[](빈 날짜 0 채움), by_model[], by_kind[], by_role[], by_user[](이름/역할/소속/부서 포함),
+  by_organization[](소속 없으면 "미지정")}`. 기간 최대 1년, 날짜 형식 오류 400.
+- `GET /pricing` → `{models[], asof, note}` — 추정에 사용한 단가표.
+
+### 프론트 — 설정 페이지 "사용량 요약" 탭 (`components/UsageSummarySettings.tsx` + css)
+- SettingsPage SECTIONS에 `{id: 'usage', label: '사용량 요약', icon: '📊', adminOnly: true}` 추가 (#usage 해시).
+- 구성: 기간 프리셋(이번 달/지난 달/최근 7일/최근 30일/직접 선택 date input) + 사용자 멀티 선택 팝오버 +
+  소속 select + 유형 select → 그라디언트 히어로 카드(기간 총 비용/요청/토큰) → 통계 타일 4개(총 요청/총 토큰/
+  예상 비용/평균 요청당 비용, 직전 기간 대비 증감 칩) → 차트 2개 → 사용자별/소속별/유형별 집계 테이블 →
+  단가표 details 접이식.
+- 차트는 외부 라이브러리 없이 인라인 SVG: 일별 스택 막대(입력 #2563eb/출력 #60a5fa, 호버 툴팁, 축 눈금 K/M 축약),
+  모델별 도넛(상위 5개 + 기타 회색, 색은 모델명 가나다순 고정 배정 — 필터 변경에도 색 유지, 중앙 총 토큰, 범례 호버 강조).
+- api.ts: `getUsageSummary(params)`, `getUsagePricing()` + Usage* 타입.
+
 ## 디자인 규칙
 - global.css의 CSS 변수/클래스만 색상 소스로 사용. 배경 `--bg`, 카드 흰색 radius 12~16px + `--shadow-card`.
 - 버튼: `.btn .btn-primary|.btn-ghost|.btn-danger|.btn-soft`. 인풋: `.input`. 배지: `.badge .badge-*`. 칩: `.chip`.

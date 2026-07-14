@@ -144,7 +144,7 @@ def test_gemini(user: dict = Depends(get_current_user)) -> dict:
             "ok": False,
             "message": "등록된 Gemini API 키가 없어요. 먼저 키를 저장해주세요.",
         }
-    ok, message = summarizer.test_gemini_key(key)
+    ok, message = summarizer.test_gemini_key(key, user_id=user.get("id"))
     return {"ok": ok, "message": message}
 
 

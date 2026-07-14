@@ -2,12 +2,14 @@ import { useEffect, useState } from 'react'
 import { api } from '../api'
 import { useAuth } from '../App'
 import AiEngineSettings from '../components/AiEngineSettings'
+import UsageSummarySettings from '../components/UsageSummarySettings'
 import './SettingsPage.css'
 
 const SECTIONS = [
   { id: 'font', label: '글꼴 설정', icon: 'Aa' },
   { id: 'passwords', label: '비밀번호 변경', icon: 'PW' },
   { id: 'ai', label: 'AI 요약 엔진', icon: 'AI', adminOnly: true },
+  { id: 'usage', label: '사용량 요약', icon: '📊', adminOnly: true },
 ] as const
 
 type SectionId = (typeof SECTIONS)[number]['id']
@@ -57,7 +59,7 @@ export default function SettingsPage() {
   const isAdmin = user?.role === 'admin'
   const visibleSections = isAdmin ? SECTIONS : SECTIONS.filter((s) => !('adminOnly' in s && s.adminOnly))
   const settingsSubtitle = isAdmin
-    ? '글꼴 설정, 내 비밀번호, 모든 사용자에게 적용되는 AI 요약 엔진을 관리합니다.'
+    ? '글꼴 설정, 비밀번호, 모든 사용자에게 적용되는 AI 요약 엔진과 사용량 요약을 관리합니다.'
     : '글꼴 설정과 내 비밀번호를 관리합니다.'
 
   // 탭 — URL 해시(#font/#ai)와 동기화
@@ -383,6 +385,7 @@ export default function SettingsPage() {
           {activeSection === 'font' && renderFontSection()}
           {activeSection === 'passwords' && renderPasswordSection()}
           {activeSection === 'ai' && isAdmin && <AiEngineSettings />}
+          {activeSection === 'usage' && isAdmin && <UsageSummarySettings />}
         </div>
       </div>
     </div>

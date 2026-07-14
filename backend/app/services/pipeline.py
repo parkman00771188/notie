@@ -82,7 +82,10 @@ def _run_full_job(meeting_id: int) -> None:
         # 1) 변환 — Gemini 키/네트워크 오류를 실패로 남긴다.
         # 그래야 음성 파일을 임시저장해두고, 키 수정 후 같은 오디오로 다시 전사할 수 있다.
         try:
-            segments = gemini_stt.transcribe(str(audio_path))
+            segments = gemini_stt.transcribe(
+                str(audio_path),
+                usage_ctx={"user_id": meeting.get("user_id"), "meeting_id": meeting_id},
+            )
         except Exception as exc:
             raise RuntimeError(f"음성 변환 실패: {exc}") from exc
 

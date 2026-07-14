@@ -412,12 +412,23 @@ def _try_gemini(
     url = f"{config.GEMINI_BASE_URL.rstrip('/')}/models/{model_name}:generateContent"
 
     # Gemini는 호출마다 응답이 달라 가끔 깨진 JSON을 반환한다 — 파싱 실패 시 재시도
+    from . import usage
+
     last_err: Exception | None = None
     for attempt in range(3):
         resp = httpx.post(url, headers={"x-goog-api-key": api_key}, json=payload, timeout=120.0)
         resp.raise_for_status()  # HTTP 오류(400/403 등)는 재시도하지 않고 즉시 전파
+        body = resp.json()
+        # 파싱 성공 여부와 무관하게 시도마다 토큰이 소모되므로 여기서 기록
+        usage.record(
+            "summary",
+            model_name,
+            body.get("usageMetadata") if isinstance(body, dict) else None,
+            user_id=meeting.get("user_id"),
+            meeting_id=meeting.get("id"),
+        )
         try:
-            text = _extract_gemini_text(resp.json())
+            text = _extract_gemini_text(body)
             parsed = _parse_llm_response_text(text)
             return parsed, model_name
         except (json.JSONDecodeError, ValueError) as exc:
@@ -661,11 +672,11 @@ def _section_text_to_items(text: str) -> list[str]:
     return items[:_MAX_ITEMS_LLM]
 
 
-def test_gemini_key(key: str) -> tuple[bool, str]:
+def test_gemini_key(key: str, user_id: int | None = None) -> tuple[bool, str]:
     """Gemini API 키 연결 테스트 — 미니 generateContent 호출(timeout 15s).
 
     settings API의 POST /api/settings/test-gemini 에서 재사용한다.
-    반환: (ok, 한국어 메시지).
+    반환: (ok, 한국어 메시지). user_id가 있으면 사용량(kind='test')도 기록한다.
     """
     key = (key or "").strip()
     if not key:
@@ -695,6 +706,18 @@ def test_gemini_key(key: str) -> tuple[bool, str]:
         return False, "요청 한도를 초과했어요. 잠시 후 다시 시도해주세요"
     if resp.status_code >= 400:
         return False, f"Gemini 호출 실패 (HTTP {resp.status_code})"
+    try:
+        from . import usage
+
+        body = resp.json()
+        usage.record(
+            "test",
+            model_name,
+            body.get("usageMetadata") if isinstance(body, dict) else None,
+            user_id=user_id,
+        )
+    except Exception:
+        pass  # 사용량 기록 실패가 연결 테스트 결과를 바꾸면 안 됨
     return True, f"Gemini 연결 성공 — {model_name} 모델을 사용할 수 있어요"
 
 

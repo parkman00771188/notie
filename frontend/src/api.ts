@@ -80,6 +80,102 @@ export interface AdminUserInput {
   active?: boolean
 }
 
+/** Gemini API 사용량 유형 — stt: 음성 변환, summary: 요약, test: 연결 테스트 */
+export type UsageKind = 'stt' | 'summary' | 'test' | 'other'
+export type UsageRole = 'admin' | 'user' | 'other'
+
+export interface UsageTotals {
+  requests: number
+  prompt_tokens: number
+  prompt_audio_tokens: number
+  output_tokens: number
+  total_tokens: number
+  cost_usd: number
+  avg_cost_usd: number
+}
+
+export interface UsageDaily {
+  date: string
+  requests: number
+  prompt_tokens: number
+  output_tokens: number
+  total_tokens: number
+  cost_usd: number
+}
+
+export interface UsageModelStat {
+  model: string
+  requests: number
+  total_tokens: number
+  cost_usd: number
+}
+
+export interface UsageKindStat {
+  kind: UsageKind
+  requests: number
+  total_tokens: number
+  cost_usd: number
+}
+
+export interface UsageRoleStat {
+  role: UsageRole
+  requests: number
+  total_tokens: number
+  cost_usd: number
+}
+
+export interface UsageUserStat {
+  user_id: number | null
+  name: string
+  role: UsageRole
+  organization: string | null
+  department: string | null
+  requests: number
+  total_tokens: number
+  cost_usd: number
+}
+
+export interface UsageOrgStat {
+  organization: string
+  requests: number
+  total_tokens: number
+  cost_usd: number
+}
+
+export interface UsageSummary {
+  start: string
+  end: string
+  totals: UsageTotals
+  previous: UsageTotals
+  daily: UsageDaily[]
+  by_model: UsageModelStat[]
+  by_kind: UsageKindStat[]
+  by_role: UsageRoleStat[]
+  by_user: UsageUserStat[]
+  by_organization: UsageOrgStat[]
+}
+
+export interface UsagePricingRow {
+  model: string
+  input: number
+  input_audio: number
+  output: number
+  tier_threshold: number | null
+  tier_input: number | null
+  tier_output: number | null
+}
+
+export interface UsageFilterParams {
+  start?: string
+  end?: string
+  /** 선택된 사용자만 집계 (미지정 시 전체) */
+  user_ids?: number[]
+  /** 소속 필터 — '__none__'은 소속 미지정 */
+  organization?: string
+  role?: UsageRole
+  kind?: UsageKind
+}
+
 export interface ProjectInput {
   title: string
   task_number?: string
@@ -458,6 +554,23 @@ export const api = {
     return request<{ ok: boolean; message: string }>('/api/settings/test-gemini', {
       method: 'POST',
     })
+  },
+
+  // ---- usage (관리자 전용 — Gemini API 사용량 통계) ----
+  getUsageSummary(params: UsageFilterParams = {}): Promise<UsageSummary> {
+    const qs = new URLSearchParams()
+    if (params.start) qs.set('start', params.start)
+    if (params.end) qs.set('end', params.end)
+    if (params.user_ids?.length) qs.set('user_ids', params.user_ids.join(','))
+    if (params.organization) qs.set('organization', params.organization)
+    if (params.role) qs.set('role', params.role)
+    if (params.kind) qs.set('kind', params.kind)
+    const query = qs.toString()
+    return request<UsageSummary>(`/api/usage/summary${query ? `?${query}` : ''}`)
+  },
+
+  getUsagePricing(): Promise<{ models: UsagePricingRow[]; asof: string; note: string }> {
+    return request('/api/usage/pricing')
   },
 
   // ---- bookmarks ----

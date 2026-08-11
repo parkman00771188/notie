@@ -739,56 +739,101 @@ def get_waveform(meeting_id: int, user: dict = Depends(get_current_user)) -> dic
 def export_minutes(
     meeting_id: int,
     format: str = "docx",
+    kind: str = "minutes",
     user: dict = Depends(get_current_user),
 ) -> Response:
-    """회의록 다운로드(?format=docx|pdf) — [회의록] 양식 레이아웃 재현."""
+    """문서 다운로드(?format=docx|pdf&kind=minutes|transcript|notes).
+
+    - minutes: [회의록] 양식 레이아웃 재현 (docx/pdf)
+    - transcript: 전체 스크립트 PDF
+    - notes: 메모 PDF
+    """
     from ..services import export_doc
+
+    if kind not in ("minutes", "transcript", "notes"):
+        raise HTTPException(status_code=400, detail="지원하지 않는 문서 종류입니다")
 
     with closing(db.get_conn()) as conn:
         row = get_readable_meeting(conn, meeting_id, user["id"], user.get("role") or "user")
         meeting = dict(row)
-        participants = [
-            dict(p)
-            for p in conn.execute(
-                """
-                SELECT p.name, p.role, p.department, p.organization
-                FROM meeting_participants mp JOIN participants p ON p.id = mp.participant_id
-                WHERE mp.meeting_id = ? ORDER BY p.id
-                """,
-                (meeting_id,),
-            ).fetchall()
-        ]
-        bookmarks = [
-            dict(b)
-            for b in conn.execute(
-                "SELECT time_sec, title, kind FROM bookmarks WHERE meeting_id = ? ORDER BY time_sec ASC, id ASC",
-                (meeting_id,),
-            ).fetchall()
-        ]
-        summary_row = conn.execute(
-            "SELECT * FROM summaries WHERE meeting_id = ?", (meeting_id,)
-        ).fetchone()
 
-    summary = export_doc.parse_summary_row(summary_row)
-    if format == "pdf":
+        if kind == "transcript":
+            segments = [
+                dict(s)
+                for s in conn.execute(
+                    "SELECT start_sec, end_sec, text FROM transcript_segments WHERE meeting_id = ? ORDER BY start_sec ASC, id ASC",
+                    (meeting_id,),
+                ).fetchall()
+            ]
+        elif kind == "notes":
+            note_bookmarks = [
+                dict(b)
+                for b in conn.execute(
+                    "SELECT time_sec, title, note, kind FROM bookmarks WHERE meeting_id = ? ORDER BY time_sec ASC, id ASC",
+                    (meeting_id,),
+                ).fetchall()
+            ]
+        else:
+            participants = [
+                dict(p)
+                for p in conn.execute(
+                    """
+                    SELECT p.name, p.role, p.department, p.organization
+                    FROM meeting_participants mp JOIN participants p ON p.id = mp.participant_id
+                    WHERE mp.meeting_id = ? ORDER BY p.id
+                    """,
+                    (meeting_id,),
+                ).fetchall()
+            ]
+            bookmarks = [
+                dict(b)
+                for b in conn.execute(
+                    "SELECT time_sec, title, kind FROM bookmarks WHERE meeting_id = ? ORDER BY time_sec ASC, id ASC",
+                    (meeting_id,),
+                ).fetchall()
+            ]
+            summary_row = conn.execute(
+                "SELECT * FROM summaries WHERE meeting_id = ?", (meeting_id,)
+            ).fetchone()
+
+    if kind in ("transcript", "notes"):
         from ..services import export_pdf
 
         try:
-            data = export_pdf.build_minutes_pdf(meeting, participants, bookmarks, summary)
+            if kind == "transcript":
+                data = export_pdf.build_transcript_pdf(meeting, segments)
+                doc_label = "직접 작성 내용" if not meeting.get("audio_filename") else "전체 스크립트"
+                ascii_name = "transcript"
+            else:
+                data = export_pdf.build_notes_pdf(meeting, note_bookmarks)
+                doc_label = "메모"
+                ascii_name = "notes"
         except (ImportError, RuntimeError) as exc:  # fpdf2 미설치, 한글 폰트 없음 등
             raise HTTPException(status_code=500, detail=str(exc))
         ext, media_type = "pdf", "application/pdf"
     else:
-        data = export_doc.build_minutes_docx(meeting, participants, bookmarks, summary)
-        ext = "docx"
-        media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        summary = export_doc.parse_summary_row(summary_row)
+        doc_label = "회의록"
+        ascii_name = "minutes"
+        if format == "pdf":
+            from ..services import export_pdf
+
+            try:
+                data = export_pdf.build_minutes_pdf(meeting, participants, bookmarks, summary)
+            except (ImportError, RuntimeError) as exc:  # fpdf2 미설치, 한글 폰트 없음 등
+                raise HTTPException(status_code=500, detail=str(exc))
+            ext, media_type = "pdf", "application/pdf"
+        else:
+            data = export_doc.build_minutes_docx(meeting, participants, bookmarks, summary)
+            ext = "docx"
+            media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
     # 파일명: [회의록] 태그 - 제목 (YYYY.MM.DD HH.MM).<ext>
     # (콜론은 윈도우 파일명 금지 문자라 시간 구분자는 '.'을 사용)
     def _safe(text: str) -> str:
         return re.sub(r'[\\/:*?"<>|]+', " ", text).strip()
 
-    safe_title = _safe(meeting["title"]) or "회의록"
+    safe_title = _safe(meeting["title"]) or doc_label
     safe_tag = _safe(meeting["tag"] or "")
     date_part = ""
     try:
@@ -796,12 +841,12 @@ def export_minutes(
         date_part = f" ({d.year}.{d.month:02d}.{d.day:02d} {d.hour:02d}.{d.minute:02d})"
     except ValueError:
         pass
-    filename = f"[회의록] {safe_tag + ' - ' if safe_tag else ''}{safe_title}{date_part}.{ext}"
+    filename = f"[{doc_label}] {safe_tag + ' - ' if safe_tag else ''}{safe_title}{date_part}.{ext}"
     return Response(
         content=data,
         media_type=media_type,
         headers={
-            "Content-Disposition": f"attachment; filename=\"minutes.{ext}\"; filename*=UTF-8''{quote(filename)}"
+            "Content-Disposition": f"attachment; filename=\"{ascii_name}.{ext}\"; filename*=UTF-8''{quote(filename)}"
         },
     )
 

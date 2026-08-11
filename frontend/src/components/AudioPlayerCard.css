@@ -123,3 +123,118 @@
   font-weight: 600;
   text-align: center;
 }
+
+/* ---------- 하단 고정 미니 재생바 (메인 플레이어가 화면 밖일 때) ---------- */
+.mini-player-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1100; /* 모달(1000) 안에서 쓰일 때도 보이도록 */
+  border-top: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 -6px 24px rgba(16, 24, 40, 0.08);
+}
+
+.mini-player-track {
+  position: relative;
+  height: 5px;
+  background: var(--primary-soft-2);
+  cursor: pointer;
+  touch-action: none;
+}
+
+/* 시크 터치 영역 확장 */
+.mini-player-track::before {
+  content: '';
+  position: absolute;
+  inset: -8px 0;
+}
+
+.mini-player-track-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  background: var(--primary);
+  pointer-events: none;
+}
+
+.mini-player-body {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px clamp(16px, 4vw, 28px) calc(10px + env(safe-area-inset-bottom));
+}
+
+.mini-player-play {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--primary);
+  color: #fff;
+  font-size: 17px;
+  cursor: pointer;
+}
+
+.mini-player-play:hover {
+  background: var(--primary-hover);
+}
+
+.mini-player-info {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mini-player-title {
+  font-size: 13.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mini-player-time {
+  font-size: 12.5px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.mini-player-up {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.mini-player-up:hover {
+  background: var(--gray-soft);
+}
+
+/* 모바일 하단 내비게이션(z-index 220, 높이 78px+safe-area) 위에 얹는다 */
+@media (max-width: 768px) {
+  .mini-player-bar {
+    bottom: calc(78px + env(safe-area-inset-bottom));
+  }
+
+  .mini-player-body {
+    padding-bottom: 10px;
+  }
+}

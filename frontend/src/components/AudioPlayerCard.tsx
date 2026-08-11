@@ -8,6 +8,7 @@ import {
   useState,
 } from 'react'
 import type { PointerEvent as ReactPointerEvent } from 'react'
+import { createPortal } from 'react-dom'
 import { api } from '../api'
 import type { BookmarkKind } from '../types'
 import { formatClock } from '../utils'
@@ -28,6 +29,8 @@ export interface AudioPlayerCardProps {
   src: string
   /** 파형 피크를 서버에서 받아올 회의 id — 없으면 균일 점 폴백 */
   meetingId?: number
+  /** 하단 미니 재생바에 표시할 회의 제목 */
+  title?: string
   /** webm 등 audio.duration이 Infinity일 때 폴백 */
   durationSec?: number | null
   /** note 제외(시간 있는 memo/mark만) 전달됨 */
@@ -109,10 +112,11 @@ function trackMetrics(width: number) {
  * - ref.seekTo(sec, autoplay)로 외부(스크립트/메모 시간 칩)에서 점프
  */
 export const AudioPlayerCard = forwardRef<AudioPlayerCardHandle, AudioPlayerCardProps>(
-  function AudioPlayerCard({ src, meetingId, durationSec, bookmarks, onAddMark }, ref) {
+  function AudioPlayerCard({ src, meetingId, title, durationSec, bookmarks, onAddMark }, ref) {
     const audioRef = useRef<HTMLAudioElement | null>(null)
     const panelRef = useRef<HTMLDivElement | null>(null)
     const canvasRef = useRef<HTMLCanvasElement | null>(null)
+    const cardRef = useRef<HTMLDivElement | null>(null)
 
     const [playing, setPlaying] = useState(false)
     const [currentSec, setCurrentSec] = useState(0)
@@ -123,6 +127,8 @@ export const AudioPlayerCard = forwardRef<AudioPlayerCardHandle, AudioPlayerCard
     const [panelWidth, setPanelWidth] = useState(0)
     const [playBusy, setPlayBusy] = useState(false)
     const [playError, setPlayError] = useState<string | null>(null)
+    // 메인 플레이어 카드가 화면에 보이는지 — 안 보이면 하단 미니 재생바 표시
+    const [cardVisible, setCardVisible] = useState(true)
 
     // duration: audio.duration(유한) → props.durationSec → 디코드 buffer.duration
     const propDuration =
@@ -261,6 +267,18 @@ export const AudioPlayerCard = forwardRef<AudioPlayerCardHandle, AudioPlayerCard
       measure()
       window.addEventListener('resize', measure)
       return () => window.removeEventListener('resize', measure)
+    }, [])
+
+    // 카드가 스크롤로 화면 밖에 나가면 하단 미니 재생바를 띄운다
+    useEffect(() => {
+      const el = cardRef.current
+      if (!el || typeof IntersectionObserver === 'undefined') return
+      const observer = new IntersectionObserver(
+        (entries) => setCardVisible(entries[0]?.isIntersecting ?? true),
+        { threshold: 0 },
+      )
+      observer.observe(el)
+      return () => observer.disconnect()
     }, [])
 
     const draw = useCallback(() => {
@@ -418,6 +436,49 @@ export const AudioPlayerCard = forwardRef<AudioPlayerCardHandle, AudioPlayerCard
       draggingRef.current = false
     }
 
+    // ---- 하단 미니 재생바 진행 트랙 클릭/드래그 시크 ----
+    const miniTrackRef = useRef<HTMLDivElement | null>(null)
+    const miniDraggingRef = useRef(false)
+
+    const seekFromMiniPointer = useCallback(
+      (clientX: number) => {
+        const track = miniTrackRef.current
+        if (!track) return
+        const dur = durationRef.current
+        if (dur <= 0) return
+        const rect = track.getBoundingClientRect()
+        if (rect.width <= 0) return
+        const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width))
+        applySeek(ratio * dur)
+      },
+      [applySeek],
+    )
+
+    const onMiniPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+      if (e.button !== 0) return
+      miniDraggingRef.current = true
+      try {
+        e.currentTarget.setPointerCapture(e.pointerId)
+      } catch {
+        // 포인터 캡처 미지원 환경 무시
+      }
+      seekFromMiniPointer(e.clientX)
+    }
+
+    const onMiniPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
+      if (!miniDraggingRef.current) return
+      seekFromMiniPointer(e.clientX)
+    }
+
+    const onMiniPointerUp = () => {
+      miniDraggingRef.current = false
+    }
+
+    /** 미니 재생바에서 메인 플레이어 카드로 스크롤 복귀 */
+    const scrollToCard = () => {
+      cardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }
+
     // ---- 북마크 핀 (시간 칩, 클릭 시크) ----
     const pins = useMemo<Pin[]>(() => {
       if (panelWidth <= 0 || duration <= 0) return []
@@ -451,8 +512,10 @@ export const AudioPlayerCard = forwardRef<AudioPlayerCardHandle, AudioPlayerCard
       }
     }
 
+    const progressPct = duration > 0 ? Math.min(100, (currentSec / duration) * 100) : 0
+
     return (
-      <div className="card audio-player-card">
+      <div ref={cardRef} className="card audio-player-card">
         {/* 실제 재생은 숨긴 audio 엘리먼트가 담당 */}
         <audio ref={audioRef} className="audio-player-audio" src={src} preload="auto" />
 
@@ -510,6 +573,55 @@ export const AudioPlayerCard = forwardRef<AudioPlayerCardHandle, AudioPlayerCard
           )}
         </div>
         {playError && <p className="audio-player-error">{playError}</p>}
+
+        {/* 메인 플레이어가 화면 밖일 때 하단 고정 미니 재생바 (모달 위에도 보이도록 body 포털) */}
+        {!cardVisible &&
+          createPortal(
+            <div className="mini-player-bar" role="region" aria-label="재생 컨트롤">
+              <div
+                ref={miniTrackRef}
+                className="mini-player-track"
+                role="slider"
+                aria-label="재생 위치"
+                aria-valuemin={0}
+                aria-valuemax={Math.floor(duration)}
+                aria-valuenow={Math.floor(currentSec)}
+                onPointerDown={onMiniPointerDown}
+                onPointerMove={onMiniPointerMove}
+                onPointerUp={onMiniPointerUp}
+                onPointerCancel={onMiniPointerUp}
+              >
+                <div className="mini-player-track-fill" style={{ width: `${progressPct}%` }} />
+              </div>
+              <div className="mini-player-body">
+                <button
+                  type="button"
+                  className="mini-player-play"
+                  onClick={togglePlay}
+                  aria-busy={playBusy}
+                  aria-label={playing ? '일시정지' : '재생'}
+                >
+                  {playing ? '⏸' : '▶'}
+                </button>
+                <div className="mini-player-info">
+                  {title && <span className="mini-player-title">{title}</span>}
+                  <span className="mini-player-time">
+                    {formatClock(currentSec)} / {formatClock(duration)}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  className="mini-player-up"
+                  onClick={scrollToCard}
+                  aria-label="플레이어로 이동"
+                  title="플레이어로 이동"
+                >
+                  ↑
+                </button>
+              </div>
+            </div>,
+            document.body,
+          )}
       </div>
     )
   },

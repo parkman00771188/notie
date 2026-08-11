@@ -775,6 +775,12 @@
 }
 
 /* 전체 스크립트 탭 */
+.transcript-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 10px;
+}
+
 .transcript-list {
   display: flex;
   flex-direction: column;
@@ -941,7 +947,7 @@
 
 .note-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 14px;
   padding: 12px 0;
   border-bottom: 1px solid var(--border);
@@ -960,12 +966,17 @@
   min-width: 0;
 }
 
+/* 메모 제목/내용은 길어도 말줄임 없이 전부 보여준다 */
 .note-title {
   font-size: 14.5px;
   font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.note-body .muted {
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .note-title .note-kind-badge {
@@ -1009,14 +1020,6 @@
   padding: 2px 8px;
   font-size: 11.5px;
   margin-top: 2px;
-}
-
-/* note 제목은 여러 줄 입력 가능 → 말줄임 대신 줄바꿈 */
-.note-row.note-plain .note-title {
-  white-space: pre-wrap;
-  overflow: visible;
-  text-overflow: clip;
-  word-break: break-word;
 }
 
 /* 일반 메모 추가 폼 */

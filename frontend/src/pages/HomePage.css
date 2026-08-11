@@ -187,6 +187,9 @@
 }
 
 .meeting-card {
+  /* 그리드 아이템의 암묵적 min-width:auto가 카드 min-content(제목/배지 폭)만큼
+     트랙을 밀어내 옆 컬럼과 겹치는 것을 방지 */
+  min-width: 0;
   padding: 18px 20px;
   cursor: pointer;
   transition:
@@ -297,7 +300,7 @@
   }
 
   .home-recent-card-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -313,11 +316,11 @@
 
 @media (max-width: 900px) {
   .meeting-card-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .home-recent-card-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 

@@ -362,9 +362,12 @@ export function MeetingDetailView({
     return plain?.[1] || fallback
   }
 
-  const fetchExportBlob = async (format: 'docx' | 'pdf') => {
+  const fetchExportBlob = async (
+    format: 'docx' | 'pdf',
+    kind: 'minutes' | 'transcript' | 'notes' = 'minutes',
+  ) => {
     if (!meeting) return
-    const res = await fetch(api.exportUrl(meeting.id, format))
+    const res = await fetch(api.exportUrl(meeting.id, format, kind))
     if (!res.ok) {
       let message = `내보내기에 실패했어요 (${res.status})`
       try {
@@ -378,9 +381,11 @@ export function MeetingDetailView({
     }
 
     const blob = await res.blob()
+    const fallbackLabel =
+      kind === 'transcript' ? '전체 스크립트' : kind === 'notes' ? '메모' : '회의록'
     const filename = filenameFromDisposition(
       res.headers.get('Content-Disposition'),
-      `[회의록] ${meeting.title}.${format}`,
+      `[${fallbackLabel}] ${meeting.title}.${format}`,
     )
     return { blob, filename }
   }
@@ -396,11 +401,14 @@ export function MeetingDetailView({
     URL.revokeObjectURL(url)
   }
 
-  /** 회의록 문서 다운로드 (브라우저 다운로드 폴더) */
-  const downloadExport = async (format: 'docx' | 'pdf') => {
+  /** 문서 다운로드 (브라우저 다운로드 폴더) — 회의록 Word/PDF, 스크립트/메모 PDF */
+  const downloadExport = async (
+    format: 'docx' | 'pdf',
+    kind: 'minutes' | 'transcript' | 'notes' = 'minutes',
+  ) => {
     if (!meeting) return
     try {
-      const result = await fetchExportBlob(format)
+      const result = await fetchExportBlob(format, kind)
       if (!result) return
       saveBlob(result.blob, result.filename)
     } catch (e) {
@@ -1150,6 +1158,7 @@ export function MeetingDetailView({
           ref={playerRef}
           src={api.audioUrl(meeting.id)}
           meetingId={meeting.id}
+          title={meeting.title}
           durationSec={meeting.duration_sec}
           bookmarks={timedBookmarks}
           onAddMark={isOwner ? (timeSec) => void handleAddMark(timeSec) : undefined}
@@ -1462,7 +1471,18 @@ export function MeetingDetailView({
               )}
             </div>
           ) : meeting.segments.length > 0 ? (
-            <div className="transcript-list">
+            <>
+              <div className="transcript-toolbar">
+                <button
+                  type="button"
+                  className="btn btn-soft"
+                  title="전체 스크립트를 PDF로 다운로드합니다"
+                  onClick={() => downloadExport('pdf', 'transcript')}
+                >
+                  ⬇ 전체 스크립트 다운로드
+                </button>
+              </div>
+              <div className="transcript-list">
               {meeting.segments.map((seg) => {
                 const isEditingSegment = editingSegmentId === seg.id
                 const isSavingSegment = savingSegmentId === seg.id
@@ -1524,7 +1544,8 @@ export function MeetingDetailView({
                   </div>
                 )
               })}
-            </div>
+              </div>
+            </>
           ) : (
             <div className="empty-state">
               <div className="emoji">🗣️</div>
@@ -1545,6 +1566,19 @@ export function MeetingDetailView({
               <div className="empty-state">
                 <div className="emoji">📝</div>
                 <p>녹음 중 남긴 메모가 없어요.</p>
+              </div>
+            )}
+
+            {meeting.bookmarks.length > 0 && (
+              <div className="transcript-toolbar">
+                <button
+                  type="button"
+                  className="btn btn-soft"
+                  title="메모를 PDF로 다운로드합니다"
+                  onClick={() => downloadExport('pdf', 'notes')}
+                >
+                  ⬇ 메모 다운로드
+                </button>
               </div>
             )}
 

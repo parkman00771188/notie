@@ -148,6 +148,93 @@ def _labeled_box(pdf, label: str, render, min_height: float = 0.0) -> None:
     pdf.set_x(left)
 
 
+def _fmt_clock(sec: float | int | None) -> str:
+    s = int(sec or 0)
+    return f"{s // 3600:02d}:{s % 3600 // 60:02d}:{s % 60:02d}"
+
+
+def _simple_doc_pdf(doc_title: str, box_label: str, meeting: dict, render) -> bytes:
+    """회의록 양식과 같은 무드의 단순 문서 — 제목 + 메타 표 + 라벨 박스 하나."""
+    from fpdf import FPDF
+    from fpdf.fonts import FontFace
+
+    pdf = FPDF(format="A4")
+    pdf.set_margins(18, 16, 18)
+    pdf.set_auto_page_break(True, margin=16)
+    _register_fonts(pdf)
+    pdf.add_page()
+
+    pdf.set_font(FONT, "B", 20)
+    pdf.cell(0, 12, doc_title, new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(3)
+
+    label_style = FontFace(emphasis="BOLD", fill_color=LABEL_BG)
+    pdf.set_font(FONT, "", 10)
+    with pdf.table(
+        col_widths=(LABEL_W, 58, 18, 74),
+        text_align="LEFT",
+        line_height=7,
+        padding=1.5,
+    ) as table:
+        row = table.row()
+        row.cell("회의명", style=label_style, align="CENTER")
+        row.cell(str(meeting.get("title") or ""))
+        row.cell("일시", style=label_style, align="CENTER")
+        row.cell(_fmt_datetime(meeting.get("started_at")))
+
+    pdf.ln(4)
+    _labeled_box(pdf, box_label, lambda: render(pdf))
+    return bytes(pdf.output())
+
+
+def build_transcript_pdf(meeting: dict, segments: list[dict]) -> bytes:
+    """전체 스크립트(또는 직접 작성 내용) PDF — [시간] 발화 텍스트 나열."""
+    is_manual = not (meeting.get("audio_filename") or "")
+    doc_title = "직접 작성 내용" if is_manual else "전체 스크립트"
+
+    def render(pdf) -> None:
+        if not segments:
+            _line(pdf, "인식된 음성이 없습니다.")
+            return
+        for seg in segments:
+            text = str(seg.get("text") or "").strip()
+            if is_manual:
+                _line(pdf, text)
+            else:
+                _line(pdf, f"**[{_fmt_clock(seg.get('start_sec'))}]**  {text}")
+            pdf.ln(0.8)
+
+    return _simple_doc_pdf(doc_title, "스크립트", meeting, render)
+
+
+def build_notes_pdf(meeting: dict, bookmarks: list[dict]) -> bytes:
+    """메모 PDF — 시간 메모·마크 + 일반 메모."""
+    timed = [b for b in bookmarks if (b.get("kind") or "memo") != "note"]
+    plain = [b for b in bookmarks if (b.get("kind") or "memo") == "note"]
+
+    def render(pdf) -> None:
+        if not bookmarks:
+            _line(pdf, "남긴 메모가 없습니다.")
+            return
+        if timed:
+            _heading(pdf, "시간 메모 · 마크")
+            for b in timed:
+                mark = " (마크)" if b.get("kind") == "mark" else ""
+                _line(pdf, f"**[{_fmt_clock(b.get('time_sec'))}]**{mark}  {str(b.get('title') or '')}")
+                if b.get("note"):
+                    _line(pdf, str(b["note"]), indent=6, size=9.5)
+                pdf.ln(0.8)
+        if plain:
+            _heading(pdf, "일반 메모")
+            for b in plain:
+                _line(pdf, f"• {str(b.get('title') or '')}", indent=3)
+                if b.get("note"):
+                    _line(pdf, str(b["note"]), indent=6, size=9.5)
+                pdf.ln(0.8)
+
+    return _simple_doc_pdf("메모", "메모", meeting, render)
+
+
 def build_minutes_pdf(
     meeting: dict,
     participants: list[dict],

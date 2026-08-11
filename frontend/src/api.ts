@@ -465,10 +465,15 @@ export const api = {
     return request(`/api/meetings/${meetingId}/waveform`)
   },
 
-  /** 회의록 문서(Word/PDF) 다운로드 URL — 브라우저가 다운로드 폴더에 저장 */
-  exportUrl(meetingId: number, format: 'docx' | 'pdf' = 'docx'): string {
+  /** 문서(회의록 Word/PDF, 스크립트/메모 PDF) 다운로드 URL — 브라우저가 다운로드 폴더에 저장 */
+  exportUrl(
+    meetingId: number,
+    format: 'docx' | 'pdf' = 'docx',
+    kind: 'minutes' | 'transcript' | 'notes' = 'minutes',
+  ): string {
     const token = getToken()
     const params = new URLSearchParams({ format })
+    if (kind !== 'minutes') params.set('kind', kind)
     if (token) params.set('token', token)
     return `/api/meetings/${meetingId}/export?${params.toString()}`
   },

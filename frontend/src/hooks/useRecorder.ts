@@ -14,6 +14,12 @@ export type SystemAudioStartResult = 'off' | 'on' | 'unsupported' | 'denied' | '
 /** 컴퓨터 소리를 가져온 방법 — loopback(가상 오디오 장치, 팝업 없음) / display(화면 공유) */
 export type SystemAudioVia = 'loopback' | 'display'
 
+/**
+ * 컴퓨터 소리 신호 상태 — 캡처 트랙은 살아있는데 소리가 계속 무음이면 'silent'.
+ * 공유 창에서 오디오를 켜지 않았거나 가상 오디오 장치 라우팅이 빠진 경우를 녹음 중에 알아챌 수 있다.
+ */
+export type SystemSignal = 'none' | 'live' | 'silent'
+
 export interface RecorderStartOptions {
   deviceId?: string
   source?: RecordSource
@@ -36,6 +42,8 @@ export interface UseRecorderReturn {
   elapsedSec: number
   analyser: AnalyserNode | null
   systemAudio: SystemAudioStatus
+  /** 컴퓨터 소리 실시간 신호 — 'silent'면 캡처는 되는데 소리가 안 들어오는 상태 */
+  systemSignal: SystemSignal
   /** 녹음 중 마이크 음소거 여부 — true면 마이크 구간이 무음으로 기록된다 */
   micMuted: boolean
   /** 녹음 중 컴퓨터 소리 음소거 여부 */
@@ -181,10 +189,15 @@ export function useRecorder(): UseRecorderReturn {
   const [elapsedSec, setElapsedSec] = useState(0)
   const [analyser, setAnalyser] = useState<AnalyserNode | null>(null)
   const [systemAudio, setSystemAudio] = useState<SystemAudioStatus>('off')
+  const [systemSignal, setSystemSignal] = useState<SystemSignal>('none')
   const [micMuted, setMicMutedState] = useState(false)
   const [systemMuted, setSystemMutedState] = useState(false)
   /** 재시도로 새 시스템 스트림이 붙을 때 현재 음소거 상태를 적용하기 위한 미러 */
   const systemMutedRef = useRef(false)
+  /** 시스템 소리 무음 감지용 — 시스템 소스만 연결된 분석기와 마지막 신호 시각 */
+  const sysAnalyserRef = useRef<AnalyserNode | null>(null)
+  const sysMonitorRef = useRef<number | null>(null)
+  const lastSysSignalAtRef = useRef(0)
 
   const streamRef = useRef<MediaStream | null>(null)
   const displayStreamRef = useRef<MediaStream | null>(null)
@@ -245,11 +258,46 @@ export function useRecorder(): UseRecorderReturn {
     return accumulatedMsRef.current + running
   }, [])
 
+  /** 시스템 소리 무음 감시 — 350ms 간격으로 RMS를 읽어 4초 이상 완전 무음이면 'silent' 표시 */
+  const startSystemMonitor = useCallback(() => {
+    if (sysMonitorRef.current != null) return
+    sysMonitorRef.current = window.setInterval(() => {
+      const node = sysAnalyserRef.current
+      if (!node) return
+      if (systemMutedRef.current) {
+        // 사용자가 직접 끈 상태 — 무음이 정상이므로 경고하지 않는다
+        lastSysSignalAtRef.current = Date.now()
+        setSystemSignal('live')
+        return
+      }
+      const data = new Uint8Array(node.fftSize)
+      node.getByteTimeDomainData(data)
+      let sum = 0
+      for (const v of data) {
+        const n = (v - 128) / 128
+        sum += n * n
+      }
+      const rms = Math.sqrt(sum / data.length)
+      if (rms > 0.0015) {
+        lastSysSignalAtRef.current = Date.now()
+        setSystemSignal('live')
+      } else if (Date.now() - lastSysSignalAtRef.current > 4000) {
+        setSystemSignal('silent')
+      }
+    }, 350)
+  }, [])
+
   const cleanup = useCallback(() => {
     if (intervalRef.current != null) {
       window.clearInterval(intervalRef.current)
       intervalRef.current = null
     }
+    if (sysMonitorRef.current != null) {
+      window.clearInterval(sysMonitorRef.current)
+      sysMonitorRef.current = null
+    }
+    sysAnalyserRef.current = null
+    setSystemSignal('none')
     for (const ref of [streamRef, displayStreamRef, loopbackStreamRef]) {
       ref.current?.getTracks().forEach((t) => t.stop())
       ref.current = null
@@ -286,24 +334,35 @@ export function useRecorder(): UseRecorderReturn {
     }
   }, [cleanup])
 
-  /** 확보한 컴퓨터 소리 스트림을 믹스 버스에 연결하고, 캡처 중단 감지 리스너 부착 */
+  /** 확보한 컴퓨터 소리 스트림을 믹스 버스에 연결하고, 캡처 중단·무음 감지를 부착 */
   const attachSystemStream = useCallback((stream: MediaStream, kind: SystemAudioVia): boolean => {
     const ctx = audioCtxRef.current
     const mixBus = mixBusRef.current
     const track = stream.getAudioTracks()[0]
     if (!ctx || !mixBus || !track) return false
     track.enabled = !systemMutedRef.current
-    ctx.createMediaStreamSource(new MediaStream([track])).connect(mixBus)
+    const source = ctx.createMediaStreamSource(new MediaStream([track]))
+    source.connect(mixBus)
+    // 시스템 소스만 따로 분석해 '캡처는 되는데 무음'인 상태를 사용자에게 보여준다
+    const sysAnalyser = ctx.createAnalyser()
+    sysAnalyser.fftSize = 256
+    source.connect(sysAnalyser)
+    sysAnalyserRef.current = sysAnalyser
+    lastSysSignalAtRef.current = Date.now()
+    setSystemSignal('live')
+    startSystemMonitor()
     const ref = kind === 'display' ? displayStreamRef : loopbackStreamRef
     ref.current = stream
     // 브라우저의 '공유 중지'나 장치 분리로 캡처가 끊겨도 남은 소스 녹음은 이어간다
     track.addEventListener('ended', () => {
       ref.current?.getTracks().forEach((t) => t.stop())
       ref.current = null
+      sysAnalyserRef.current = null
+      setSystemSignal('none')
       setSystemAudio('ended')
     })
     return true
-  }, [])
+  }, [startSystemMonitor])
 
   /**
    * 컴퓨터 소리 확보 — 화면 공유(시스템 오디오)를 우선 사용한다.
@@ -557,6 +616,7 @@ export function useRecorder(): UseRecorderReturn {
     elapsedSec,
     analyser,
     systemAudio,
+    systemSignal,
     micMuted,
     systemMuted,
     setMicMuted,

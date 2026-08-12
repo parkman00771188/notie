@@ -1197,11 +1197,23 @@ export default function RecordPage() {
                     {recorder.systemAudio === 'on' && (
                       <button
                         type="button"
-                        className={`source-toggle${recorder.systemMuted ? ' muted' : ''}`}
+                        className={`source-toggle${recorder.systemMuted ? ' muted' : ''}${
+                          !recorder.systemMuted && recorder.systemSignal === 'silent' ? ' silent' : ''
+                        }`}
                         onClick={() => recorder.setSystemMuted(!recorder.systemMuted)}
-                        title={recorder.systemMuted ? '컴퓨터 소리 다시 켜기' : '컴퓨터 소리 끄기'}
+                        title={
+                          recorder.systemMuted
+                            ? '컴퓨터 소리 다시 켜기'
+                            : recorder.systemSignal === 'silent'
+                              ? "컴퓨터 소리가 계속 무음이에요. 컴퓨터에서 소리가 나고 있다면 — 화면 공유로 녹음 중이면 공유 창에서 '오디오 공유'를 켰는지, 가상 오디오 장치로 녹음 중이면 시스템 출력이 다중 출력 장치로 설정됐는지 확인해주세요."
+                              : '컴퓨터 소리 끄기'
+                        }
                       >
-                        {recorder.systemMuted ? '🚫 컴퓨터 소리 꺼짐' : '🔊 컴퓨터 소리'}
+                        {recorder.systemMuted
+                          ? '🚫 컴퓨터 소리 꺼짐'
+                          : recorder.systemSignal === 'silent'
+                            ? '🔇 컴퓨터 소리 무음 감지'
+                            : '🔊 컴퓨터 소리'}
                       </button>
                     )}
                     {recorder.systemAudio === 'ended' && (
@@ -1397,9 +1409,10 @@ export default function RecordPage() {
                 <strong>🔊 녹음 시작 시 화면 공유 창에서 소리만 켜면 돼요</strong>
                 <span>
                   공유 창에서 [전체 화면]이나 [탭]을 고르고 '오디오 공유'를 켜주세요. 시스템
-                  볼륨·출력 장치 설정은 바꾸지 않아서 볼륨 조절이 평소처럼 되고, 스피커를
-                  음소거해도 녹음돼요. (Windows의 전체 화면 공유만 예외 — 음소거 시 소리가
-                  담기지 않으니 탭 공유를 쓰세요.)
+                  볼륨·출력 장치 설정은 바꾸지 않아서 볼륨 조절이 평소처럼 돼요. 스피커를
+                  음소거한 채 녹음하려면 [탭 공유]를 쓰세요 — 탭 소리는 음소거와 관계없이
+                  녹음돼요. 녹음 중 컴퓨터 소리가 안 들어오면 타이머 위 칩이 '무음 감지'로
+                  바뀌니 바로 알 수 있어요.
                   {loopbackDevice &&
                     ` 공유를 취소하면 감지된 가상 오디오 장치(${loopbackDevice.label})로 자동 전환돼요.`}
                 </span>
@@ -1414,12 +1427,12 @@ export default function RecordPage() {
                   <span className="sys-source-copy">
                     <strong>✅ 가상 오디오 장치 사용: {loopbackDevice.label}</strong>
                     <span>
-                      녹음 시작 시 팝업 없이 컴퓨터 소리가 바로 녹음돼요. 스피커를
-                      음소거하거나 볼륨을 줄여도 컴퓨터 소리는 원본 그대로 녹음돼요. 컴퓨터에서
-                      소리를 재생하면 오른쪽 미터가 움직여요. 소리를 재생해도 미터가 멈춰 있으면
+                      녹음 시작 시 팝업 없이 컴퓨터 소리가 바로 녹음돼요. 컴퓨터에서 소리를
+                      재생하면 오른쪽 미터가 움직여요. 소리를 재생해도 미터가 멈춰 있으면
                       시스템 사운드 출력이 {loopbackDevice.label}이(가) 포함된 다중 출력
                       장치로 설정되어 있는지 확인해주세요 — 장치만 설치하면 소리가 무음으로
-                      녹음돼요.
+                      녹음돼요. 이 방식에서는 스피커를 음소거하거나 볼륨을 0으로 내리면
+                      녹음도 무음이 되니, 조용히 녹음하려면 볼륨을 최소로만 낮춰주세요.
                     </span>
                   </span>
                   <span

@@ -875,6 +875,13 @@
   color: #dc2626;
 }
 
+/* 캡처는 살아있지만 소리가 계속 안 들어오는 상태 — 라우팅/공유 설정 점검 신호 */
+.source-toggle.silent {
+  border-color: #fde68a;
+  background: #fffbeb;
+  color: #b45309;
+}
+
 /* 컴퓨터 소리 캡처 실패 안내 모달 */
 .sysaudio-issue-modal {
   display: flex;

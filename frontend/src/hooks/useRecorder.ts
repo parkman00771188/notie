@@ -168,7 +168,7 @@ interface WakeLockSentinelLike {
 /**
  * 회의 녹음 훅.
  * - source 'mic': getUserMedia(마이크)만 녹음 (기존 동작)
- * - source 'system': 컴퓨터 소리만 — 가상 오디오 장치(팝업 없음) 우선, 없으면 화면 공유 폴백
+ * - source 'system': 컴퓨터 소리만 — 화면 공유(시스템 오디오) 우선, 미지원/실패 시 가상 오디오 장치 폴백
  * - source 'both': 마이크 + 컴퓨터 소리를 Web Audio로 믹싱해 한 트랙으로 녹음
  * - 컴퓨터 소리 캡처 실패/중단 시에도 가능한 녹음은 유지, retrySystemAudio()로 녹음 중 재시도
  * - AudioContext + AnalyserNode(fftSize 256) 를 파형 시각화용으로 노출
@@ -305,19 +305,30 @@ export function useRecorder(): UseRecorderReturn {
     return true
   }, [])
 
-  /** 컴퓨터 소리 확보 — 가상 오디오 장치(팝업 없음) 우선, 없으면 화면 공유 */
+  /**
+   * 컴퓨터 소리 확보 — 화면 공유(시스템 오디오)를 우선 사용한다.
+   * OS 출력 장치·볼륨 설정을 건드리지 않아 볼륨 키가 평소처럼 동작하기 때문.
+   * 화면 공유 오디오 미지원(Safari)이거나 공유가 취소/실패하면 가상 오디오 장치(BlackHole 등)로 폴백.
+   */
   const captureSystemAudio = useCallback(async (): Promise<{
     result: SystemAudioStartResult
     via?: SystemAudioVia
     stream: MediaStream | null
   }> => {
+    let displayResult: SystemAudioStartResult = 'unsupported'
+    if (DISPLAY_AUDIO_SUPPORTED) {
+      const captured = await requestDisplayAudio()
+      if (captured.result === 'on') {
+        return { result: 'on', via: 'display', stream: captured.stream }
+      }
+      displayResult = captured.result
+    }
     const loopback = await findLoopbackDevice()
     if (loopback) {
       const stream = await captureLoopbackAudio(loopback.deviceId)
       if (stream) return { result: 'on', via: 'loopback', stream }
     }
-    const captured = await requestDisplayAudio()
-    return { result: captured.result, via: captured.result === 'on' ? 'display' : undefined, stream: captured.stream }
+    return { result: displayResult, stream: null }
   }, [])
 
   const start = useCallback(async (options: RecorderStartOptions = {}): Promise<RecorderStartOutcome> => {

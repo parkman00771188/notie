@@ -1391,7 +1391,23 @@ export default function RecordPage() {
             <p className="record-source-desc">{selectedSourceOption.desc}</p>
           </div>
 
-          {recordSource !== 'mic' && (
+          {recordSource !== 'mic' && CAN_DISPLAY_CAPTURE && (
+            <div className="sys-source-status ok">
+              <span className="sys-source-copy">
+                <strong>🔊 녹음 시작 시 화면 공유 창에서 소리만 켜면 돼요</strong>
+                <span>
+                  공유 창에서 [전체 화면]이나 [탭]을 고르고 '오디오 공유'를 켜주세요. 시스템
+                  볼륨·출력 장치 설정은 바꾸지 않아서 볼륨 조절이 평소처럼 되고, 스피커를
+                  음소거해도 녹음돼요. (Windows의 전체 화면 공유만 예외 — 음소거 시 소리가
+                  담기지 않으니 탭 공유를 쓰세요.)
+                  {loopbackDevice &&
+                    ` 공유를 취소하면 감지된 가상 오디오 장치(${loopbackDevice.label})로 자동 전환돼요.`}
+                </span>
+              </span>
+            </div>
+          )}
+
+          {recordSource !== 'mic' && !CAN_DISPLAY_CAPTURE && (
             <div className={`sys-source-status${loopbackDevice ? ' ok' : ''}`}>
               {loopbackDevice ? (
                 <div className="sys-source-row">
@@ -1422,9 +1438,7 @@ export default function RecordPage() {
                     <span>
                       {IS_SAFARI
                         ? 'Safari는 화면 공유 소리 녹음을 지원하지 않아서, 컴퓨터 소리를 녹음하려면 BlackHole 설치가 꼭 필요해요. (또는 Chrome 사용)'
-                        : CAN_DISPLAY_CAPTURE
-                          ? "설치하지 않아도 녹음 시작 시 화면 공유 창에서 '오디오 공유'를 켜면 탭 소리를 녹음할 수 있어요(탭 공유는 스피커를 음소거해도 녹음돼요). 가상 오디오 장치를 설치하면 팝업 없이, 음소거 여부와 관계없이 모든 컴퓨터 소리가 녹음돼요."
-                          : '이 브라우저는 화면 공유 소리 녹음을 지원하지 않아요. 무료 가상 오디오 장치 BlackHole을 설치하면 녹음할 수 있어요.'}
+                        : '이 브라우저는 화면 공유 소리 녹음을 지원하지 않아요. 무료 가상 오디오 장치 BlackHole을 설치하면 녹음할 수 있어요.'}
                     </span>
                   </span>
                   {IS_MAC && (

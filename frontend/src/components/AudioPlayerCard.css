@@ -237,4 +237,14 @@
   .mini-player-body {
     padding-bottom: 10px;
   }
+
+  /* 모달(회의 내용 등)이 열려 있으면 하단 내비가 오버레이에 가려지므로
+     78px 공백 없이 화면 바닥에 붙인다 */
+  body:has(.modal-overlay) .mini-player-bar {
+    bottom: 0;
+  }
+
+  body:has(.modal-overlay) .mini-player-body {
+    padding-bottom: calc(10px + env(safe-area-inset-bottom));
+  }
 }

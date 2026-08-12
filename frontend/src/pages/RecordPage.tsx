@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { ChangeEvent, DragEvent, KeyboardEvent, ReactNode } from 'react'
+import type { ChangeEvent, DragEvent, KeyboardEvent, MutableRefObject, ReactNode } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { api } from '../api'
 import { AvatarStack } from '../components/Avatar'
@@ -9,7 +9,8 @@ import { ParticipantPicker } from '../components/ParticipantPicker'
 import { RecentMeetingsPanel } from '../components/RecentMeetingsPanel'
 import { TagPicker } from '../components/TagPicker'
 import { Waveform } from '../components/Waveform'
-import { useRecorder } from '../hooks/useRecorder'
+import { findLoopbackDevice, isLoopbackDevice, useRecorder } from '../hooks/useRecorder'
+import type { RecordSource, SystemAudioStartResult } from '../hooks/useRecorder'
 import type { Bookmark, Participant } from '../types'
 import { formatClock, formatKoreanDateTime, isValidDateInput } from '../utils'
 import './RecordPage.css'
@@ -20,6 +21,52 @@ const AUDIO_EXTENSIONS = ['.mp3', '.m4a', '.wav', '.webm', '.ogg', '.mp4', '.aac
 const RECORDING_NAVIGATION_MESSAGE = '녹음 중에는 취소 또는 종료 후 이동할 수 있어요.'
 const PREFERRED_MIC_ID_KEY = 'notie.preferredMicId'
 const PREFERRED_MIC_LABEL_KEY = 'notie.preferredMicLabel'
+const RECORD_SOURCE_KEY = 'notie.recordSource'
+const BLACKHOLE_INSTALL_CMD = 'brew install blackhole-2ch'
+const BLACKHOLE_DOWNLOAD_URL = 'https://existential.audio/blackhole/'
+
+/** macOS 시스템 설정의 '화면 및 시스템 오디오 녹음' 패널 딥링크 */
+const MAC_SCREEN_SETTINGS_URL =
+  'x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture'
+const IS_MAC = typeof navigator !== 'undefined' && /Mac/.test(navigator.userAgent)
+const IS_SAFARI =
+  typeof navigator !== 'undefined' &&
+  /safari/i.test(navigator.userAgent) &&
+  !/chrome|chromium|crios|edg|android/i.test(navigator.userAgent)
+const CAN_DISPLAY_CAPTURE =
+  typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getDisplayMedia
+
+function initialRecordSource(): RecordSource {
+  const saved = localStorage.getItem(RECORD_SOURCE_KEY)
+  if (saved === 'mic' || saved === 'system' || saved === 'both') return saved
+  return 'mic'
+}
+
+const SOURCE_OPTIONS: { value: RecordSource; icon: string; title: string; desc: string }[] = [
+  { value: 'mic', icon: '🎙️', title: '마이크', desc: '내 목소리만 마이크로 녹음해요.' },
+  { value: 'system', icon: '🔊', title: '컴퓨터 소리', desc: '화상회의·영상 등 컴퓨터에서 나는 소리만 녹음해요.' },
+  { value: 'both', icon: '🎙️＋🔊', title: '마이크 + 컴퓨터 소리', desc: '내 목소리와 컴퓨터 소리를 함께 녹음해요.' },
+]
+
+/** 컴퓨터 소리 캡처에 실패한 경우의 안내 (모달) */
+const SYSTEM_AUDIO_ISSUES: Partial<Record<SystemAudioStartResult, { title: string; body: string }>> = {
+  unsupported: {
+    title: '컴퓨터 소리를 가져올 수 없어요',
+    body: '이 브라우저는 화면 공유 소리 녹음을 지원하지 않아요.\nChrome 또는 Edge를 사용하거나, 녹음 설정에서 안내하는 가상 오디오 장치(BlackHole 등)를 설치하면 팝업 없이 컴퓨터 소리를 녹음할 수 있어요.\n\n가상 오디오 장치를 이미 설치했다면 브라우저의 마이크 권한을 허용해야 장치를 인식할 수 있어요 — 권한을 허용한 뒤 [다시 시도]를 눌러주세요.',
+  },
+  denied: {
+    title: '화면 공유가 시작되지 않았어요',
+    body: '공유 창에서 취소되었거나 요청이 차단됐어요.\n[다시 시도]를 누른 뒤 공유 창에서 탭(또는 화면)을 고르고 [공유] 버튼까지 눌러주세요.',
+  },
+  'system-denied': {
+    title: 'macOS가 화면 녹화를 막고 있어요',
+    body: '[시스템 설정 열기]로 이동해 [화면 및 시스템 오디오 녹음]에서 사용 중인 브라우저를 허용해주세요. 적용하려면 브라우저를 완전히 종료했다가 다시 실행해야 해요.\n\n지금 당장은 [다시 시도]에서 [Chrome 탭] 공유를 선택하면 이 권한 없이도 탭 소리를 녹음할 수 있어요.',
+  },
+  'no-audio': {
+    title: '공유에 소리가 포함되지 않았어요',
+    body: "화면은 공유됐지만 소리가 들어오지 않았어요.\nChrome에서는 [다시 시도] 후 공유 창의 '오디오도 공유'를 켜주세요.\nSafari는 화면 공유 소리를 지원하지 않아요 — 녹음 설정에서 안내하는 가상 오디오 장치(BlackHole)를 설치하면 팝업 없이 녹음할 수 있어요.",
+  },
+}
 const RECORDING_NAVIGATION_TARGET_SELECTOR = [
   'a[href]',
   '.sidebar-new button',
@@ -120,9 +167,19 @@ export default function RecordPage() {
   const [confirmedMicId, setConfirmedMicId] = useState(() => localStorage.getItem(PREFERRED_MIC_ID_KEY) ?? '')
   const [confirmedMicLabel, setConfirmedMicLabel] = useState(() => localStorage.getItem(PREFERRED_MIC_LABEL_KEY) ?? '')
   const [micLevel, setMicLevel] = useState(0)
+  const [recordSource, setRecordSource] = useState<RecordSource>(initialRecordSource)
+  /** 감지된 가상 오디오 장치(BlackHole 등) — 있으면 팝업 없이 컴퓨터 소리 녹음 */
+  const [loopbackDevice, setLoopbackDevice] = useState<{ deviceId: string; label: string } | null>(null)
+  const [sysLevel, setSysLevel] = useState(0)
+  /** 컴퓨터 소리 캡처 실패 안내 모달 — null이면 닫힘 */
+  const [sysAudioIssue, setSysAudioIssue] = useState<SystemAudioStartResult | null>(null)
+  const [brewCopied, setBrewCopied] = useState(false)
   const micTestStreamRef = useRef<MediaStream | null>(null)
   const micTestAudioContextRef = useRef<AudioContext | null>(null)
   const micTestRafRef = useRef<number | null>(null)
+  const sysTestStreamRef = useRef<MediaStream | null>(null)
+  const sysTestAudioContextRef = useRef<AudioContext | null>(null)
+  const sysTestRafRef = useRef<number | null>(null)
 
   // ---- 메모 ⋯ 메뉴 / 인라인 수정 ----
   const [menuOpenId, setMenuOpenId] = useState<number | null>(null)
@@ -145,39 +202,48 @@ export default function RecordPage() {
     setMicLevel(0)
   }, [])
 
-  const startMicLevelMeter = useCallback((stream: MediaStream) => {
-    const AudioContextCtor =
-      window.AudioContext ??
-      (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
-    if (!AudioContextCtor) {
-      setMicTestError('이 브라우저에서는 마이크 입력 레벨을 표시할 수 없어요.')
-      return
-    }
-
-    const audioContext = new AudioContextCtor()
-    const analyser = audioContext.createAnalyser()
-    analyser.fftSize = 256
-    analyser.smoothingTimeConstant = 0.72
-    const source = audioContext.createMediaStreamSource(stream)
-    source.connect(analyser)
-    const data = new Uint8Array(analyser.frequencyBinCount)
-    micTestAudioContextRef.current = audioContext
-
-    const tick = () => {
-      analyser.getByteTimeDomainData(data)
-      let sum = 0
-      for (const value of data) {
-        const normalized = (value - 128) / 128
-        sum += normalized * normalized
+  /** 스트림의 입력 레벨을 rAF로 갱신하는 미터 — 마이크/컴퓨터 소리 테스트 공용 */
+  const startLevelMeter = useCallback(
+    (
+      stream: MediaStream,
+      ctxRef: MutableRefObject<AudioContext | null>,
+      rafRef: MutableRefObject<number | null>,
+      onLevel: (updater: (prev: number) => number) => void,
+    ) => {
+      const AudioContextCtor =
+        window.AudioContext ??
+        (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+      if (!AudioContextCtor) {
+        setMicTestError('이 브라우저에서는 입력 레벨을 표시할 수 없어요.')
+        return
       }
-      const rms = Math.sqrt(sum / data.length)
-      const nextLevel = Math.min(1, Math.max(0, (rms - 0.012) * 9))
-      setMicLevel((prev) => prev * 0.68 + nextLevel * 0.32)
-      micTestRafRef.current = window.requestAnimationFrame(tick)
-    }
 
-    tick()
-  }, [])
+      const audioContext = new AudioContextCtor()
+      const analyser = audioContext.createAnalyser()
+      analyser.fftSize = 256
+      analyser.smoothingTimeConstant = 0.72
+      const source = audioContext.createMediaStreamSource(stream)
+      source.connect(analyser)
+      const data = new Uint8Array(analyser.frequencyBinCount)
+      ctxRef.current = audioContext
+
+      const tick = () => {
+        analyser.getByteTimeDomainData(data)
+        let sum = 0
+        for (const value of data) {
+          const normalized = (value - 128) / 128
+          sum += normalized * normalized
+        }
+        const rms = Math.sqrt(sum / data.length)
+        const nextLevel = Math.min(1, Math.max(0, (rms - 0.012) * 9))
+        onLevel((prev) => prev * 0.68 + nextLevel * 0.32)
+        rafRef.current = window.requestAnimationFrame(tick)
+      }
+
+      tick()
+    },
+    [],
+  )
 
   const startMicTestStream = useCallback(
     async (deviceId?: string) => {
@@ -196,10 +262,13 @@ export default function RecordPage() {
           : true
         const stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraint })
         micTestStreamRef.current = stream
-        startMicLevelMeter(stream)
+        startLevelMeter(stream, micTestAudioContextRef, micTestRafRef, setMicLevel)
 
         const devices = await navigator.mediaDevices.enumerateDevices()
-        const inputs = devices.filter((device) => device.kind === 'audioinput')
+        // 가상 오디오 장치(BlackHole 등)는 마이크가 아니므로 목록에서 제외 — 컴퓨터 소리 옵션이 따로 처리
+        const inputs = devices.filter(
+          (device) => device.kind === 'audioinput' && !isLoopbackDevice(device),
+        )
         setMicDevices(inputs)
         if (inputs.length === 0) {
           setMicTestError('사용 가능한 마이크를 찾지 못했어요.')
@@ -217,28 +286,81 @@ export default function RecordPage() {
         setMicTestLoading(false)
       }
     },
-    [startMicLevelMeter, stopMicTest],
+    [startLevelMeter, stopMicTest],
   )
+
+  const stopSystemTest = useCallback(() => {
+    if (sysTestRafRef.current != null) {
+      window.cancelAnimationFrame(sysTestRafRef.current)
+      sysTestRafRef.current = null
+    }
+    sysTestStreamRef.current?.getTracks().forEach((track) => track.stop())
+    sysTestStreamRef.current = null
+    void sysTestAudioContextRef.current?.close().catch(() => {})
+    sysTestAudioContextRef.current = null
+    setSysLevel(0)
+  }, [])
+
+  /** 가상 오디오 장치를 찾아 컴퓨터 소리 레벨 미터 시작 — 없으면 안내만 표시 */
+  const startSystemTestStream = useCallback(async () => {
+    stopSystemTest()
+    const loopback = await findLoopbackDevice()
+    setLoopbackDevice(
+      loopback ? { deviceId: loopback.deviceId, label: loopback.label || '가상 오디오 장치' } : null,
+    )
+    if (!loopback) return
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          deviceId: { exact: loopback.deviceId },
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false,
+        },
+      })
+      sysTestStreamRef.current = stream
+      startLevelMeter(stream, sysTestAudioContextRef, sysTestRafRef, setSysLevel)
+    } catch {
+      /* 레벨 미터 실패는 치명적이지 않음 — 안내 문구는 그대로 표시 */
+    }
+  }, [startLevelMeter, stopSystemTest])
 
   const openMicTest = () => {
     if (starting || uploading || isLive) return
     setSelectedMicId(confirmedMicId)
     setMicTestOpen(true)
-    void startMicTestStream(confirmedMicId || undefined)
+    void (async () => {
+      // 마이크 권한을 먼저 얻어야 enumerateDevices에서 가상 오디오 장치 라벨을 읽을 수 있다
+      await startMicTestStream(confirmedMicId || undefined)
+      if (recordSource !== 'mic') await startSystemTestStream()
+    })()
   }
 
   const closeMicTest = useCallback(() => {
     setMicTestOpen(false)
     setMicTestError('')
     stopMicTest()
-  }, [stopMicTest])
+    stopSystemTest()
+  }, [stopMicTest, stopSystemTest])
 
   const handleSelectMic = (deviceId: string) => {
     setSelectedMicId(deviceId)
     void startMicTestStream(deviceId)
   }
 
+  const handleSelectSource = (source: RecordSource) => {
+    setRecordSource(source)
+    localStorage.setItem(RECORD_SOURCE_KEY, source)
+    if (source !== 'mic') void startSystemTestStream()
+    else stopSystemTest()
+  }
+
   const handleConfirmMic = () => {
+    if (recordSource === 'system') {
+      // 컴퓨터 소리 전용 — 마이크 선택이 필요 없다
+      closeMicTest()
+      return
+    }
     const device = micDevices.find((item) => item.deviceId === selectedMicId)
     if (!selectedMicId || !device) {
       setMicTestError('녹음에 사용할 마이크를 선택해주세요.')
@@ -252,9 +374,25 @@ export default function RecordPage() {
     closeMicTest()
   }
 
+  const selectedSourceOption =
+    SOURCE_OPTIONS.find((option) => option.value === recordSource) ?? SOURCE_OPTIONS[0]
+
+  const copyBlackholeCommand = async () => {
+    try {
+      await navigator.clipboard.writeText(BLACKHOLE_INSTALL_CMD)
+      setBrewCopied(true)
+      window.setTimeout(() => setBrewCopied(false), 1600)
+    } catch {
+      /* 클립보드 미지원 브라우저는 무시 — 명령어가 화면에 그대로 보인다 */
+    }
+  }
+
   useEffect(() => {
-    return () => stopMicTest()
-  }, [stopMicTest])
+    return () => {
+      stopMicTest()
+      stopSystemTest()
+    }
+  }, [stopMicTest, stopSystemTest])
 
   // 녹음/업로드 중 새로고침/탭 닫기 경고
   useEffect(() => {
@@ -449,11 +587,24 @@ export default function RecordPage() {
     setRecordMode('idle')
     setStarting(true)
     try {
-      await recorder.start(confirmedMicId || undefined)
+      const outcome = await recorder.start({
+        deviceId: confirmedMicId || undefined,
+        source: recordSource,
+      })
+      if (!outcome.started) {
+        // 컴퓨터 소리 전용 모드에서 소리를 얻지 못해 녹음이 시작되지 않음
+        if (SYSTEM_AUDIO_ISSUES[outcome.systemAudio]) setSysAudioIssue(outcome.systemAudio)
+        setStarting(false)
+        return
+      }
+      // 마이크+컴퓨터 모드에서 컴퓨터 소리만 실패 — 마이크 녹음은 진행 중이므로 안내만
+      if (recordSource !== 'mic' && SYSTEM_AUDIO_ISSUES[outcome.systemAudio]) {
+        setSysAudioIssue(outcome.systemAudio)
+      }
     } catch {
       alert(
         confirmedMicId
-          ? '선택한 마이크를 사용할 수 없어요. 마이크 테스트에서 다시 선택하거나 브라우저 권한을 확인해주세요.'
+          ? '선택한 마이크를 사용할 수 없어요. 녹음 설정에서 다시 선택하거나 브라우저 권한을 확인해주세요.'
           : '마이크를 사용할 수 없어요. 브라우저의 마이크 권한을 확인해주세요.',
       )
       setStarting(false)
@@ -471,6 +622,21 @@ export default function RecordPage() {
     } finally {
       setStarting(false)
     }
+  }
+
+  /** 컴퓨터 소리 캡처 재시도 — 녹음 중이면 이어 붙이고, 시작 전 실패면 처음부터 다시 */
+  const handleRetrySystemAudio = async () => {
+    if (recorder.status === 'recording' || recorder.status === 'paused') {
+      const result = await recorder.retrySystemAudio()
+      if (result === 'on' || result === 'off') {
+        setSysAudioIssue(null)
+        return
+      }
+      setSysAudioIssue(result)
+      return
+    }
+    setSysAudioIssue(null)
+    void handleStart()
   }
 
   const uploadAndGo = async (blob: Blob, durationSec: number): Promise<void> => {
@@ -493,6 +659,7 @@ export default function RecordPage() {
   const handleStop = async () => {
     if (meetingId == null || uploading) return
     setUploading(true)
+    setSysAudioIssue(null)
     let result: { blob: Blob; durationSec: number }
     try {
       result = await recorder.stop()
@@ -515,6 +682,7 @@ export default function RecordPage() {
     if (!ok) return
 
     setCancellingRecording(true)
+    setSysAudioIssue(null)
     const currentMeetingId = meetingId
     try {
       await recorder.cancel()
@@ -942,8 +1110,13 @@ export default function RecordPage() {
                           disabled={starting || uploading}
                         >
                           <span aria-hidden="true">🎙️</span>
-                          마이크 테스트
+                          녹음 설정 · 테스트
                         </button>
+                        {recordSource !== 'mic' && (
+                          <span className="record-sysaudio-note">
+                            {recordSource === 'system' ? '🔊 컴퓨터 소리만 녹음' : '🎙️🔊 마이크 + 컴퓨터 소리 녹음'}
+                          </span>
+                        )}
                       </article>
 
                       <article className="record-start-option record-start-option-manual">
@@ -1008,6 +1181,38 @@ export default function RecordPage() {
                       className={`rec-dot${recorder.status === 'paused' ? ' paused' : ''}`}
                     />
                     {recorder.status === 'paused' ? '일시정지됨' : '녹음 중'}
+                  </div>
+
+                  <div className="recorder-source-toggles">
+                    {recordSource !== 'system' && (
+                      <button
+                        type="button"
+                        className={`source-toggle${recorder.micMuted ? ' muted' : ''}`}
+                        onClick={() => recorder.setMicMuted(!recorder.micMuted)}
+                        title={recorder.micMuted ? '마이크 다시 켜기' : '마이크 음소거'}
+                      >
+                        {recorder.micMuted ? '🚫 마이크 꺼짐' : '🎙️ 마이크'}
+                      </button>
+                    )}
+                    {recorder.systemAudio === 'on' && (
+                      <button
+                        type="button"
+                        className={`source-toggle${recorder.systemMuted ? ' muted' : ''}`}
+                        onClick={() => recorder.setSystemMuted(!recorder.systemMuted)}
+                        title={recorder.systemMuted ? '컴퓨터 소리 다시 켜기' : '컴퓨터 소리 끄기'}
+                      >
+                        {recorder.systemMuted ? '🚫 컴퓨터 소리 꺼짐' : '🔊 컴퓨터 소리'}
+                      </button>
+                    )}
+                    {recorder.systemAudio === 'ended' && (
+                      <button
+                        type="button"
+                        className="source-toggle warn"
+                        onClick={() => void handleRetrySystemAudio()}
+                      >
+                        🔇 컴퓨터 소리 끊김 — 다시 연결
+                      </button>
+                    )}
                   </div>
 
                   <div className="recorder-timer">{formatClock(recorder.elapsedSec)}</div>
@@ -1156,53 +1361,158 @@ export default function RecordPage() {
         </div>
       )}
 
-      <Modal open={micTestOpen} title="마이크 선택" width={520} onClose={closeMicTest}>
+      <Modal open={micTestOpen} title="녹음 설정" width={520} onClose={closeMicTest}>
         <div className="mic-test-modal">
-          <p className="mic-test-desc">테스트할 마이크를 선택해주세요.</p>
+          <p className="mic-test-desc">무엇을 녹음할지 고르고, 장치를 확인해주세요.</p>
           {micTestError && <div className="mic-test-error">{micTestError}</div>}
 
-          <div className="mic-device-list">
-            {micDevices.length === 0 && !micTestLoading ? (
-              <div className="mic-device-empty">표시할 마이크가 없어요.</div>
-            ) : (
-              micDevices.map((device, index) => {
-                const checked = selectedMicId === device.deviceId
-                const levelSegments = 18
-                const activeSegments = checked ? Math.round(micLevel * levelSegments) : 0
+          <div className="mic-modal-section">
+            <h3 className="mic-modal-section-title">녹음 소스</h3>
+            <div className="record-source-grid" role="radiogroup" aria-label="녹음 소스">
+              {SOURCE_OPTIONS.map((option) => {
+                const checked = recordSource === option.value
                 return (
                   <button
-                    key={device.deviceId || `mic-${index}`}
+                    key={option.value}
                     type="button"
-                    className={`mic-device-row${checked ? ' selected' : ''}`}
-                    onClick={() => handleSelectMic(device.deviceId)}
+                    role="radio"
+                    aria-checked={checked}
+                    className={`record-source-tile${checked ? ' selected' : ''}`}
+                    onClick={() => handleSelectSource(option.value)}
                   >
-                    <span className="mic-radio" aria-hidden="true">
-                      <span />
+                    <span className="record-source-tile-icon" aria-hidden="true">
+                      {option.icon}
                     </span>
-                    <span className="mic-device-copy">
-                      <strong>{device.label || (index === 0 ? '기본 마이크' : `마이크 ${index + 1}`)}</strong>
-                      <span>{device.label && index === 0 ? '기본 입력 장치' : '오디오 입력 장치'}</span>
-                    </span>
-                    {checked && (
-                      <span className="mic-level-meter" aria-label={`마이크 입력 레벨 ${Math.round(micLevel * 100)}%`}>
-                        {Array.from({ length: levelSegments }).map((_, segmentIndex) => (
-                          <span key={segmentIndex} className={segmentIndex < activeSegments ? 'active' : ''} />
-                        ))}
-                      </span>
-                    )}
+                    <strong>{option.title}</strong>
                   </button>
                 )
-              })
-            )}
+              })}
+            </div>
+            <p className="record-source-desc">{selectedSourceOption.desc}</p>
           </div>
+
+          {recordSource !== 'mic' && (
+            <div className={`sys-source-status${loopbackDevice ? ' ok' : ''}`}>
+              {loopbackDevice ? (
+                <div className="sys-source-row">
+                  <span className="sys-source-copy">
+                    <strong>✅ 가상 오디오 장치 사용: {loopbackDevice.label}</strong>
+                    <span>
+                      녹음 시작 시 팝업 없이 컴퓨터 소리가 바로 녹음돼요. 컴퓨터에서 소리를
+                      재생하면 오른쪽 미터가 움직여요. 소리를 재생해도 미터가 멈춰 있으면
+                      시스템 사운드 출력이 {loopbackDevice.label}이(가) 포함된 다중 출력
+                      장치로 설정되어 있는지 확인해주세요 — 장치만 설치하면 소리가 무음으로
+                      녹음돼요.
+                    </span>
+                  </span>
+                  <span
+                    className="mic-level-meter"
+                    aria-label={`컴퓨터 소리 레벨 ${Math.round(sysLevel * 100)}%`}
+                  >
+                    {Array.from({ length: 18 }).map((_, i) => (
+                      <span key={i} className={i < Math.round(sysLevel * 18) ? 'active' : ''} />
+                    ))}
+                  </span>
+                </div>
+              ) : (
+                <>
+                  <span className="sys-source-copy">
+                    <strong>⚠️ 이 컴퓨터에 가상 오디오 장치(BlackHole)가 없어요</strong>
+                    <span>
+                      {IS_SAFARI
+                        ? 'Safari는 화면 공유 소리 녹음을 지원하지 않아서, 컴퓨터 소리를 녹음하려면 BlackHole 설치가 꼭 필요해요. (또는 Chrome 사용)'
+                        : CAN_DISPLAY_CAPTURE
+                          ? "설치하지 않아도 녹음 시작 시 화면 공유 창에서 '오디오 공유'를 켜면 탭 소리를 녹음할 수 있어요. BlackHole을 설치하면 팝업 없이 모든 컴퓨터 소리가 녹음돼요."
+                          : '이 브라우저는 화면 공유 소리 녹음을 지원하지 않아요. 무료 가상 오디오 장치 BlackHole을 설치하면 녹음할 수 있어요.'}
+                    </span>
+                  </span>
+                  {IS_MAC && (
+                    <>
+                      <ol className="sys-install-steps">
+                        <li>
+                          터미널에서 <code>{BLACKHOLE_INSTALL_CMD}</code>
+                          <button
+                            type="button"
+                            className="btn sys-copy-btn"
+                            onClick={() => void copyBlackholeCommand()}
+                          >
+                            {brewCopied ? '복사됨 ✓' : '복사'}
+                          </button>{' '}
+                          실행 — 또는{' '}
+                          <a href={BLACKHOLE_DOWNLOAD_URL} target="_blank" rel="noreferrer">
+                            공식 사이트
+                          </a>
+                          에서 다운로드해 설치
+                        </li>
+                        <li>
+                          [오디오 MIDI 설정] 앱 → 왼쪽 아래 ‘+’ → [다중 출력 장치 생성] → 스피커와
+                          BlackHole 2ch를 모두 체크
+                        </li>
+                        <li>메뉴 막대 사운드(또는 시스템 설정 › 사운드)에서 만든 다중 출력 장치를 출력으로 선택</li>
+                      </ol>
+                      <button
+                        type="button"
+                        className="btn btn-soft sys-recheck-btn"
+                        onClick={() => void startSystemTestStream()}
+                      >
+                        🔄 설치 확인
+                      </button>
+                    </>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
+          {recordSource !== 'system' && (
+            <div className="mic-modal-section">
+              <h3 className="mic-modal-section-title">사용할 마이크</h3>
+              <div className="mic-device-list">
+              {micDevices.length === 0 && !micTestLoading ? (
+                <div className="mic-device-empty">표시할 마이크가 없어요.</div>
+              ) : (
+                micDevices.map((device, index) => {
+                  const checked = selectedMicId === device.deviceId
+                  const levelSegments = 18
+                  const activeSegments = checked ? Math.round(micLevel * levelSegments) : 0
+                  return (
+                    <button
+                      key={device.deviceId || `mic-${index}`}
+                      type="button"
+                      className={`mic-device-row${checked ? ' selected' : ''}`}
+                      onClick={() => handleSelectMic(device.deviceId)}
+                    >
+                      <span className="mic-radio" aria-hidden="true">
+                        <span />
+                      </span>
+                      <span className="mic-device-copy">
+                        <strong>{device.label || (index === 0 ? '기본 마이크' : `마이크 ${index + 1}`)}</strong>
+                        <span>{device.label && index === 0 ? '기본 입력 장치' : '오디오 입력 장치'}</span>
+                      </span>
+                      {checked && (
+                        <span className="mic-level-meter" aria-label={`마이크 입력 레벨 ${Math.round(micLevel * 100)}%`}>
+                          {Array.from({ length: levelSegments }).map((_, segmentIndex) => (
+                            <span key={segmentIndex} className={segmentIndex < activeSegments ? 'active' : ''} />
+                          ))}
+                        </span>
+                      )}
+                    </button>
+                  )
+                })
+              )}
+              </div>
+            </div>
+          )}
 
           <div className="mic-test-footer">
             <span>
               {micTestLoading
-                ? '마이크를 확인하고 있어요...'
-                : confirmedMicLabel
-                  ? `현재 녹음 마이크: ${confirmedMicLabel}`
-                  : '확인을 누르면 선택한 마이크로 녹음합니다.'}
+                ? '장치를 확인하고 있어요...'
+                : recordSource === 'system'
+                  ? '확인을 누르면 컴퓨터 소리만 녹음해요.'
+                  : confirmedMicLabel
+                    ? `현재 녹음 마이크: ${confirmedMicLabel}`
+                    : '확인을 누르면 선택한 마이크로 녹음합니다.'}
             </span>
             <div className="mic-test-actions">
               <button type="button" className="btn btn-ghost" onClick={closeMicTest}>
@@ -1212,11 +1522,48 @@ export default function RecordPage() {
                 type="button"
                 className="btn btn-primary"
                 onClick={handleConfirmMic}
-                disabled={micTestLoading || !selectedMicId}
+                disabled={micTestLoading || (recordSource !== 'system' && !selectedMicId)}
               >
                 확인
               </button>
             </div>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        open={sysAudioIssue != null}
+        title={(sysAudioIssue && SYSTEM_AUDIO_ISSUES[sysAudioIssue]?.title) || '컴퓨터 소리 녹음'}
+        width={480}
+        onClose={() => setSysAudioIssue(null)}
+      >
+        <div className="sysaudio-issue-modal">
+          <p className="sysaudio-issue-body">
+            {sysAudioIssue ? SYSTEM_AUDIO_ISSUES[sysAudioIssue]?.body : ''}
+          </p>
+          <div className="sysaudio-issue-actions">
+            {sysAudioIssue === 'system-denied' && IS_MAC && (
+              <button
+                type="button"
+                className="btn btn-soft"
+                onClick={() => {
+                  window.location.href = MAC_SCREEN_SETTINGS_URL
+                }}
+              >
+                ⚙️ 시스템 설정 열기
+              </button>
+            )}
+            <span className="sysaudio-issue-spacer" />
+            <button type="button" className="btn btn-ghost" onClick={() => setSysAudioIssue(null)}>
+              마이크만 녹음
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => void handleRetrySystemAudio()}
+            >
+              다시 시도
+            </button>
           </div>
         </div>
       </Modal>

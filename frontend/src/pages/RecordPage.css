@@ -294,6 +294,14 @@
   transform: translateY(-1px);
 }
 
+/* 대기 화면 — 컴퓨터 소리 옵션이 켜져 있음을 알리는 작은 라벨 */
+.record-sysaudio-note {
+  margin-top: 9px;
+  color: var(--primary);
+  font-size: 12.5px;
+  font-weight: 800;
+}
+
 .record-start-dot {
   width: 12px;
   height: 12px;
@@ -574,6 +582,165 @@
   background: #22c55e;
 }
 
+/* 모달 내 섹션 구분 — 녹음 소스 / 마이크 목록이 한 덩어리로 보이지 않게 */
+.mic-modal-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mic-modal-section-title {
+  margin: 0;
+  color: var(--text-3);
+  font-size: 12.5px;
+  font-weight: 900;
+  letter-spacing: 0.03em;
+}
+
+/* 녹음 소스 — 아이콘 타일 3개를 한 줄에 */
+.record-source-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.record-source-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 86px;
+  padding: 12px 8px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  font-family: inherit;
+  text-align: center;
+  transition:
+    border-color 0.15s,
+    background 0.15s,
+    box-shadow 0.15s;
+}
+
+.record-source-tile:hover {
+  border-color: var(--primary-soft-2);
+  background: #f8fbff;
+}
+
+.record-source-tile.selected {
+  border-color: var(--primary);
+  background: #eff6ff;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+.record-source-tile-icon {
+  font-size: 24px;
+  line-height: 1;
+}
+
+.record-source-tile strong {
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1.3;
+  word-break: keep-all;
+}
+
+.record-source-desc {
+  margin: 0;
+  color: var(--text-3);
+  font-size: 12.5px;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+/* BlackHole 설치 안내 단계 */
+.sys-install-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text-3);
+  font-size: 12.5px;
+  font-weight: 700;
+  line-height: 1.6;
+}
+
+.sys-install-steps code {
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.07);
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.sys-install-steps a {
+  color: var(--primary);
+  font-weight: 800;
+}
+
+.sys-copy-btn {
+  min-height: 0;
+  margin-left: 6px;
+  padding: 2px 8px;
+  font-size: 11.5px;
+}
+
+.sys-recheck-btn {
+  align-self: flex-start;
+  padding: 7px 13px;
+  font-size: 12.5px;
+}
+
+/* 컴퓨터 소리 상태 블록 — 가상 오디오 장치 감지 여부에 따라 색이 달라진다 */
+.sys-source-status {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid #fde68a;
+  border-radius: 14px;
+  background: #fffbeb;
+}
+
+.sys-source-status.ok {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.sys-source-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.sys-source-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sys-source-copy strong {
+  color: var(--text);
+  font-size: 13.5px;
+  font-weight: 900;
+  line-height: 1.35;
+}
+
+.sys-source-copy span {
+  color: var(--text-3);
+  font-size: 12.5px;
+  font-weight: 700;
+  line-height: 1.55;
+}
+
 .mic-test-footer {
   display: flex;
   align-items: center;
@@ -661,6 +828,78 @@
 .recorder-status.paused {
   background: var(--gray-soft);
   color: var(--text-2);
+}
+
+/* 녹음 중 소스별 음소거 토글 칩 — 누르면 해당 소스만 켜고 끈다 */
+.recorder-source-toggles {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.source-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 13px;
+  border: 1px solid rgba(37, 99, 235, 0.25);
+  border-radius: var(--radius-full);
+  background: rgba(37, 99, 235, 0.08);
+  color: var(--primary);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 800;
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    color 0.15s,
+    border-color 0.15s;
+}
+
+.source-toggle:hover {
+  background: rgba(37, 99, 235, 0.14);
+}
+
+.source-toggle.muted {
+  border-color: var(--border);
+  background: var(--gray-soft);
+  color: var(--text-3);
+}
+
+.source-toggle.warn {
+  border-color: #fecaca;
+  background: #fef2f2;
+  color: #dc2626;
+}
+
+/* 컴퓨터 소리 캡처 실패 안내 모달 */
+.sysaudio-issue-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.sysaudio-issue-body {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.65;
+  white-space: pre-line;
+}
+
+.sysaudio-issue-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.sysaudio-issue-spacer {
+  flex: 1;
 }
 
 .rec-dot {
@@ -1195,6 +1434,19 @@
 
   .mic-device-row {
     grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .record-source-tile {
+    min-height: 76px;
+    padding: 10px 6px;
+  }
+
+  .record-source-tile-icon {
+    font-size: 20px;
+  }
+
+  .record-source-tile strong {
+    font-size: 12px;
   }
 
   .mic-level-meter {

@@ -2,6 +2,30 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 export type RecorderStatus = 'idle' | 'recording' | 'paused' | 'stopped'
 
+/** 녹음 소스 — 마이크만 / 컴퓨터 소리만 / 둘 다 믹싱 */
+export type RecordSource = 'mic' | 'system' | 'both'
+
+/** 컴퓨터(시스템) 소리 캡처의 현재 상태 — 'ended'는 녹음 중 캡처가 끊긴 경우 */
+export type SystemAudioStatus = 'off' | 'on' | 'ended'
+
+/** 컴퓨터 소리 캡처 결과 — 'on' 외에는 캡처 실패. 'system-denied'는 OS가 브라우저의 화면 녹화를 막은 경우 */
+export type SystemAudioStartResult = 'off' | 'on' | 'unsupported' | 'denied' | 'system-denied' | 'no-audio'
+
+/** 컴퓨터 소리를 가져온 방법 — loopback(가상 오디오 장치, 팝업 없음) / display(화면 공유) */
+export type SystemAudioVia = 'loopback' | 'display'
+
+export interface RecorderStartOptions {
+  deviceId?: string
+  source?: RecordSource
+}
+
+export interface RecorderStartOutcome {
+  /** false면 녹음이 시작되지 않음 — 컴퓨터 소리 전용 모드에서 소리를 얻지 못한 경우 */
+  started: boolean
+  systemAudio: SystemAudioStartResult
+  via?: SystemAudioVia
+}
+
 export interface RecorderResult {
   blob: Blob
   durationSec: number
@@ -11,7 +35,16 @@ export interface UseRecorderReturn {
   status: RecorderStatus
   elapsedSec: number
   analyser: AnalyserNode | null
-  start: (deviceId?: string) => Promise<void>
+  systemAudio: SystemAudioStatus
+  /** 녹음 중 마이크 음소거 여부 — true면 마이크 구간이 무음으로 기록된다 */
+  micMuted: boolean
+  /** 녹음 중 컴퓨터 소리 음소거 여부 */
+  systemMuted: boolean
+  setMicMuted: (muted: boolean) => void
+  setSystemMuted: (muted: boolean) => void
+  start: (options?: RecorderStartOptions) => Promise<RecorderStartOutcome>
+  /** 녹음을 유지한 채 컴퓨터 소리 캡처만 다시 시도 — source가 system/both인 녹음에서만 동작 */
+  retrySystemAudio: () => Promise<SystemAudioStartResult>
   pause: () => void
   resume: () => void
   stop: () => Promise<RecorderResult>
@@ -28,6 +61,103 @@ function pickMimeType(): string {
   return ''
 }
 
+/** 시스템 출력을 입력으로 되돌려주는 가상 오디오 장치(loopback) 라벨 패턴 */
+const LOOPBACK_LABEL_RE =
+  /blackhole|loopback|soundflower|vb-?cable|vb-?audio|virtual audio|virtual cable|stereo mix|스테레오 믹스/i
+
+export const isLoopbackDevice = (d: MediaDeviceInfo) =>
+  d.kind === 'audioinput' && LOOPBACK_LABEL_RE.test(d.label)
+
+/**
+ * 설치된 가상 오디오 장치 탐색 — 있으면 팝업 없이 컴퓨터 소리를 캡처할 수 있다.
+ * 마이크 권한이 활성화되기 전에는 라벨이 빈 문자열이라 장치를 식별할 수 없으므로
+ * (특히 Safari는 권한이 세션 간 유지되지 않는다), 임시 마이크 스트림으로 라벨을 연 뒤 다시 찾는다.
+ */
+export async function findLoopbackDevice(): Promise<MediaDeviceInfo | null> {
+  if (!navigator.mediaDevices?.enumerateDevices) return null
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices()
+    const found = devices.find(isLoopbackDevice)
+    if (found) return found
+    const labelsHidden = devices.some((d) => d.kind === 'audioinput' && !d.label)
+    if (!labelsHidden) return null
+    let temp: MediaStream | null = null
+    try {
+      temp = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const unlocked = await navigator.mediaDevices.enumerateDevices()
+      return unlocked.find(isLoopbackDevice) ?? null
+    } finally {
+      temp?.getTracks().forEach((t) => t.stop())
+    }
+  } catch {
+    // 마이크 권한 거부 포함 — 라벨을 열 수 없으면 가상 오디오 장치도 쓸 수 없다
+    return null
+  }
+}
+
+/** 가상 오디오 장치를 원음 그대로 캡처 — EC/NS 가공이 음악·음성을 뭉개지 않도록 끈다 */
+export async function captureLoopbackAudio(deviceId: string): Promise<MediaStream | null> {
+  try {
+    return await navigator.mediaDevices.getUserMedia({
+      audio: {
+        deviceId: { exact: deviceId },
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
+      },
+    })
+  } catch (err) {
+    console.warn('[recorder] 가상 오디오 장치 캡처 실패:', err)
+    return null
+  }
+}
+
+/** Safari는 getDisplayMedia로 오디오를 주지 않으므로 화면 공유 폴백(팝업)이 무의미하다 */
+const DISPLAY_AUDIO_SUPPORTED =
+  typeof navigator !== 'undefined' &&
+  !!navigator.mediaDevices?.getDisplayMedia &&
+  !(
+    /safari/i.test(navigator.userAgent) &&
+    !/chrome|chromium|crios|edg|android/i.test(navigator.userAgent)
+  )
+
+/**
+ * 화면 공유 방식의 컴퓨터 소리 캡처 요청.
+ * 사용자 클릭 제스처(transient activation)가 살아있는 동안 호출해야 한다.
+ */
+async function requestDisplayAudio(): Promise<{
+  result: SystemAudioStartResult
+  stream: MediaStream | null
+  track: MediaStreamTrack | null
+}> {
+  if (!DISPLAY_AUDIO_SUPPORTED) {
+    return { result: 'unsupported', stream: null, track: null }
+  }
+  try {
+    const stream = await navigator.mediaDevices.getDisplayMedia({
+      video: true,
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+      // Chromium 전용 힌트: 전체 화면 공유 시에도 시스템 오디오 옵션 노출
+      systemAudio: 'include',
+    } as MediaStreamConstraints)
+    const track = stream.getAudioTracks()[0] ?? null
+    if (!track) {
+      // 공유는 허용했지만 오디오가 포함되지 않은 경우 (Safari는 화면 공유 오디오 미지원)
+      stream.getTracks().forEach((t) => t.stop())
+      return { result: 'no-audio', stream: null, track: null }
+    }
+    return { result: 'on', stream, track }
+  } catch (err) {
+    console.warn('[recorder] 화면 공유 오디오 캡처 실패:', err)
+    // OS(macOS 화면 녹화 권한 등)가 막은 경우와 사용자가 공유 창에서 취소한 경우를 구분
+    const result =
+      err instanceof DOMException && err.name === 'NotAllowedError' && /system/i.test(err.message)
+        ? 'system-denied'
+        : 'denied'
+    return { result, stream: null, track: null }
+  }
+}
+
 /** Wake Lock 타입 (일부 TS lib에 없어 최소 선언) */
 interface WakeLockSentinelLike {
   released: boolean
@@ -36,8 +166,11 @@ interface WakeLockSentinelLike {
 }
 
 /**
- * 마이크 녹음 훅.
- * - getUserMedia(audio) + MediaRecorder(audio/webm)
+ * 회의 녹음 훅.
+ * - source 'mic': getUserMedia(마이크)만 녹음 (기존 동작)
+ * - source 'system': 컴퓨터 소리만 — 가상 오디오 장치(팝업 없음) 우선, 없으면 화면 공유 폴백
+ * - source 'both': 마이크 + 컴퓨터 소리를 Web Audio로 믹싱해 한 트랙으로 녹음
+ * - 컴퓨터 소리 캡처 실패/중단 시에도 가능한 녹음은 유지, retrySystemAudio()로 녹음 중 재시도
  * - AudioContext + AnalyserNode(fftSize 256) 를 파형 시각화용으로 노출
  * - elapsedSec 는 일시정지 시간을 제외한 실경과(250ms 간격 갱신)
  * - 녹음/일시정지 동안 화면 절전 방지(Wake Lock) — 탭 복귀 시 자동 재획득
@@ -47,10 +180,21 @@ export function useRecorder(): UseRecorderReturn {
   const [status, setStatus] = useState<RecorderStatus>('idle')
   const [elapsedSec, setElapsedSec] = useState(0)
   const [analyser, setAnalyser] = useState<AnalyserNode | null>(null)
+  const [systemAudio, setSystemAudio] = useState<SystemAudioStatus>('off')
+  const [micMuted, setMicMutedState] = useState(false)
+  const [systemMuted, setSystemMutedState] = useState(false)
+  /** 재시도로 새 시스템 스트림이 붙을 때 현재 음소거 상태를 적용하기 위한 미러 */
+  const systemMutedRef = useRef(false)
 
   const streamRef = useRef<MediaStream | null>(null)
+  const displayStreamRef = useRef<MediaStream | null>(null)
+  const loopbackStreamRef = useRef<MediaStream | null>(null)
   const recorderRef = useRef<MediaRecorder | null>(null)
   const audioCtxRef = useRef<AudioContext | null>(null)
+  /** 마이크/시스템 오디오가 합쳐지는 버스 — retrySystemAudio()에서 소스를 추가로 꽂는다 */
+  const mixBusRef = useRef<GainNode | null>(null)
+  /** 녹음 스트림이 믹스 경로(destination)를 거치는지 — 아니면 재시도로 붙여도 녹음에 안 들어간다 */
+  const mixRecordingRef = useRef(false)
   const chunksRef = useRef<Blob[]>([])
   const intervalRef = useRef<number | null>(null)
   /** 일시정지 이전까지 누적된 녹음 시간(ms) */
@@ -106,19 +250,25 @@ export function useRecorder(): UseRecorderReturn {
       window.clearInterval(intervalRef.current)
       intervalRef.current = null
     }
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((t) => t.stop())
-      streamRef.current = null
+    for (const ref of [streamRef, displayStreamRef, loopbackStreamRef]) {
+      ref.current?.getTracks().forEach((t) => t.stop())
+      ref.current = null
     }
     const ctx = audioCtxRef.current
     if (ctx && ctx.state !== 'closed') {
       void ctx.close().catch(() => {})
     }
     audioCtxRef.current = null
+    mixBusRef.current = null
+    mixRecordingRef.current = false
     recorderRef.current = null
     segmentStartRef.current = null
     releaseWakeLock()
     setAnalyser(null)
+    setSystemAudio('off')
+    setMicMutedState(false)
+    setSystemMutedState(false)
+    systemMutedRef.current = false
   }, [releaseWakeLock])
 
   // 언마운트 시 녹음 중이면 강제 정리
@@ -136,31 +286,124 @@ export function useRecorder(): UseRecorderReturn {
     }
   }, [cleanup])
 
-  const start = useCallback(async (deviceId?: string) => {
-    if (recorderRef.current && recorderRef.current.state !== 'inactive') return
+  /** 확보한 컴퓨터 소리 스트림을 믹스 버스에 연결하고, 캡처 중단 감지 리스너 부착 */
+  const attachSystemStream = useCallback((stream: MediaStream, kind: SystemAudioVia): boolean => {
+    const ctx = audioCtxRef.current
+    const mixBus = mixBusRef.current
+    const track = stream.getAudioTracks()[0]
+    if (!ctx || !mixBus || !track) return false
+    track.enabled = !systemMutedRef.current
+    ctx.createMediaStreamSource(new MediaStream([track])).connect(mixBus)
+    const ref = kind === 'display' ? displayStreamRef : loopbackStreamRef
+    ref.current = stream
+    // 브라우저의 '공유 중지'나 장치 분리로 캡처가 끊겨도 남은 소스 녹음은 이어간다
+    track.addEventListener('ended', () => {
+      ref.current?.getTracks().forEach((t) => t.stop())
+      ref.current = null
+      setSystemAudio('ended')
+    })
+    return true
+  }, [])
 
-    const audioConstraint: MediaTrackConstraints | boolean = deviceId
-      ? { deviceId: { exact: deviceId } }
-      : true
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraint })
-    streamRef.current = stream
+  /** 컴퓨터 소리 확보 — 가상 오디오 장치(팝업 없음) 우선, 없으면 화면 공유 */
+  const captureSystemAudio = useCallback(async (): Promise<{
+    result: SystemAudioStartResult
+    via?: SystemAudioVia
+    stream: MediaStream | null
+  }> => {
+    const loopback = await findLoopbackDevice()
+    if (loopback) {
+      const stream = await captureLoopbackAudio(loopback.deviceId)
+      if (stream) return { result: 'on', via: 'loopback', stream }
+    }
+    const captured = await requestDisplayAudio()
+    return { result: captured.result, via: captured.result === 'on' ? 'display' : undefined, stream: captured.stream }
+  }, [])
 
-    // 파형용 AnalyserNode
+  const start = useCallback(async (options: RecorderStartOptions = {}): Promise<RecorderStartOutcome> => {
+    if (recorderRef.current && recorderRef.current.state !== 'inactive') {
+      return { started: false, systemAudio: 'off' }
+    }
+    const { deviceId, source = 'mic' } = options
     const AudioCtx =
       window.AudioContext ??
       (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+    // 믹싱이 필요한 소스인데 AudioContext가 없으면 컴퓨터 소리는 포기
+    const wantSystem = source !== 'mic' && !!AudioCtx
+    const wantMic = source !== 'system'
+
+    // 1) 컴퓨터 소리부터 확보 — 화면 공유 폴백은 클릭 제스처가 살아있는 동안 요청해야 한다
+    let systemAudioResult: SystemAudioStartResult = source !== 'mic' && !AudioCtx ? 'unsupported' : 'off'
+    let via: SystemAudioVia | undefined
+    let systemStream: MediaStream | null = null
+    if (wantSystem) {
+      const captured = await captureSystemAudio()
+      systemAudioResult = captured.result
+      via = captured.via
+      systemStream = captured.stream
+    }
+
+    // 컴퓨터 소리 전용 모드에서 소리를 못 얻었으면 녹음을 시작하지 않는다
+    if (source === 'system' && systemAudioResult !== 'on') {
+      systemStream?.getTracks().forEach((t) => t.stop())
+      return { started: false, systemAudio: systemAudioResult, via }
+    }
+
+    // 2) 마이크
+    let micStream: MediaStream | null = null
+    if (wantMic) {
+      const audioConstraint: MediaTrackConstraints | boolean = deviceId
+        ? { deviceId: { exact: deviceId } }
+        : true
+      try {
+        micStream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraint })
+      } catch (err) {
+        systemStream?.getTracks().forEach((t) => t.stop())
+        throw err
+      }
+    }
+    streamRef.current = micStream
+
+    // 3) 오디오 그래프 — 파형용 AnalyserNode + (컴퓨터 소리 시) 믹싱 버스
+    let recordStream = micStream
     if (AudioCtx) {
       const ctx = new AudioCtx()
       audioCtxRef.current = ctx
-      const source = ctx.createMediaStreamSource(stream)
+      const mixBus = ctx.createGain()
+      mixBusRef.current = mixBus
+      if (micStream) ctx.createMediaStreamSource(micStream).connect(mixBus)
       const node = ctx.createAnalyser()
       node.fftSize = 256
-      source.connect(node)
+      mixBus.connect(node)
       setAnalyser(node)
+      if (source !== 'mic') {
+        // 캡처에 실패했더라도 녹음 중 재시도로 붙일 수 있도록 항상 믹스 경로로 녹음.
+        // 두 소스 합산 피크가 0dB를 넘어 깨지지 않도록 리미터를 거친다.
+        const limiter = ctx.createDynamicsCompressor()
+        limiter.threshold.value = -6
+        limiter.knee.value = 3
+        limiter.ratio.value = 12
+        limiter.attack.value = 0.003
+        limiter.release.value = 0.25
+        const dest = ctx.createMediaStreamDestination()
+        mixBus.connect(limiter)
+        limiter.connect(dest)
+        recordStream = dest.stream
+        mixRecordingRef.current = true
+      }
+      if (systemStream && via) {
+        attachSystemStream(systemStream, via)
+      }
+      void ctx.resume().catch(() => {})
+    }
+    if (!recordStream) {
+      // 도달 불가 방어: mic 모드는 micStream 보장, system/both는 위에서 dest.stream 지정
+      systemStream?.getTracks().forEach((t) => t.stop())
+      throw new Error('녹음할 오디오 소스가 없습니다.')
     }
 
     const mimeType = pickMimeType()
-    const rec = new MediaRecorder(stream, mimeType ? { mimeType } : undefined)
+    const rec = new MediaRecorder(recordStream, mimeType ? { mimeType } : undefined)
     chunksRef.current = []
     rec.ondataavailable = (e: BlobEvent) => {
       if (e.data && e.data.size > 0) chunksRef.current.push(e.data)
@@ -172,13 +415,53 @@ export function useRecorder(): UseRecorderReturn {
     segmentStartRef.current = Date.now()
     setElapsedSec(0)
     setStatus('recording')
+    setSystemAudio(systemAudioResult === 'on' ? 'on' : 'off')
+    setMicMutedState(false)
+    setSystemMutedState(false)
+    systemMutedRef.current = false
     void acquireWakeLock() // 녹음 중 화면 꺼짐 방지
 
     if (intervalRef.current != null) window.clearInterval(intervalRef.current)
     intervalRef.current = window.setInterval(() => {
       setElapsedSec(currentElapsedMs() / 1000)
     }, 250)
-  }, [acquireWakeLock, currentElapsedMs])
+    return { started: true, systemAudio: systemAudioResult, via }
+  }, [acquireWakeLock, attachSystemStream, captureSystemAudio, currentElapsedMs])
+
+  /** 녹음 중 마이크 음소거 토글 — 트랙은 유지한 채 해당 구간이 무음으로 기록된다 */
+  const setMicMuted = useCallback((muted: boolean) => {
+    streamRef.current?.getAudioTracks().forEach((t) => {
+      t.enabled = !muted
+    })
+    setMicMutedState(muted)
+  }, [])
+
+  /** 녹음 중 컴퓨터 소리 음소거 토글 */
+  const setSystemMuted = useCallback((muted: boolean) => {
+    systemMutedRef.current = muted
+    for (const ref of [displayStreamRef, loopbackStreamRef]) {
+      ref.current?.getAudioTracks().forEach((t) => {
+        t.enabled = !muted
+      })
+    }
+    setSystemMutedState(muted)
+  }, [])
+
+  const retrySystemAudio = useCallback(async (): Promise<SystemAudioStartResult> => {
+    const rec = recorderRef.current
+    if (!rec || rec.state === 'inactive') return 'off'
+    if (!mixRecordingRef.current) return 'unsupported'
+    if (displayStreamRef.current || loopbackStreamRef.current) return 'on' // 이미 캡처 중
+
+    const captured = await captureSystemAudio()
+    if (captured.result !== 'on' || !captured.stream || !captured.via) return captured.result
+    if (!attachSystemStream(captured.stream, captured.via)) {
+      captured.stream.getTracks().forEach((t) => t.stop())
+      return 'unsupported'
+    }
+    setSystemAudio('on')
+    return 'on'
+  }, [attachSystemStream, captureSystemAudio])
 
   const pause = useCallback(() => {
     const rec = recorderRef.current
@@ -258,7 +541,22 @@ export function useRecorder(): UseRecorderReturn {
     })
   }, [cleanup])
 
-  return { status, elapsedSec, analyser, start, pause, resume, stop, cancel }
+  return {
+    status,
+    elapsedSec,
+    analyser,
+    systemAudio,
+    micMuted,
+    systemMuted,
+    setMicMuted,
+    setSystemMuted,
+    start,
+    retrySystemAudio,
+    pause,
+    resume,
+    stop,
+    cancel,
+  }
 }
 
 export default useRecorder

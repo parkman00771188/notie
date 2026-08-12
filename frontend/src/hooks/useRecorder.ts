@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { helperRecordOff, helperRecordOn } from '../recordModeHelper'
 
 export type RecorderStatus = 'idle' | 'recording' | 'paused' | 'stopped'
 
@@ -176,7 +177,8 @@ interface WakeLockSentinelLike {
 /**
  * 회의 녹음 훅.
  * - source 'mic': getUserMedia(마이크)만 녹음 (기존 동작)
- * - source 'system': 컴퓨터 소리만 — 화면 공유(시스템 오디오) 우선, 미지원/실패 시 가상 오디오 장치 폴백
+ * - source 'system': 컴퓨터 소리만 — Mac 오디오 도우미가 있으면 출력 자동 전환 후 가상 오디오 장치로
+ *   팝업 없이 캡처, 없으면 화면 공유(시스템 오디오) 우선 + 가상 오디오 장치 폴백
  * - source 'both': 마이크 + 컴퓨터 소리를 Web Audio로 믹싱해 한 트랙으로 녹음
  * - 컴퓨터 소리 캡처 실패/중단 시에도 가능한 녹음은 유지, retrySystemAudio()로 녹음 중 재시도
  * - AudioContext + AnalyserNode(fftSize 256) 를 파형 시각화용으로 노출
@@ -198,6 +200,16 @@ export function useRecorder(): UseRecorderReturn {
   const sysAnalyserRef = useRef<AnalyserNode | null>(null)
   const sysMonitorRef = useRef<number | null>(null)
   const lastSysSignalAtRef = useRef(0)
+  /** Mac 오디오 도우미가 이번 녹음을 위해 출력을 전환했는지 — true면 종료 시 복귀시켜야 한다 */
+  const helperEngagedRef = useRef(false)
+
+  /** 도우미가 전환해둔 출력 장치를 원래대로 복귀 (전환한 적 없으면 no-op) */
+  const releaseHelper = useCallback(() => {
+    if (helperEngagedRef.current) {
+      helperEngagedRef.current = false
+      helperRecordOff()
+    }
+  }, [])
 
   const streamRef = useRef<MediaStream | null>(null)
   const displayStreamRef = useRef<MediaStream | null>(null)
@@ -311,13 +323,14 @@ export function useRecorder(): UseRecorderReturn {
     mixRecordingRef.current = false
     recorderRef.current = null
     segmentStartRef.current = null
+    releaseHelper()
     releaseWakeLock()
     setAnalyser(null)
     setSystemAudio('off')
     setMicMutedState(false)
     setSystemMutedState(false)
     systemMutedRef.current = false
-  }, [releaseWakeLock])
+  }, [releaseHelper, releaseWakeLock])
 
   // 언마운트 시 녹음 중이면 강제 정리
   useEffect(() => {
@@ -365,15 +378,26 @@ export function useRecorder(): UseRecorderReturn {
   }, [startSystemMonitor])
 
   /**
-   * 컴퓨터 소리 확보 — 화면 공유(시스템 오디오)를 우선 사용한다.
-   * OS 출력 장치·볼륨 설정을 건드리지 않아 볼륨 키가 평소처럼 동작하기 때문.
-   * 화면 공유 오디오 미지원(Safari)이거나 공유가 취소/실패하면 가상 오디오 장치(BlackHole 등)로 폴백.
+   * 컴퓨터 소리 확보.
+   * - 오디오 도우미가 출력을 전환해준 경우(preferLoopback): 가상 오디오 장치 우선 —
+   *   라우팅이 보장되므로 팝업 없이 캡처된다.
+   * - 그 외: 화면 공유(시스템 오디오) 우선 — OS 출력 장치·볼륨 설정을 건드리지 않아
+   *   볼륨 키가 평소처럼 동작한다. 미지원(Safari)/공유 취소 시 가상 오디오 장치 폴백.
    */
-  const captureSystemAudio = useCallback(async (): Promise<{
+  const captureSystemAudio = useCallback(async (preferLoopback: boolean): Promise<{
     result: SystemAudioStartResult
     via?: SystemAudioVia
     stream: MediaStream | null
   }> => {
+    const tryLoopback = async (): Promise<MediaStream | null> => {
+      const loopback = await findLoopbackDevice()
+      if (!loopback) return null
+      return captureLoopbackAudio(loopback.deviceId)
+    }
+    if (preferLoopback) {
+      const stream = await tryLoopback()
+      if (stream) return { result: 'on', via: 'loopback', stream }
+    }
     let displayResult: SystemAudioStartResult = 'unsupported'
     if (DISPLAY_AUDIO_SUPPORTED) {
       const captured = await requestDisplayAudio()
@@ -382,9 +406,8 @@ export function useRecorder(): UseRecorderReturn {
       }
       displayResult = captured.result
     }
-    const loopback = await findLoopbackDevice()
-    if (loopback) {
-      const stream = await captureLoopbackAudio(loopback.deviceId)
+    if (!preferLoopback) {
+      const stream = await tryLoopback()
       if (stream) return { result: 'on', via: 'loopback', stream }
     }
     return { result: displayResult, stream: null }
@@ -407,7 +430,9 @@ export function useRecorder(): UseRecorderReturn {
     let via: SystemAudioVia | undefined
     let systemStream: MediaStream | null = null
     if (wantSystem) {
-      const captured = await captureSystemAudio()
+      // Mac 오디오 도우미가 있으면 '현재 출력 장치+BlackHole'로 자동 전환 — 팝업 없이 캡처
+      helperEngagedRef.current = await helperRecordOn()
+      const captured = await captureSystemAudio(helperEngagedRef.current)
       systemAudioResult = captured.result
       via = captured.via
       systemStream = captured.stream
@@ -416,6 +441,7 @@ export function useRecorder(): UseRecorderReturn {
     // 컴퓨터 소리 전용 모드에서 소리를 못 얻었으면 녹음을 시작하지 않는다
     if (source === 'system' && systemAudioResult !== 'on') {
       systemStream?.getTracks().forEach((t) => t.stop())
+      releaseHelper()
       return { started: false, systemAudio: systemAudioResult, via }
     }
 
@@ -429,6 +455,7 @@ export function useRecorder(): UseRecorderReturn {
         micStream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraint })
       } catch (err) {
         systemStream?.getTracks().forEach((t) => t.stop())
+        releaseHelper()
         throw err
       }
     }
@@ -496,7 +523,7 @@ export function useRecorder(): UseRecorderReturn {
       setElapsedSec(currentElapsedMs() / 1000)
     }, 250)
     return { started: true, systemAudio: systemAudioResult, via }
-  }, [acquireWakeLock, attachSystemStream, captureSystemAudio, currentElapsedMs])
+  }, [acquireWakeLock, attachSystemStream, captureSystemAudio, currentElapsedMs, releaseHelper])
 
   /** 녹음 중 마이크 음소거 토글 — 트랙은 유지한 채 해당 구간이 무음으로 기록된다 */
   const setMicMuted = useCallback((muted: boolean) => {
@@ -523,7 +550,10 @@ export function useRecorder(): UseRecorderReturn {
     if (!mixRecordingRef.current) return 'unsupported'
     if (displayStreamRef.current || loopbackStreamRef.current) return 'on' // 이미 캡처 중
 
-    const captured = await captureSystemAudio()
+    if (!helperEngagedRef.current) {
+      helperEngagedRef.current = await helperRecordOn()
+    }
+    const captured = await captureSystemAudio(helperEngagedRef.current)
     if (captured.result !== 'on' || !captured.stream || !captured.via) return captured.result
     if (!attachSystemStream(captured.stream, captured.via)) {
       captured.stream.getTracks().forEach((t) => t.stop())

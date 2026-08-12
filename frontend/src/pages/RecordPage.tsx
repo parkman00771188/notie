@@ -11,6 +11,8 @@ import { TagPicker } from '../components/TagPicker'
 import { Waveform } from '../components/Waveform'
 import { findLoopbackDevice, isLoopbackDevice, useRecorder } from '../hooks/useRecorder'
 import type { RecordSource, SystemAudioStartResult } from '../hooks/useRecorder'
+import { helperStatus } from '../recordModeHelper'
+import type { HelperStatus } from '../recordModeHelper'
 import type { Bookmark, Participant } from '../types'
 import { formatClock, formatKoreanDateTime, isValidDateInput } from '../utils'
 import './RecordPage.css'
@@ -174,6 +176,8 @@ export default function RecordPage() {
   /** 컴퓨터 소리 캡처 실패 안내 모달 — null이면 닫힘 */
   const [sysAudioIssue, setSysAudioIssue] = useState<SystemAudioStartResult | null>(null)
   const [brewCopied, setBrewCopied] = useState(false)
+  /** Mac 오디오 도우미 상태 — 연결되어 있으면 녹음 시 출력이 자동 전환된다 */
+  const [audioHelper, setAudioHelper] = useState<HelperStatus | null>(null)
   const micTestStreamRef = useRef<MediaStream | null>(null)
   const micTestAudioContextRef = useRef<AudioContext | null>(null)
   const micTestRafRef = useRef<number | null>(null)
@@ -304,6 +308,7 @@ export default function RecordPage() {
   /** 가상 오디오 장치를 찾아 컴퓨터 소리 레벨 미터 시작 — 없으면 안내만 표시 */
   const startSystemTestStream = useCallback(async () => {
     stopSystemTest()
+    void helperStatus().then(setAudioHelper)
     const loopback = await findLoopbackDevice()
     setLoopbackDevice(
       loopback ? { deviceId: loopback.deviceId, label: loopback.label || '가상 오디오 장치' } : null,
@@ -1405,18 +1410,30 @@ export default function RecordPage() {
 
           {recordSource !== 'mic' && CAN_DISPLAY_CAPTURE && (
             <div className="sys-source-status ok">
-              <span className="sys-source-copy">
-                <strong>🔊 녹음 시작 시 화면 공유 창에서 소리만 켜면 돼요</strong>
-                <span>
-                  공유 창에서 [전체 화면]이나 [탭]을 고르고 '오디오 공유'를 켜주세요. 시스템
-                  볼륨·출력 장치 설정은 바꾸지 않아서 볼륨 조절이 평소처럼 돼요. 스피커를
-                  음소거한 채 녹음하려면 [탭 공유]를 쓰세요 — 탭 소리는 음소거와 관계없이
-                  녹음돼요. 녹음 중 컴퓨터 소리가 안 들어오면 타이머 위 칩이 '무음 감지'로
-                  바뀌니 바로 알 수 있어요.
-                  {loopbackDevice &&
-                    ` 공유를 취소하면 감지된 가상 오디오 장치(${loopbackDevice.label})로 자동 전환돼요.`}
+              {audioHelper?.blackhole ? (
+                <span className="sys-source-copy">
+                  <strong>🎛️ 오디오 도우미 연결됨 — 팝업 없이 자동으로 녹음돼요</strong>
+                  <span>
+                    녹음을 시작하면 지금 듣고 있는 출력({audioHelper.output})에 BlackHole이
+                    잠깐 결합되어 컴퓨터 소리가 그대로 녹음되고, 종료하면 원래 출력으로 자동
+                    복귀해요. 에어팟·헤드폰을 껴도 소리는 계속 그쪽으로 들려요. 녹음 중
+                    소리가 안 들어오면 타이머 위 칩이 '무음 감지'로 바뀌어요.
+                  </span>
                 </span>
-              </span>
+              ) : (
+                <span className="sys-source-copy">
+                  <strong>🔊 녹음 시작 시 화면 공유 창에서 소리만 켜면 돼요</strong>
+                  <span>
+                    공유 창에서 [전체 화면]이나 [탭]을 고르고 '오디오 공유'를 켜주세요. 시스템
+                    볼륨·출력 장치 설정은 바꾸지 않아서 볼륨 조절이 평소처럼 돼요. 스피커를
+                    음소거한 채 녹음하려면 [탭 공유]를 쓰세요 — 탭 소리는 음소거와 관계없이
+                    녹음돼요. 녹음 중 컴퓨터 소리가 안 들어오면 타이머 위 칩이 '무음 감지'로
+                    바뀌니 바로 알 수 있어요.
+                    {loopbackDevice &&
+                      ` 공유를 취소하면 감지된 가상 오디오 장치(${loopbackDevice.label})로 자동 전환돼요.`}
+                  </span>
+                </span>
+              )}
             </div>
           )}
 

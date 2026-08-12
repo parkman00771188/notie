@@ -9,7 +9,7 @@ import { ParticipantPicker } from '../components/ParticipantPicker'
 import { RecentMeetingsPanel } from '../components/RecentMeetingsPanel'
 import { TagPicker } from '../components/TagPicker'
 import { Waveform } from '../components/Waveform'
-import { findLoopbackDevice, isLoopbackDevice, useRecorder } from '../hooks/useRecorder'
+import { findLoopbackDevice, isLoopbackDevice, requestDisplayAudio, useRecorder } from '../hooks/useRecorder'
 import type { RecordSource, SystemAudioStartResult } from '../hooks/useRecorder'
 import { helperRecordOff, helperRecordOn, helperStatus } from '../recordModeHelper'
 import type { HelperStatus } from '../recordModeHelper'
@@ -184,6 +184,10 @@ export default function RecordPage() {
   const sysTestRafRef = useRef<number | null>(null)
   /** 모달 미터를 위해 도우미로 라우팅을 켜뒀는지 — 닫을 때 원래 출력으로 복귀시킨다 */
   const modalHelperEngagedRef = useRef(false)
+  /** 녹음 설정에서 미리 연결해둔 화면 공유 스트림 — 녹음 시작 시 팝업 없이 재사용 */
+  const presetShareRef = useRef<MediaStream | null>(null)
+  const [presetShareOn, setPresetShareOn] = useState(false)
+  const [presetShareError, setPresetShareError] = useState('')
 
   // ---- 메모 ⋯ 메뉴 / 인라인 수정 ----
   const [menuOpenId, setMenuOpenId] = useState<number | null>(null)
@@ -313,9 +317,32 @@ export default function RecordPage() {
     }
   }, [])
 
+  /** 미리 연결한 공유 스트림 정리(트랙 중지) */
+  const clearPresetShare = useCallback(() => {
+    presetShareRef.current?.getTracks().forEach((t) => t.stop())
+    presetShareRef.current = null
+    setPresetShareOn(false)
+    setPresetShareError('')
+  }, [])
+
+  /** 공유 스트림 소유권을 레코더로 넘길 때 — 트랙은 중지하지 않고 꺼내온다 */
+  const takePresetShare = useCallback((): MediaStream | undefined => {
+    const stream = presetShareRef.current
+    presetShareRef.current = null
+    setPresetShareOn(false)
+    setPresetShareError('')
+    return stream ?? undefined
+  }, [])
+
   /** 가상 오디오 장치를 찾아 컴퓨터 소리 레벨 미터 시작 — 없으면 안내만 표시 */
   const startSystemTestStream = useCallback(async () => {
     stopSystemTest()
+    // 미리 연결해둔 공유 스트림이 살아있으면 그 미터를 그대로 사용
+    const presetTrack = presetShareRef.current?.getAudioTracks()[0]
+    if (presetShareRef.current && presetTrack && presetTrack.readyState === 'live') {
+      startLevelMeter(presetShareRef.current, sysTestAudioContextRef, sysTestRafRef, setSysLevel)
+      return
+    }
     const helper = await helperStatus()
     setAudioHelper(helper)
     // 도우미가 있으면 모달을 보는 동안 잠깐 녹음 라우팅을 켜서 미터가 실제 레벨을 보여준다
@@ -342,6 +369,50 @@ export default function RecordPage() {
       /* 레벨 미터 실패는 치명적이지 않음 — 안내 문구는 그대로 표시 */
     }
   }, [startLevelMeter, stopSystemTest])
+
+  /**
+   * 화면 공유 미리 연결 — 가이드 팝업으로 순서를 안내하고, 확인 시 곧바로 공유 창을 연다.
+   * 성공하면 스트림을 붙잡아두고 미터에 연결 — 녹음 시작 때 팝업 없이 이 스트림을 쓴다.
+   */
+  const startShareGuide = async () => {
+    setPresetShareError('')
+    const ok = await confirm({
+      title: '컴퓨터 소리 연결',
+      message:
+        "확인을 누르면 화면 공유 선택 창이 열려요.\n\n1. [Chrome 탭] 또는 [전체 화면] 선택\n2. '오디오 공유' 스위치 켜기\n3. [공유] 버튼 누르기\n\n연결해두면 녹음 시작 시 팝업 없이 바로 시작되고, 컴퓨터 소리 음량을 미리 확인할 수 있어요.",
+      confirmLabel: '확인 — 공유 창 열기',
+    })
+    if (!ok) return
+    const captured = await requestDisplayAudio()
+    if (captured.result === 'on' && captured.stream) {
+      clearPresetShare()
+      presetShareRef.current = captured.stream
+      setPresetShareOn(true)
+      captured.track?.addEventListener('ended', () => {
+        // 브라우저의 '공유 중지' 등으로 연결이 끊긴 경우
+        presetShareRef.current = null
+        setPresetShareOn(false)
+      })
+      stopSystemTest()
+      startLevelMeter(captured.stream, sysTestAudioContextRef, sysTestRafRef, setSysLevel)
+    } else {
+      setPresetShareError(
+        captured.result === 'no-audio'
+          ? "공유는 됐지만 소리가 포함되지 않았어요 — [지금 연결하기]로 다시 연결하고 '오디오 공유'를 켜주세요."
+          : '공유가 취소되었어요. [지금 연결하기]로 다시 시도할 수 있어요.',
+      )
+    }
+  }
+
+  /** 소스 선택 직후, 화면 공유 경로 환경이면 미리 연결 가이드를 띄운다 */
+  const maybeOfferShareGuide = async () => {
+    if (!CAN_DISPLAY_CAPTURE) return
+    const presetTrack = presetShareRef.current?.getAudioTracks()[0]
+    if (presetTrack && presetTrack.readyState === 'live') return // 이미 연결됨
+    const helper = await helperStatus()
+    if (helper?.blackhole) return // 도우미가 자동 전환 — 공유 연결 불필요
+    await startShareGuide()
+  }
 
   const openMicTest = () => {
     if (starting || uploading || isLive) return
@@ -371,9 +442,11 @@ export default function RecordPage() {
     setRecordSource(source)
     if (source !== 'mic') {
       void startSystemTestStream()
+      void maybeOfferShareGuide()
     } else {
       stopSystemTest()
       releaseModalHelper()
+      clearPresetShare()
     }
   }
 
@@ -414,8 +487,9 @@ export default function RecordPage() {
       stopMicTest()
       stopSystemTest()
       releaseModalHelper()
+      clearPresetShare()
     }
-  }, [releaseModalHelper, stopMicTest, stopSystemTest])
+  }, [clearPresetShare, releaseModalHelper, stopMicTest, stopSystemTest])
 
   // 녹음/업로드 중 새로고침/탭 닫기 경고
   useEffect(() => {
@@ -613,6 +687,8 @@ export default function RecordPage() {
       const outcome = await recorder.start({
         deviceId: confirmedMicId || undefined,
         source: recordSource,
+        // 설정에서 미리 연결한 공유 스트림이 있으면 팝업 없이 그대로 사용 (소유권 이전)
+        presetSystemStream: recordSource !== 'mic' ? takePresetShare() : undefined,
       })
       if (!outcome.started) {
         // 컴퓨터 소리 전용 모드에서 소리를 얻지 못해 녹음이 시작되지 않음
@@ -1138,6 +1214,7 @@ export default function RecordPage() {
                         {recordSource !== 'mic' && (
                           <span className="record-sysaudio-note">
                             {recordSource === 'system' ? '🔊 컴퓨터 소리만 녹음' : '🎙️🔊 마이크 + 컴퓨터 소리 녹음'}
+                            {presetShareOn && ' · 공유 연결됨 ✓'}
                           </span>
                         )}
                       </article>
@@ -1428,7 +1505,26 @@ export default function RecordPage() {
 
           {recordSource !== 'mic' && CAN_DISPLAY_CAPTURE && (
             <div className="sys-source-status ok">
-              {audioHelper?.blackhole ? (
+              {presetShareOn ? (
+                <div className="sys-source-row">
+                  <span className="sys-source-copy">
+                    <strong>✅ 컴퓨터 소리 연결됨 — 녹음 시작 시 팝업 없이 바로 시작돼요</strong>
+                    <span>
+                      컴퓨터에서 소리를 재생하면 오른쪽 미터가 움직여요. 연결은 녹음을
+                      시작하거나 이 페이지를 벗어날 때까지 유지되고, 브라우저의 [공유 중지]로도
+                      끊을 수 있어요.
+                    </span>
+                  </span>
+                  <span
+                    className="mic-level-meter"
+                    aria-label={`컴퓨터 소리 레벨 ${Math.round(sysLevel * 100)}%`}
+                  >
+                    {Array.from({ length: 18 }).map((_, i) => (
+                      <span key={i} className={i < Math.round(sysLevel * 18) ? 'active' : ''} />
+                    ))}
+                  </span>
+                </div>
+              ) : audioHelper?.blackhole ? (
                 <div className="sys-source-row">
                   <span className="sys-source-copy">
                     <strong>🎛️ 오디오 도우미 연결됨 — 팝업 없이 자동으로 녹음돼요</strong>
@@ -1450,18 +1546,29 @@ export default function RecordPage() {
                   </span>
                 </div>
               ) : (
-                <span className="sys-source-copy">
-                  <strong>🔊 녹음 시작 시 화면 공유 창에서 소리만 켜면 돼요</strong>
-                  <span>
-                    공유 창에서 [전체 화면]이나 [탭]을 고르고 '오디오 공유'를 켜주세요. 시스템
-                    볼륨·출력 장치 설정은 바꾸지 않아서 볼륨 조절이 평소처럼 돼요. 스피커를
-                    음소거한 채 녹음하려면 [탭 공유]를 쓰세요 — 탭 소리는 음소거와 관계없이
-                    녹음돼요. 녹음 중 컴퓨터 소리가 안 들어오면 타이머 위 칩이 '무음 감지'로
-                    바뀌니 바로 알 수 있어요.
-                    {loopbackDevice &&
-                      ` 공유를 취소하면 감지된 가상 오디오 장치(${loopbackDevice.label})로 자동 전환돼요.`}
+                <>
+                  <span className="sys-source-copy">
+                    <strong>🔊 녹음 시작 전에 컴퓨터 소리를 연결해두세요</strong>
+                    <span>
+                      [지금 연결하기]를 누르면 화면 공유 창이 열려요 — [Chrome 탭]이나 [전체
+                      화면]을 고르고 '오디오 공유'를 켜면 컴퓨터 소리 음량을 미리 확인할 수
+                      있어요. 탭 공유는 스피커를 음소거해도 녹음돼요. 연결하지 않으면 녹음
+                      시작 시 공유 창이 떠요.
+                      {loopbackDevice &&
+                        ` 공유를 취소하면 감지된 가상 오디오 장치(${loopbackDevice.label})로 자동 전환돼요.`}
+                    </span>
                   </span>
-                </span>
+                  {presetShareError && (
+                    <span className="preset-share-error">{presetShareError}</span>
+                  )}
+                  <button
+                    type="button"
+                    className="btn btn-soft sys-recheck-btn"
+                    onClick={() => void startShareGuide()}
+                  >
+                    🔗 지금 연결하기
+                  </button>
+                </>
               )}
             </div>
           )}

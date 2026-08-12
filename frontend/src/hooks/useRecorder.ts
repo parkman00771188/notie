@@ -24,6 +24,8 @@ export type SystemSignal = 'none' | 'live' | 'silent'
 export interface RecorderStartOptions {
   deviceId?: string
   source?: RecordSource
+  /** 녹음 설정에서 미리 연결해둔 화면 공유 스트림 — 살아있으면 시작 시 팝업 없이 재사용 */
+  presetSystemStream?: MediaStream
 }
 
 export interface RecorderStartOutcome {
@@ -133,8 +135,9 @@ const DISPLAY_AUDIO_SUPPORTED =
 /**
  * 화면 공유 방식의 컴퓨터 소리 캡처 요청.
  * 사용자 클릭 제스처(transient activation)가 살아있는 동안 호출해야 한다.
+ * 녹음 설정의 '미리 연결' 흐름에서도 사용하므로 export.
  */
-async function requestDisplayAudio(): Promise<{
+export async function requestDisplayAudio(): Promise<{
   result: SystemAudioStartResult
   stream: MediaStream | null
   track: MediaStreamTrack | null
@@ -434,12 +437,21 @@ export function useRecorder(): UseRecorderReturn {
     let via: SystemAudioVia | undefined
     let systemStream: MediaStream | null = null
     if (wantSystem) {
-      // Mac 오디오 도우미가 있으면 '현재 출력 장치+BlackHole'로 자동 전환 — 팝업 없이 캡처
-      helperEngagedRef.current = await helperRecordOn()
-      const captured = await captureSystemAudio(helperEngagedRef.current)
-      systemAudioResult = captured.result
-      via = captured.via
-      systemStream = captured.stream
+      const preset = options.presetSystemStream
+      const presetTrack = preset?.getAudioTracks()[0]
+      if (preset && presetTrack && presetTrack.readyState === 'live') {
+        // 녹음 설정에서 미리 연결해둔 공유 스트림 재사용 — 시작 시 팝업 없음
+        systemAudioResult = 'on'
+        via = 'display'
+        systemStream = preset
+      } else {
+        // Mac 오디오 도우미가 있으면 '현재 출력 장치+BlackHole'로 자동 전환 — 팝업 없이 캡처
+        helperEngagedRef.current = await helperRecordOn()
+        const captured = await captureSystemAudio(helperEngagedRef.current)
+        systemAudioResult = captured.result
+        via = captured.via
+        systemStream = captured.stream
+      }
     }
 
     // 컴퓨터 소리 전용 모드에서 소리를 못 얻었으면 녹음을 시작하지 않는다

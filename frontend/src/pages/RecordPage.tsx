@@ -36,6 +36,19 @@ const IS_SAFARI =
   !/chrome|chromium|crios|edg|android/i.test(navigator.userAgent)
 const CAN_DISPLAY_CAPTURE =
   typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getDisplayMedia
+/** 화면 공유로 '소리'까지 받을 수 있는 환경 — Safari는 getDisplayMedia가 있어도 오디오 미지원 */
+const CAN_DISPLAY_AUDIO = CAN_DISPLAY_CAPTURE && !IS_SAFARI
+
+/** 공유 창 안내문에 쓸 브라우저별 명칭 — 공유 창의 탭 패널 이름이 브라우저마다 다르다 */
+const BROWSER = (() => {
+  const ua = typeof navigator !== 'undefined' ? navigator.userAgent : ''
+  if (/edg\//i.test(ua)) return { name: 'Edge', tab: 'Microsoft Edge 탭', shareAudioOk: true }
+  if (/whale\//i.test(ua)) return { name: 'Whale', tab: 'Whale 탭', shareAudioOk: true }
+  if (/opr\//i.test(ua)) return { name: 'Opera', tab: '브라우저 탭', shareAudioOk: true }
+  if (/firefox\//i.test(ua)) return { name: 'Firefox', tab: '창', shareAudioOk: false }
+  if (/chrome|chromium|crios/i.test(ua)) return { name: 'Chrome', tab: 'Chrome 탭', shareAudioOk: true }
+  return { name: '브라우저', tab: '브라우저 탭', shareAudioOk: true }
+})()
 
 // 녹음 소스는 세션 간 저장하지 않는다 — 페이지를 열 때마다 기본은 '마이크'
 function initialRecordSource(): RecordSource {
@@ -60,11 +73,11 @@ const SYSTEM_AUDIO_ISSUES: Partial<Record<SystemAudioStartResult, { title: strin
   },
   'system-denied': {
     title: 'macOS가 화면 녹화를 막고 있어요',
-    body: '[시스템 설정 열기]로 이동해 [화면 및 시스템 오디오 녹음]에서 사용 중인 브라우저를 허용해주세요. 적용하려면 브라우저를 완전히 종료했다가 다시 실행해야 해요.\n\n지금 당장은 [다시 시도]에서 [Chrome 탭] 공유를 선택하면 이 권한 없이도 탭 소리를 녹음할 수 있어요.',
+    body: `[시스템 설정 열기]로 이동해 [화면 및 시스템 오디오 녹음]에서 사용 중인 브라우저를 허용해주세요. 적용하려면 브라우저를 완전히 종료했다가 다시 실행해야 해요.\n\n지금 당장은 [다시 시도]에서 [${BROWSER.tab}] 공유를 선택하면 이 권한 없이도 탭 소리를 녹음할 수 있어요.`,
   },
   'no-audio': {
     title: '공유에 소리가 포함되지 않았어요',
-    body: "화면은 공유됐지만 소리가 들어오지 않았어요.\nChrome에서는 [다시 시도] 후 공유 창의 '오디오도 공유'를 켜주세요.\nSafari는 화면 공유 소리를 지원하지 않아요 — 녹음 설정에서 안내하는 가상 오디오 장치(BlackHole)를 설치하면 팝업 없이 녹음할 수 있어요.",
+    body: `화면은 공유됐지만 소리가 들어오지 않았어요.\n${BROWSER.name}에서는 [다시 시도] 후 공유 창의 '오디오 공유'를 켜주세요.\nSafari는 화면 공유 소리를 지원하지 않아요 — 녹음 설정에서 안내하는 가상 오디오 장치(BlackHole)를 설치하면 팝업 없이 녹음할 수 있어요.`,
   },
 }
 const RECORDING_NAVIGATION_TARGET_SELECTOR = [
@@ -378,8 +391,11 @@ export default function RecordPage() {
     setPresetShareError('')
     const ok = await confirm({
       title: '컴퓨터 소리 연결',
-      message:
-        "확인을 누르면 화면 공유 선택 창이 열려요.\n\n1. [Chrome 탭] 또는 [전체 화면] 선택\n2. '오디오 공유' 스위치 켜기\n3. [공유] 버튼 누르기\n\n연결해두면 녹음 시작 시 팝업 없이 바로 시작되고, 컴퓨터 소리 음량을 미리 확인할 수 있어요.",
+      message: `확인을 누르면 화면 공유 선택 창이 열려요.\n\n1. [${BROWSER.tab}] 또는 [전체 화면] 선택\n2. '오디오 공유' 스위치 켜기\n3. [공유] 버튼 누르기\n\n연결해두면 녹음 시작 시 팝업 없이 바로 시작되고, 컴퓨터 소리 음량을 미리 확인할 수 있어요.${
+        BROWSER.shareAudioOk
+          ? ''
+          : `\n\n⚠️ ${BROWSER.name}는 화면 공유 소리 캡처를 지원하지 않을 수 있어요 — Chrome 또는 Edge 사용을 권장해요.`
+      }`,
       confirmLabel: '확인 — 공유 창 열기',
     })
     if (!ok) return
@@ -406,7 +422,7 @@ export default function RecordPage() {
 
   /** 소스 선택 직후, 화면 공유 경로 환경이면 미리 연결 가이드를 띄운다 */
   const maybeOfferShareGuide = async () => {
-    if (!CAN_DISPLAY_CAPTURE) return
+    if (!CAN_DISPLAY_AUDIO) return
     const presetTrack = presetShareRef.current?.getAudioTracks()[0]
     if (presetTrack && presetTrack.readyState === 'live') return // 이미 연결됨
     const helper = await helperStatus()
@@ -1503,7 +1519,7 @@ export default function RecordPage() {
             <p className="record-source-desc">{selectedSourceOption.desc}</p>
           </div>
 
-          {recordSource !== 'mic' && CAN_DISPLAY_CAPTURE && (
+          {recordSource !== 'mic' && CAN_DISPLAY_AUDIO && (
             <div className="sys-source-status ok">
               {presetShareOn ? (
                 <div className="sys-source-row">
@@ -1550,10 +1566,10 @@ export default function RecordPage() {
                   <span className="sys-source-copy">
                     <strong>🔊 녹음 시작 전에 컴퓨터 소리를 연결해두세요</strong>
                     <span>
-                      [지금 연결하기]를 누르면 화면 공유 창이 열려요 — [Chrome 탭]이나 [전체
-                      화면]을 고르고 '오디오 공유'를 켜면 컴퓨터 소리 음량을 미리 확인할 수
-                      있어요. 탭 공유는 스피커를 음소거해도 녹음돼요. 연결하지 않으면 녹음
-                      시작 시 공유 창이 떠요.
+                      [지금 연결하기]를 누르면 화면 공유 창이 열려요 — [{BROWSER.tab}]이나
+                      [전체 화면]을 고르고 '오디오 공유'를 켜면 컴퓨터 소리 음량을 미리
+                      확인할 수 있어요. 탭 공유는 스피커를 음소거해도 녹음돼요. 연결하지
+                      않으면 녹음 시작 시 공유 창이 떠요.
                       {loopbackDevice &&
                         ` 공유를 취소하면 감지된 가상 오디오 장치(${loopbackDevice.label})로 자동 전환돼요.`}
                     </span>
@@ -1573,7 +1589,7 @@ export default function RecordPage() {
             </div>
           )}
 
-          {recordSource !== 'mic' && !CAN_DISPLAY_CAPTURE && (
+          {recordSource !== 'mic' && !CAN_DISPLAY_AUDIO && (
             <div className={`sys-source-status${loopbackDevice ? ' ok' : ''}`}>
               {loopbackDevice ? (
                 <div className="sys-source-row">

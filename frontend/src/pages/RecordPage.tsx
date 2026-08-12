@@ -11,7 +11,7 @@ import { TagPicker } from '../components/TagPicker'
 import { Waveform } from '../components/Waveform'
 import { findLoopbackDevice, isLoopbackDevice, useRecorder } from '../hooks/useRecorder'
 import type { RecordSource, SystemAudioStartResult } from '../hooks/useRecorder'
-import { helperStatus } from '../recordModeHelper'
+import { helperRecordOff, helperRecordOn, helperStatus } from '../recordModeHelper'
 import type { HelperStatus } from '../recordModeHelper'
 import type { Bookmark, Participant } from '../types'
 import { formatClock, formatKoreanDateTime, isValidDateInput } from '../utils'
@@ -23,7 +23,6 @@ const AUDIO_EXTENSIONS = ['.mp3', '.m4a', '.wav', '.webm', '.ogg', '.mp4', '.aac
 const RECORDING_NAVIGATION_MESSAGE = '녹음 중에는 취소 또는 종료 후 이동할 수 있어요.'
 const PREFERRED_MIC_ID_KEY = 'notie.preferredMicId'
 const PREFERRED_MIC_LABEL_KEY = 'notie.preferredMicLabel'
-const RECORD_SOURCE_KEY = 'notie.recordSource'
 const BLACKHOLE_INSTALL_CMD = 'brew install blackhole-2ch'
 const BLACKHOLE_DOWNLOAD_URL = 'https://existential.audio/blackhole/'
 
@@ -38,9 +37,8 @@ const IS_SAFARI =
 const CAN_DISPLAY_CAPTURE =
   typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getDisplayMedia
 
+// 녹음 소스는 세션 간 저장하지 않는다 — 페이지를 열 때마다 기본은 '마이크'
 function initialRecordSource(): RecordSource {
-  const saved = localStorage.getItem(RECORD_SOURCE_KEY)
-  if (saved === 'mic' || saved === 'system' || saved === 'both') return saved
   return 'mic'
 }
 
@@ -184,6 +182,8 @@ export default function RecordPage() {
   const sysTestStreamRef = useRef<MediaStream | null>(null)
   const sysTestAudioContextRef = useRef<AudioContext | null>(null)
   const sysTestRafRef = useRef<number | null>(null)
+  /** 모달 미터를 위해 도우미로 라우팅을 켜뒀는지 — 닫을 때 원래 출력으로 복귀시킨다 */
+  const modalHelperEngagedRef = useRef(false)
 
   // ---- 메모 ⋯ 메뉴 / 인라인 수정 ----
   const [menuOpenId, setMenuOpenId] = useState<number | null>(null)
@@ -305,10 +305,23 @@ export default function RecordPage() {
     setSysLevel(0)
   }, [])
 
+  /** 모달 미터용으로 켜둔 녹음 라우팅을 원래 출력으로 복귀 */
+  const releaseModalHelper = useCallback(() => {
+    if (modalHelperEngagedRef.current) {
+      modalHelperEngagedRef.current = false
+      helperRecordOff()
+    }
+  }, [])
+
   /** 가상 오디오 장치를 찾아 컴퓨터 소리 레벨 미터 시작 — 없으면 안내만 표시 */
   const startSystemTestStream = useCallback(async () => {
     stopSystemTest()
-    void helperStatus().then(setAudioHelper)
+    const helper = await helperStatus()
+    setAudioHelper(helper)
+    // 도우미가 있으면 모달을 보는 동안 잠깐 녹음 라우팅을 켜서 미터가 실제 레벨을 보여준다
+    if (helper?.blackhole && (await helperRecordOn())) {
+      modalHelperEngagedRef.current = true
+    }
     const loopback = await findLoopbackDevice()
     setLoopbackDevice(
       loopback ? { deviceId: loopback.deviceId, label: loopback.label || '가상 오디오 장치' } : null,
@@ -346,7 +359,8 @@ export default function RecordPage() {
     setMicTestError('')
     stopMicTest()
     stopSystemTest()
-  }, [stopMicTest, stopSystemTest])
+    releaseModalHelper()
+  }, [releaseModalHelper, stopMicTest, stopSystemTest])
 
   const handleSelectMic = (deviceId: string) => {
     setSelectedMicId(deviceId)
@@ -355,9 +369,12 @@ export default function RecordPage() {
 
   const handleSelectSource = (source: RecordSource) => {
     setRecordSource(source)
-    localStorage.setItem(RECORD_SOURCE_KEY, source)
-    if (source !== 'mic') void startSystemTestStream()
-    else stopSystemTest()
+    if (source !== 'mic') {
+      void startSystemTestStream()
+    } else {
+      stopSystemTest()
+      releaseModalHelper()
+    }
   }
 
   const handleConfirmMic = () => {
@@ -396,8 +413,9 @@ export default function RecordPage() {
     return () => {
       stopMicTest()
       stopSystemTest()
+      releaseModalHelper()
     }
-  }, [stopMicTest, stopSystemTest])
+  }, [releaseModalHelper, stopMicTest, stopSystemTest])
 
   // 녹음/업로드 중 새로고침/탭 닫기 경고
   useEffect(() => {
@@ -1411,15 +1429,26 @@ export default function RecordPage() {
           {recordSource !== 'mic' && CAN_DISPLAY_CAPTURE && (
             <div className="sys-source-status ok">
               {audioHelper?.blackhole ? (
-                <span className="sys-source-copy">
-                  <strong>🎛️ 오디오 도우미 연결됨 — 팝업 없이 자동으로 녹음돼요</strong>
-                  <span>
-                    녹음을 시작하면 지금 듣고 있는 출력({audioHelper.output})에 BlackHole이
-                    잠깐 결합되어 컴퓨터 소리가 그대로 녹음되고, 종료하면 원래 출력으로 자동
-                    복귀해요. 에어팟·헤드폰을 껴도 소리는 계속 그쪽으로 들려요. 녹음 중
-                    소리가 안 들어오면 타이머 위 칩이 '무음 감지'로 바뀌어요.
+                <div className="sys-source-row">
+                  <span className="sys-source-copy">
+                    <strong>🎛️ 오디오 도우미 연결됨 — 팝업 없이 자동으로 녹음돼요</strong>
+                    <span>
+                      녹음을 시작하면 지금 듣고 있는 출력({audioHelper.output})에 BlackHole이
+                      잠깐 결합되어 컴퓨터 소리가 그대로 녹음되고, 종료하면 원래 출력으로 자동
+                      복귀해요. 에어팟·헤드폰을 껴도 소리는 계속 그쪽으로 들리고, 스피커를
+                      음소거해 둔 상태여도 컴퓨터 소리는 원음 그대로 녹음돼요. 컴퓨터에서
+                      소리를 재생하면 오른쪽 미터가 움직여요.
+                    </span>
                   </span>
-                </span>
+                  <span
+                    className="mic-level-meter"
+                    aria-label={`컴퓨터 소리 레벨 ${Math.round(sysLevel * 100)}%`}
+                  >
+                    {Array.from({ length: 18 }).map((_, i) => (
+                      <span key={i} className={i < Math.round(sysLevel * 18) ? 'active' : ''} />
+                    ))}
+                  </span>
+                </div>
               ) : (
                 <span className="sys-source-copy">
                   <strong>🔊 녹음 시작 시 화면 공유 창에서 소리만 켜면 돼요</strong>
@@ -1448,8 +1477,9 @@ export default function RecordPage() {
                       재생하면 오른쪽 미터가 움직여요. 소리를 재생해도 미터가 멈춰 있으면
                       시스템 사운드 출력이 {loopbackDevice.label}이(가) 포함된 다중 출력
                       장치로 설정되어 있는지 확인해주세요 — 장치만 설치하면 소리가 무음으로
-                      녹음돼요. 이 방식에서는 스피커를 음소거하거나 볼륨을 0으로 내리면
-                      녹음도 무음이 되니, 조용히 녹음하려면 볼륨을 최소로만 낮춰주세요.
+                      녹음돼요. 다중 출력 장치를 직접 만들 때는 {loopbackDevice.label}을(를)
+                      목록 맨 위(메인)로 두어야 스피커를 음소거해도 녹음이 유지돼요. Notie
+                      오디오 도우미를 설치하면 이 전환이 녹음 시작·종료에 맞춰 자동으로 돼요.
                     </span>
                   </span>
                   <span

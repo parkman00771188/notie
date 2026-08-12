@@ -83,9 +83,8 @@ func aggregateDevice() -> AudioDeviceID? {
     deviceIDs().first { devUID($0) == AGG_UID }
 }
 
-/// 메인 출력 장치 음소거 해제 + 볼륨 10% 미만이면 10%로 — 메인 서브 장치가 음소거/볼륨0이면
-/// macOS가 다중 출력 전체(BlackHole 피드 포함)를 무음 처리하기 때문(실측).
-func ensureAudible(_ dev: AudioDeviceID) {
+/// BlackHole 음소거 해제 + 볼륨 1.0 — 볼륨이 낮으면 녹음 피드가 감쇠되기 때문
+func ensureBlackholeFull(_ dev: AudioDeviceID) {
     var muteAddr = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyMute, mScope: kAudioDevicePropertyScopeOutput, mElement: kAudioObjectPropertyElementMain)
     if AudioObjectHasProperty(dev, &muteAddr) {
         var off: UInt32 = 0
@@ -94,36 +93,33 @@ func ensureAudible(_ dev: AudioDeviceID) {
     for element in [UInt32(0), 1, 2] {
         var volAddr = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyVolumeScalar, mScope: kAudioDevicePropertyScopeOutput, mElement: element)
         if AudioObjectHasProperty(dev, &volAddr) {
-            var v: Float32 = 0
-            var size = UInt32(4)
-            AudioObjectGetPropertyData(dev, &volAddr, 0, nil, &size, &v)
-            if v < 0.1 {
-                var minV: Float32 = 0.1
-                AudioObjectSetPropertyData(dev, &volAddr, 0, nil, 4, &minV)
-            }
+            var full: Float32 = 1.0
+            AudioObjectSetPropertyData(dev, &volAddr, 0, nil, 4, &full)
         }
     }
 }
 
-/// 집계 장치의 메인 서브 장치 UID
-func aggregateMainUID(_ agg: AudioDeviceID) -> String? {
-    var addr = AudioObjectPropertyAddress(mSelector: kAudioAggregateDevicePropertyMainSubDevice, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
-    guard AudioObjectHasProperty(agg, &addr) else { return nil }
-    var cf: CFString? = nil
-    var size = UInt32(MemoryLayout<CFString?>.size)
+/// 집계 장치의 서브 장치 UID 목록
+func fullSubDeviceList(_ agg: AudioDeviceID) -> [String] {
+    var addr = AudioObjectPropertyAddress(mSelector: kAudioAggregateDevicePropertyFullSubDeviceList, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+    guard AudioObjectHasProperty(agg, &addr) else { return [] }
+    var cf: CFArray? = nil
+    var size = UInt32(MemoryLayout<CFArray?>.size)
     let st = withUnsafeMutablePointer(to: &cf) { AudioObjectGetPropertyData(agg, &addr, 0, nil, &size, $0) }
-    guard st == noErr, let v = cf else { return nil }
-    return v as String
+    guard st == noErr, let arr = cf as? [String] else { return [] }
+    return arr
 }
 
-/// '지금 듣고 있는 출력 장치(main) + BlackHole' 조합의 다중 출력 장치 확보.
-/// 스피커든 에어팟이든 현재 장치를 그대로 유지한 채 BlackHole로만 복사본을 보낸다.
-func ensureAggregate(main: AudioDeviceID) -> AudioDeviceID? {
-    guard let mainUID = strProp(main, kAudioDevicePropertyDeviceUID),
+/// 'BlackHole(메인) + 현재 출력 장치' 조합의 다중 출력 장치 확보.
+/// macOS는 메인 서브 장치의 음소거·볼륨0을 전체 스트림에 적용하므로(실측),
+/// 항상 켜져 있는 BlackHole을 메인으로 두면 스피커·에어팟을 음소거해도
+/// 녹음 피드는 원음 그대로 유지되고, 실제 장치는 자기 음소거 상태를 따라 무음이 된다.
+func ensureAggregate(output: AudioDeviceID) -> AudioDeviceID? {
+    guard let outUID = strProp(output, kAudioDevicePropertyDeviceUID),
           let bh = blackholeDevice(), let bhUID = strProp(bh, kAudioDevicePropertyDeviceUID) else { return nil }
     if let existing = aggregateDevice() {
-        if aggregateMainUID(existing) == mainUID { return existing }
-        // 출력 장치가 바뀌었으면(스피커→에어팟 등) 새 조합으로 재생성
+        if fullSubDeviceList(existing) == [bhUID, outUID] { return existing }
+        // 출력 장치가 바뀌었거나(스피커→에어팟) 구버전 조합이면 새로 생성
         AudioHardwareDestroyAggregateDevice(existing)
         usleep(300_000)
     }
@@ -131,10 +127,10 @@ func ensureAggregate(main: AudioDeviceID) -> AudioDeviceID? {
         kAudioAggregateDeviceNameKey as String: AGG_NAME,
         kAudioAggregateDeviceUIDKey as String: AGG_UID,
         kAudioAggregateDeviceIsStackedKey as String: 1,
-        kAudioAggregateDeviceMainSubDeviceKey as String: mainUID,
+        kAudioAggregateDeviceMainSubDeviceKey as String: bhUID,
         kAudioAggregateDeviceSubDeviceListKey as String: [
-            [kAudioSubDeviceUIDKey as String: mainUID],
-            [kAudioSubDeviceUIDKey as String: bhUID, kAudioSubDeviceDriftCompensationKey as String: 1],
+            [kAudioSubDeviceUIDKey as String: bhUID],
+            [kAudioSubDeviceUIDKey as String: outUID, kAudioSubDeviceDriftCompensationKey as String: 1],
         ],
     ]
     var newID = AudioDeviceID(0)
@@ -150,35 +146,38 @@ var savedOutputUID: String? = nil
 
 func statusJSON() -> String {
     let current = defaultOutput()
-    let mode = devUID(current) == AGG_UID ? "record" : "normal"
+    let isRecord = devUID(current) == AGG_UID
     let hasBH = blackholeDevice() != nil
-    let outName = devName(current).replacingOccurrences(of: "\"", with: "")
-    return "{\"helper\":\"notie\",\"version\":1,\"mode\":\"\(mode)\",\"blackhole\":\(hasBH),\"output\":\"\(outName)\"}"
+    // 녹음 모드 중에는 집계 장치명 대신 사용자가 실제로 듣는 원래 장치 이름을 알려준다
+    var outName = devName(current)
+    if isRecord, let saved = savedOutputUID,
+       let orig = deviceIDs().first(where: { devUID($0) == saved }) {
+        outName = devName(orig)
+    }
+    outName = outName.replacingOccurrences(of: "\"", with: "")
+    return "{\"helper\":\"notie\",\"version\":1,\"mode\":\"\(isRecord ? "record" : "normal")\",\"blackhole\":\(hasBH),\"output\":\"\(outName)\"}"
 }
 
 func recordOn() -> (String, String) {
-    guard blackholeDevice() != nil else {
+    guard let bh = blackholeDevice() else {
         return ("409 Conflict", "{\"ok\":false,\"error\":\"blackhole-missing\"}")
     }
+    ensureBlackholeFull(bh)
     let current = defaultOutput()
     if devUID(current) == AGG_UID {
-        // 이미 녹음 모드 — 메인 장치 볼륨만 재보장
-        if let mainUID = aggregateMainUID(current),
-           let main = deviceIDs().first(where: { devUID($0) == mainUID }) {
-            ensureAudible(main)
-        }
-        return ("200 OK", "{\"ok\":true,\"mode\":\"record\"}")
+        return ("200 OK", "{\"ok\":true,\"mode\":\"record\"}") // 이미 녹음 모드
     }
-    guard let agg = ensureAggregate(main: current) else {
+    guard let agg = ensureAggregate(output: current) else {
         return ("500 Internal Server Error", "{\"ok\":false,\"error\":\"aggregate-failed\"}")
     }
     savedOutputUID = devUID(current)
-    ensureAudible(current)
+    // 사용자의 스피커·에어팟 음소거/볼륨은 건드리지 않는다 — BlackHole이 메인이라
+    // 실제 장치가 음소거여도 녹음 피드는 살아있다.
     guard setDefaultOutput(agg) else {
         return ("500 Internal Server Error", "{\"ok\":false,\"error\":\"switch-failed\"}")
     }
     usleep(350_000) // 라우팅 안정화 후 응답 — 곧바로 캡처가 시작되기 때문
-    NSLog("record-on: '\(devName(current))'+BlackHole 다중 출력으로 전환")
+    NSLog("record-on: BlackHole+'\(devName(current))' 다중 출력으로 전환")
     return ("200 OK", "{\"ok\":true,\"mode\":\"record\"}")
 }
 

@@ -68,55 +68,62 @@ if uid(defaultOutput()) == AGG_UID {
     guard let sp = speaker, setDefaultOutput(sp) else { print("❌ 스피커 전환 실패"); exit(1) }
     print("🔈 일반 모드: 출력을 '\(name(sp))'로 전환했습니다. 볼륨 키를 쓸 수 있어요.")
 } else {
-    // 일반 모드 → 녹음 모드 (다중 출력 장치가 없으면 생성)
-    if agg == nil {
-        guard let sp = speaker, let spUID = strProp(sp, kAudioDevicePropertyDeviceUID),
-              let bh = devs.first(where: { name($0).contains("BlackHole") && outCh($0) > 0 }),
-              let bhUID = strProp(bh, kAudioDevicePropertyDeviceUID) else {
-            print("❌ BlackHole 장치를 찾지 못했습니다. https://existential.audio/blackhole/ 에서 설치해주세요.")
-            exit(1)
+    // 일반 모드 → 녹음 모드: 'BlackHole(메인) + 현재 출력 장치' 다중 출력.
+    // BlackHole이 메인이라 스피커·에어팟을 음소거해도 녹음 피드는 원음 그대로 유지된다(실측).
+    let current = defaultOutput()
+    guard let curUID = strProp(current, kAudioDevicePropertyDeviceUID),
+          let bh = devs.first(where: { name($0).contains("BlackHole") && outCh($0) > 0 }),
+          let bhUID = strProp(bh, kAudioDevicePropertyDeviceUID) else {
+        print("❌ BlackHole 장치를 찾지 못했습니다. https://existential.audio/blackhole/ 에서 설치해주세요.")
+        exit(1)
+    }
+    // BlackHole 음소거 해제 + 볼륨 1.0 (낮으면 녹음이 감쇠됨)
+    var bhMute = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyMute, mScope: kAudioDevicePropertyScopeOutput, mElement: kAudioObjectPropertyElementMain)
+    if AudioObjectHasProperty(bh, &bhMute) {
+        var off: UInt32 = 0
+        AudioObjectSetPropertyData(bh, &bhMute, 0, nil, 4, &off)
+    }
+    for element in [UInt32(0), 1, 2] {
+        var volAddr = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyVolumeScalar, mScope: kAudioDevicePropertyScopeOutput, mElement: element)
+        if AudioObjectHasProperty(bh, &volAddr) {
+            var full: Float32 = 1.0
+            AudioObjectSetPropertyData(bh, &volAddr, 0, nil, 4, &full)
         }
+    }
+    // 구성이 다르면(구버전/다른 출력 장치) 재생성
+    if let existing = agg {
+        var subAddr = AudioObjectPropertyAddress(mSelector: kAudioAggregateDevicePropertyFullSubDeviceList, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        var cf: CFArray? = nil
+        var size = UInt32(MemoryLayout<CFArray?>.size)
+        let st = withUnsafeMutablePointer(to: &cf) { AudioObjectGetPropertyData(existing, &subAddr, 0, nil, &size, $0) }
+        let subs = (st == noErr ? cf as? [String] : nil) ?? []
+        if subs != [bhUID, curUID] {
+            AudioHardwareDestroyAggregateDevice(existing)
+            usleep(300_000)
+            agg = nil
+        }
+    }
+    if agg == nil {
         let desc: [String: Any] = [
             kAudioAggregateDeviceNameKey as String: AGG_NAME,
             kAudioAggregateDeviceUIDKey as String: AGG_UID,
             kAudioAggregateDeviceIsStackedKey as String: 1,
-            kAudioAggregateDeviceMainSubDeviceKey as String: spUID,
+            kAudioAggregateDeviceMainSubDeviceKey as String: bhUID,
             kAudioAggregateDeviceSubDeviceListKey as String: [
-                [kAudioSubDeviceUIDKey as String: spUID],
-                [kAudioSubDeviceUIDKey as String: bhUID, kAudioSubDeviceDriftCompensationKey as String: 1],
+                [kAudioSubDeviceUIDKey as String: bhUID],
+                [kAudioSubDeviceUIDKey as String: curUID, kAudioSubDeviceDriftCompensationKey as String: 1],
             ],
         ]
         var newID = AudioDeviceID(0)
         guard AudioHardwareCreateAggregateDevice(desc as CFDictionary, &newID) == noErr, newID != 0 else {
             print("❌ 다중 출력 장치 생성 실패"); exit(1)
         }
-        usleep(300_000)
+        usleep(400_000)
         agg = newID
     }
     guard let device = agg, setDefaultOutput(device) else { print("❌ 녹음 모드 전환 실패"); exit(1) }
-    // macOS는 메인 서브 장치(스피커)의 음소거·볼륨0을 다중 출력 전체에 적용해
-    // BlackHole 피드까지 무음이 된다(실측). 녹음이 죽지 않도록 최소 볼륨을 보장한다.
-    if let sp = speaker {
-        var muteAddr = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyMute, mScope: kAudioDevicePropertyScopeOutput, mElement: kAudioObjectPropertyElementMain)
-        if AudioObjectHasProperty(sp, &muteAddr) {
-            var off: UInt32 = 0
-            AudioObjectSetPropertyData(sp, &muteAddr, 0, nil, 4, &off)
-        }
-        for element in [UInt32(0), 1, 2] {
-            var volAddr = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyVolumeScalar, mScope: kAudioDevicePropertyScopeOutput, mElement: element)
-            if AudioObjectHasProperty(sp, &volAddr) {
-                var v: Float32 = 0; var size = UInt32(4)
-                AudioObjectGetPropertyData(sp, &volAddr, 0, nil, &size, &v)
-                if v < 0.1 {
-                    var minV: Float32 = 0.1
-                    AudioObjectSetPropertyData(sp, &volAddr, 0, nil, 4, &minV)
-                }
-            }
-        }
-        print("   스피커 음소거를 해제하고 볼륨을 최소 10%로 맞췄어요 — 음소거/볼륨0이면 녹음도 무음이 되기 때문이에요.")
-    }
-    print("🎙️ 녹음 모드: 컴퓨터 소리가 BlackHole로도 전달됩니다. (볼륨 키는 이 모드에서 비활성)")
-    print("   완전 무음으로 녹음하려면 Chrome에서 [탭 공유 + 오디오 공유]를 사용하세요.")
+    print("🎙️ 녹음 모드: 컴퓨터 소리가 BlackHole로 전달됩니다.")
+    print("   스피커·에어팟이 음소거여도 녹음에는 원음이 그대로 담겨요. (볼륨 키는 이 모드에서 비활성)")
 }
 SWIFT_EOF
 

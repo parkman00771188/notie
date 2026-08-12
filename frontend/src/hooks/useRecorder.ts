@@ -144,10 +144,14 @@ async function requestDisplayAudio(): Promise<{
   }
   try {
     const stream = await navigator.mediaDevices.getDisplayMedia({
-      video: true,
+      // 탭 패널이 기본으로 열리게 힌트 — 탭 오디오는 스피커 음소거와 무관하게 캡처된다
+      // (Windows 전체 화면 공유는 시스템 음소거 시 무음이 되는 OS 제약이 있음)
+      video: { displaySurface: 'browser' },
       audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
-      // Chromium 전용 힌트: 전체 화면 공유 시에도 시스템 오디오 옵션 노출
+      // Chromium 전용 힌트들: 시스템 오디오 옵션 노출, 자기 자신 탭 제외, 전체 화면도 선택 가능
       systemAudio: 'include',
+      selfBrowserSurface: 'exclude',
+      monitorTypeSurfaces: 'include',
     } as MediaStreamConstraints)
     const track = stream.getAudioTracks()[0] ?? null
     if (!track) {

@@ -39,6 +39,13 @@ const CAN_DISPLAY_CAPTURE =
 /** 화면 공유로 '소리'까지 받을 수 있는 환경 — Safari는 getDisplayMedia가 있어도 오디오 미지원 */
 const CAN_DISPLAY_AUDIO = CAN_DISPLAY_CAPTURE && !IS_SAFARI
 
+/** 모바일 기기 — 컴퓨터 소리 캡처(화면 공유 오디오·가상 오디오 장치)가 불가능해 마이크만 노출 */
+const IS_MOBILE_DEVICE =
+  typeof navigator !== 'undefined' &&
+  (/android|iphone|ipad|ipod|windows phone|mobile/i.test(navigator.userAgent) ||
+    // iPadOS 13+는 데스크톱(Macintosh) UA를 쓰므로 터치 지점 수로 구분
+    (/mac/i.test(navigator.userAgent) && navigator.maxTouchPoints > 1))
+
 /** 공유 창 안내문에 쓸 브라우저별 명칭 — 공유 창의 탭 패널 이름이 브라우저마다 다르다 */
 const BROWSER = (() => {
   const ua = typeof navigator !== 'undefined' ? navigator.userAgent : ''
@@ -1491,9 +1498,14 @@ export default function RecordPage() {
 
       <Modal open={micTestOpen} title="녹음 설정" width={520} onClose={closeMicTest}>
         <div className="mic-test-modal">
-          <p className="mic-test-desc">무엇을 녹음할지 고르고, 장치를 확인해주세요.</p>
+          <p className="mic-test-desc">
+            {IS_MOBILE_DEVICE
+              ? '녹음에 사용할 마이크를 확인해주세요.'
+              : '무엇을 녹음할지 고르고, 장치를 확인해주세요.'}
+          </p>
           {micTestError && <div className="mic-test-error">{micTestError}</div>}
 
+          {!IS_MOBILE_DEVICE && (
           <div className="mic-modal-section">
             <h3 className="mic-modal-section-title">녹음 소스</h3>
             <div className="record-source-grid" role="radiogroup" aria-label="녹음 소스">
@@ -1518,6 +1530,7 @@ export default function RecordPage() {
             </div>
             <p className="record-source-desc">{selectedSourceOption.desc}</p>
           </div>
+          )}
 
           {recordSource !== 'mic' && CAN_DISPLAY_AUDIO && (
             <div className="sys-source-status ok">

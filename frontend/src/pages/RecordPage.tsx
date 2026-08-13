@@ -84,7 +84,7 @@ const SYSTEM_AUDIO_ISSUES: Partial<Record<SystemAudioStartResult, { title: strin
   },
   'no-audio': {
     title: '공유에 소리가 포함되지 않았어요',
-    body: `화면은 공유됐지만 소리가 들어오지 않았어요.\n${BROWSER.name}에서는 [다시 시도] 후 공유 창의 '오디오 공유'를 켜주세요.\nSafari는 화면 공유 소리를 지원하지 않아요 — 녹음 설정에서 안내하는 가상 오디오 장치(BlackHole)를 설치하면 팝업 없이 녹음할 수 있어요.`,
+    body: `화면은 공유됐지만 소리가 들어오지 않았어요.\n[창] 공유는 소리를 지원하지 않고, Mac에서는 [전체 화면]도 안 될 수 있어요.\n[다시 시도]를 눌러 회의·영상이 열려 있는 [${BROWSER.tab}]을 고르고 '오디오도 공유'를 켜주세요.`,
   },
 }
 const RECORDING_NAVIGATION_TARGET_SELECTOR = [
@@ -398,7 +398,7 @@ export default function RecordPage() {
     setPresetShareError('')
     const ok = await confirm({
       title: '컴퓨터 소리 연결',
-      message: `확인을 누르면 화면 공유 선택 창이 열려요.\n\n1. [${BROWSER.tab}] 또는 [전체 화면] 선택\n2. '오디오 공유' 스위치 켜기\n3. [공유] 버튼 누르기\n\n연결해두면 녹음 시작 시 팝업 없이 바로 시작되고, 컴퓨터 소리 음량을 미리 확인할 수 있어요.${
+      message: `확인을 누르면 화면 공유 선택 창이 열려요.\n\n1. [${BROWSER.tab}]에서 회의·영상이 열려 있는 탭 선택\n   (Google Meet도 Meet이 열린 탭을 고르면 돼요)\n2. '오디오도 공유' 스위치 켜기\n3. [공유] 버튼 누르기\n\n⚠️ [창] 공유는 소리가 담기지 않고, Mac에서는 [전체 화면]도 소리가 안 될 수 있어요 — 탭 선택이 가장 확실해요.\n\n연결해두면 녹음 시작 시 팝업 없이 바로 시작되고, 컴퓨터 소리 음량을 미리 확인할 수 있어요.${
         BROWSER.shareAudioOk
           ? ''
           : `\n\n⚠️ ${BROWSER.name}는 화면 공유 소리 캡처를 지원하지 않을 수 있어요 — Chrome 또는 Edge 사용을 권장해요.`
@@ -421,7 +421,7 @@ export default function RecordPage() {
     } else {
       setPresetShareError(
         captured.result === 'no-audio'
-          ? "공유는 됐지만 소리가 포함되지 않았어요 — [지금 연결하기]로 다시 연결하고 '오디오 공유'를 켜주세요."
+          ? `공유는 됐지만 소리가 포함되지 않았어요 — [창] 공유는 소리를 지원하지 않고, Mac은 [전체 화면]도 안 될 수 있어요. [지금 연결하기]로 다시 열어 회의·영상이 있는 [${BROWSER.tab}]을 고르고 '오디오도 공유'를 켜주세요.`
           : '공유가 취소되었어요. [지금 연결하기]로 다시 시도할 수 있어요.',
       )
     }
@@ -1579,10 +1579,11 @@ export default function RecordPage() {
                   <span className="sys-source-copy">
                     <strong>🔊 녹음 시작 전에 컴퓨터 소리를 연결해두세요</strong>
                     <span>
-                      [지금 연결하기]를 누르면 화면 공유 창이 열려요 — [{BROWSER.tab}]이나
-                      [전체 화면]을 고르고 '오디오 공유'를 켜면 컴퓨터 소리 음량을 미리
-                      확인할 수 있어요. 탭 공유는 스피커를 음소거해도 녹음돼요. 연결하지
-                      않으면 녹음 시작 시 공유 창이 떠요.
+                      [지금 연결하기]를 누르면 화면 공유 창이 열려요 — Google Meet 등
+                      회의·영상이 열려 있는 [{BROWSER.tab}]을 고르고 '오디오도 공유'를 켜면
+                      컴퓨터 소리 음량을 미리 확인할 수 있어요. 탭 공유는 스피커를 음소거해도
+                      녹음돼요. ⚠️ [창] 공유는 소리가 안 담기고, Mac은 [전체 화면]도 안 될 수
+                      있으니 탭을 선택해주세요.
                       {loopbackDevice &&
                         ` 공유를 취소하면 감지된 가상 오디오 장치(${loopbackDevice.label})로 자동 전환돼요.`}
                     </span>

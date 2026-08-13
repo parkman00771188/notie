@@ -20,7 +20,13 @@ async function helperFetch(path: string, init?: RequestInit, timeoutMs = 1500): 
   const ctrl = new AbortController()
   const timer = window.setTimeout(() => ctrl.abort(), timeoutMs)
   try {
-    const res = await fetch(`${HELPER_BASE}${path}`, { ...init, signal: ctrl.signal })
+    const res = await fetch(`${HELPER_BASE}${path}`, {
+      ...init,
+      signal: ctrl.signal,
+      // HTTPS 페이지에서 루프백(127.0.0.1)으로 요청할 때 Chrome의
+      // Local Network Access 정책을 통과하기 위한 명시 — 미지원 브라우저는 무시한다
+      targetAddressSpace: 'local',
+    } as RequestInit)
     return res.ok ? res : null
   } catch {
     return null

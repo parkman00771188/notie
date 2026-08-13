@@ -572,7 +572,7 @@ export const AudioPlayerCard = forwardRef<AudioPlayerCardHandle, AudioPlayerCard
             title="10초 뒤로"
             aria-label="10초 뒤로"
           >
-            ↺10
+            ⏪
           </button>
           <button
             className="btn btn-primary btn-lg audio-player-play"
@@ -588,7 +588,7 @@ export const AudioPlayerCard = forwardRef<AudioPlayerCardHandle, AudioPlayerCard
             title="10초 앞으로"
             aria-label="10초 앞으로"
           >
-            10↻
+            ⏩
           </button>
           {onAddMark && (
             <button
@@ -629,7 +629,7 @@ export const AudioPlayerCard = forwardRef<AudioPlayerCardHandle, AudioPlayerCard
                   aria-label="10초 뒤로"
                   title="10초 뒤로"
                 >
-                  ↺10
+                  ⏪
                 </button>
                 <button
                   type="button"
@@ -647,7 +647,7 @@ export const AudioPlayerCard = forwardRef<AudioPlayerCardHandle, AudioPlayerCard
                   aria-label="10초 앞으로"
                   title="10초 앞으로"
                 >
-                  10↻
+                  ⏩
                 </button>
                 <div className="mini-player-info">
                   {title && <span className="mini-player-title">{title}</span>}

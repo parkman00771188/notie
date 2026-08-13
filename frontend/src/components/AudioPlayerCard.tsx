@@ -557,6 +557,32 @@ export const AudioPlayerCard = forwardRef<AudioPlayerCardHandle, AudioPlayerCard
         {/* 실제 재생은 숨긴 audio 엘리먼트가 담당 */}
         <audio ref={audioRef} className="audio-player-audio" src={src} preload="auto" />
 
+        {onDownload && (
+          <button
+            type="button"
+            className="audio-download-btn"
+            onClick={onDownload}
+            title="음성 파일 다운로드"
+            aria-label="음성 파일 다운로드"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              width="18"
+              height="18"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M12 4v11" />
+              <path d="m7 11 5 5 5-5" />
+              <path d="M5 20h14" />
+            </svg>
+          </button>
+        )}
+
         <div className="audio-player-timer">
           <span className="audio-player-current">{formatClock(currentSec)}</span>
           <span className="audio-player-total">/ {formatClock(duration)}</span>
@@ -625,15 +651,6 @@ export const AudioPlayerCard = forwardRef<AudioPlayerCardHandle, AudioPlayerCard
               title="현재 재생 시간에 마크를 추가합니다"
             >
               🔖 마크 추가
-            </button>
-          )}
-          {onDownload && (
-            <button
-              className="btn btn-soft"
-              onClick={onDownload}
-              title="음성 파일을 다운로드합니다"
-            >
-              ⬇ 음성 저장
             </button>
           )}
         </div>

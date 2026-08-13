@@ -1,9 +1,35 @@
 /* ===== AudioPlayerCard — 레코더 카드 무드의 오디오 재생 UI ===== */
 .audio-player-card {
+  position: relative; /* 우상단 다운로드 버튼 기준점 */
   padding: 28px 32px;
   display: flex;
   flex-direction: column;
   gap: 18px;
+}
+
+/* 카드 우상단 음성 다운로드 아이콘 버튼 */
+.audio-download-btn {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--text-2);
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
+}
+
+.audio-download-btn:hover {
+  background: var(--gray-soft);
+  border-color: var(--border-strong);
 }
 
 /* 실제 재생용 audio 엘리먼트는 숨김 */

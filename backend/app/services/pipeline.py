@@ -74,7 +74,21 @@ def _run_full_job(meeting_id: int) -> None:
         try:
             from . import waveform
 
-            waveform.get_peaks(audio_path)
+            wf = waveform.get_peaks(audio_path)
+            # MediaRecorder가 만든 webm은 길이 메타데이터가 없어 브라우저가 duration을
+            # 못 읽고 0으로 업로드될 수 있다 — 디코드로 얻은 실제 길이로 보정한다.
+            actual = float(wf.get("duration_sec") or 0)
+            stored = float(meeting.get("duration_sec") or 0)
+            if actual > 0 and (stored <= 0 or abs(actual - stored) > max(3.0, stored * 0.2)):
+                with conn:
+                    conn.execute(
+                        "UPDATE meetings SET duration_sec = ? WHERE id = ?",
+                        (round(actual, 2), meeting_id),
+                    )
+                logger.info(
+                    "pipeline: duration_sec 보정 %.1fs → %.1fs (meeting %s)",
+                    stored, actual, meeting_id,
+                )
         except Exception:
             logger.warning("pipeline: 파형 계산 실패 — 요청 시 재계산됨 (meeting %s)", meeting_id)
         _ensure_status(conn, meeting_id, "transcribing")

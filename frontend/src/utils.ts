@@ -80,3 +80,39 @@ export const STATUS_TONE: Record<MeetingStatus, 'green' | 'gray' | 'blue' | 'red
   done: 'green',
   failed: 'red',
 }
+
+/**
+ * 오디오 파일 길이(초) 읽기.
+ * MediaRecorder가 만든 webm은 길이 메타데이터가 없어 duration이 Infinity로 나온다 —
+ * 그 경우 끝으로 시크해 브라우저가 계산한 실제 길이를 durationchange로 받는다.
+ * 실패/시간 초과 시 0 (서버 파이프라인이 디코드 길이로 보정).
+ */
+export function readAudioDuration(file: File): Promise<number> {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file)
+    const audio = new Audio()
+    let settled = false
+    let timer = 0
+    const done = (sec: number) => {
+      if (settled) return
+      settled = true
+      window.clearTimeout(timer)
+      URL.revokeObjectURL(url)
+      resolve(Number.isFinite(sec) && sec > 0 ? sec : 0)
+    }
+    timer = window.setTimeout(() => done(0), 15000)
+    audio.preload = 'metadata'
+    audio.onloadedmetadata = () => {
+      if (Number.isFinite(audio.duration) && audio.duration > 0) {
+        done(audio.duration)
+        return
+      }
+      audio.ondurationchange = () => {
+        if (Number.isFinite(audio.duration) && audio.duration > 0) done(audio.duration)
+      }
+      audio.currentTime = 1e101
+    }
+    audio.onerror = () => done(0)
+    audio.src = url
+  })
+}

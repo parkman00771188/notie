@@ -14,7 +14,7 @@ import type { RecordSource, SystemAudioStartResult } from '../hooks/useRecorder'
 import { helperRecordOff, helperRecordOn, helperStatus } from '../recordModeHelper'
 import type { HelperStatus } from '../recordModeHelper'
 import type { Bookmark, Participant } from '../types'
-import { formatClock, formatKoreanDateTime, isValidDateInput } from '../utils'
+import { formatClock, formatKoreanDateTime, isValidDateInput, readAudioDuration } from '../utils'
 import './RecordPage.css'
 
 const DEFAULT_TITLE = '새 회의 기록'
@@ -122,23 +122,6 @@ function isAudioFile(file: File): boolean {
   return AUDIO_EXTENSIONS.some((ext) => lower.endsWith(ext))
 }
 
-function readAudioDuration(file: File): Promise<number> {
-  return new Promise((resolve) => {
-    const url = URL.createObjectURL(file)
-    const audio = new Audio()
-    const done = (sec: number) => {
-      URL.revokeObjectURL(url)
-      resolve(sec)
-    }
-    audio.preload = 'metadata'
-    audio.onloadedmetadata = () => {
-      const duration = audio.duration
-      done(Number.isFinite(duration) && duration > 0 ? duration : 0)
-    }
-    audio.onerror = () => done(0)
-    audio.src = url
-  })
-}
 
 function sortByTime(list: Bookmark[]): Bookmark[] {
   return [...list].sort((a, b) => a.time_sec - b.time_sec)

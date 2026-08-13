@@ -3,7 +3,7 @@ import type { ChangeEvent, DragEvent, KeyboardEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api'
 import type { Participant } from '../types'
-import { formatClock } from '../utils'
+import { formatClock, readAudioDuration } from '../utils'
 import Modal from './Modal'
 import ParticipantPicker from './ParticipantPicker'
 import TagPicker from './TagPicker'
@@ -36,23 +36,6 @@ function formatBytes(bytes: number): string {
 }
 
 /** HTMLAudioElement로 오디오 길이(초)를 미리 읽는다. 실패하거나 Infinity면 0. */
-function readAudioDuration(file: File): Promise<number> {
-  return new Promise((resolve) => {
-    const url = URL.createObjectURL(file)
-    const audio = new Audio()
-    const done = (sec: number) => {
-      URL.revokeObjectURL(url)
-      resolve(sec)
-    }
-    audio.preload = 'metadata'
-    audio.onloadedmetadata = () => {
-      const d = audio.duration
-      done(Number.isFinite(d) && d > 0 ? d : 0)
-    }
-    audio.onerror = () => done(0)
-    audio.src = url
-  })
-}
 
 export function UploadModal({ open, onClose }: UploadModalProps) {
   const navigate = useNavigate()

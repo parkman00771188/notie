@@ -62,6 +62,29 @@ interface Pin {
   kind: BookmarkKind
 }
 
+/** 되감기/빨리감기 이중 삼각형 아이콘 — 버튼의 원형 테두리와 합쳐져 미디어 컨트롤 모양이 된다 */
+function SkipIcon({ direction, size = 22 }: { direction: 'back' | 'forward'; size?: number }) {
+  const paths =
+    direction === 'forward'
+      ? ['M4.5 7.2v9.6L12 12z', 'M12 7.2v9.6L19.5 12z']
+      : ['M19.5 7.2v9.6L12 12z', 'M12 7.2v9.6L4.5 12z']
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width={size}
+      height={size}
+      fill="currentColor"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d={paths[0]} />
+      <path d={paths[1]} />
+    </svg>
+  )
+}
+
 function waitForAudioReady(audio: HTMLAudioElement, timeoutMs = 6000): Promise<void> {
   if (audio.readyState >= HAVE_CURRENT_DATA) return Promise.resolve()
 
@@ -572,7 +595,7 @@ export const AudioPlayerCard = forwardRef<AudioPlayerCardHandle, AudioPlayerCard
             title="10초 뒤로"
             aria-label="10초 뒤로"
           >
-            ⏪
+            <SkipIcon direction="back" />
           </button>
           <button
             className="btn btn-primary btn-lg audio-player-play"
@@ -588,7 +611,7 @@ export const AudioPlayerCard = forwardRef<AudioPlayerCardHandle, AudioPlayerCard
             title="10초 앞으로"
             aria-label="10초 앞으로"
           >
-            ⏩
+            <SkipIcon direction="forward" />
           </button>
           {onAddMark && (
             <button
@@ -629,7 +652,7 @@ export const AudioPlayerCard = forwardRef<AudioPlayerCardHandle, AudioPlayerCard
                   aria-label="10초 뒤로"
                   title="10초 뒤로"
                 >
-                  ⏪
+                  <SkipIcon direction="back" size={17} />
                 </button>
                 <button
                   type="button"
@@ -647,7 +670,7 @@ export const AudioPlayerCard = forwardRef<AudioPlayerCardHandle, AudioPlayerCard
                   aria-label="10초 앞으로"
                   title="10초 앞으로"
                 >
-                  ⏩
+                  <SkipIcon direction="forward" size={17} />
                 </button>
                 <div className="mini-player-info">
                   {title && <span className="mini-player-title">{title}</span>}

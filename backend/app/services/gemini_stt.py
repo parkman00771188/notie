@@ -17,12 +17,19 @@ import json
 import logging
 import re
 import tempfile
+import time
 import wave
 from pathlib import Path
 
 from .. import config
 from . import usage
-from .summarizer import extract_first_json, get_gemini_key, get_gemini_model
+from .summarizer import (
+    TRANSIENT_HTTP_STATUSES,
+    extract_first_json,
+    get_gemini_key,
+    get_gemini_model,
+    retry_after_seconds,
+)
 
 logger = logging.getLogger("gimnote.gemini_stt")
 
@@ -311,12 +318,21 @@ def _transcribe_one(
             },
         }
         url = f"{config.GEMINI_BASE_URL.rstrip('/')}/models/{model}:generateContent"
-        # 응답이 확률적이라 가끔 JSON이 깨진다 — 파싱 실패 시 재시도
+        # 응답이 확률적이라 가끔 JSON이 깨진다 — 파싱 실패 시 재시도.
+        # 쿼터(429)·서버 일시 오류(5xx)도 잠시 대기 후 재시도한다.
         last_err: Exception | None = None
-        for attempt in range(2):
+        for attempt in range(3):
             resp = httpx.post(
                 url, headers={"x-goog-api-key": api_key}, json=payload, timeout=_GENERATE_TIMEOUT
             )
+            if resp.status_code in TRANSIENT_HTTP_STATUSES and attempt < 2:
+                delay = min(retry_after_seconds(resp) or 4.0 * (attempt + 1), 30.0)
+                logger.warning(
+                    "gemini_stt: HTTP %d — %.0f초 후 재시도(%d/3)",
+                    resp.status_code, delay, attempt + 1,
+                )
+                time.sleep(delay)
+                continue
             resp.raise_for_status()
             body = resp.json()
             # 파싱 성공 여부와 무관하게 시도마다 토큰이 소모되므로 여기서 기록
@@ -337,7 +353,7 @@ def _transcribe_one(
                 return _parse_segments(text)
             except (RuntimeError, KeyError, IndexError, TypeError) as exc:
                 last_err = exc
-                logger.warning("gemini_stt: 전사 파싱 실패(시도 %d/2) — 재시도: %s", attempt + 1, exc)
+                logger.warning("gemini_stt: 전사 파싱 실패(시도 %d/3) — 재시도: %s", attempt + 1, exc)
         raise RuntimeError(f"Gemini 전사 응답 파싱 실패: {last_err}")
     finally:
         if uploaded_name:

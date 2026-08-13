@@ -37,11 +37,26 @@ import base64
 import json
 import logging
 import re
+import time
 from collections import Counter
 
 from .. import config, db
 
 logger = logging.getLogger("gimnote.summarizer")
+
+# 일시적 오류로 보고 재시도할 HTTP 상태 — 쿼터(429)·서버 오류(5xx)
+TRANSIENT_HTTP_STATUSES = {429, 500, 502, 503}
+
+
+def retry_after_seconds(resp) -> float | None:
+    """응답의 Retry-After 헤더(초)를 읽는다. 없거나 숫자가 아니면 None."""
+    value = getattr(resp, "headers", {}).get("retry-after")
+    if not value:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 # 추출 요약 패턴 (SPEC 고정)
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?다요죠음됨함])\s+")
@@ -344,8 +359,24 @@ def get_gemini_key() -> str | None:
     return env_key or None
 
 
+# 은퇴/지원 종료된 모델명 — 설정에 남아 있으면 모든 호출이 404로 실패하므로 기본 모델로 대체
+_RETIRED_GEMINI_MODELS = {
+    "gemini-pro",
+    "gemini-1.0-pro",
+    "gemini-1.5-flash",
+    "gemini-1.5-flash-8b",
+    "gemini-1.5-pro",
+    "gemini-2.0-flash",
+    "gemini-2.0-flash-001",
+    "gemini-2.0-flash-lite",
+}
+
+
 def get_gemini_model() -> str:
-    """Gemini 모델명 조회 — app_settings(DB) 우선, 없으면 config.GEMINI_MODEL (SPEC J5)."""
+    """Gemini 모델명 조회 — app_settings(DB) 우선, 없으면 config.GEMINI_MODEL (SPEC J5).
+
+    설정에 은퇴된 모델이 남아 있으면(과거 저장값) 기본 모델로 자동 대체한다.
+    """
     try:
         conn = db.get_conn()
         try:
@@ -357,6 +388,13 @@ def get_gemini_model() -> str:
             conn.close()
         if row is not None:
             value = str(row["value"] or "").strip()
+            if value in _RETIRED_GEMINI_MODELS:
+                logger.warning(
+                    "summarizer: 설정된 Gemini 모델 '%s'는 은퇴됨 — 기본 모델(%s)로 대체",
+                    value,
+                    config.GEMINI_MODEL,
+                )
+                return config.GEMINI_MODEL
             if value:
                 return value
     except Exception as exc:
@@ -411,13 +449,22 @@ def _try_gemini(
     }
     url = f"{config.GEMINI_BASE_URL.rstrip('/')}/models/{model_name}:generateContent"
 
-    # Gemini는 호출마다 응답이 달라 가끔 깨진 JSON을 반환한다 — 파싱 실패 시 재시도
+    # Gemini는 호출마다 응답이 달라 가끔 깨진 JSON을 반환한다 — 파싱 실패 시 재시도.
+    # 쿼터(429)·서버 일시 오류(5xx)도 짧게 대기 후 재시도하고, 그 외 HTTP 오류만 즉시 전파.
     from . import usage
 
     last_err: Exception | None = None
     for attempt in range(3):
         resp = httpx.post(url, headers={"x-goog-api-key": api_key}, json=payload, timeout=120.0)
-        resp.raise_for_status()  # HTTP 오류(400/403 등)는 재시도하지 않고 즉시 전파
+        if resp.status_code in TRANSIENT_HTTP_STATUSES and attempt < 2:
+            delay = min(retry_after_seconds(resp) or 3.0 * (attempt + 1), 30.0)
+            logger.warning(
+                "summarizer: Gemini HTTP %d — %.0f초 후 재시도(%d/3)",
+                resp.status_code, delay, attempt + 1,
+            )
+            time.sleep(delay)
+            continue
+        resp.raise_for_status()  # 재시도 불가 HTTP 오류(400/403 등)는 즉시 전파
         body = resp.json()
         # 파싱 성공 여부와 무관하게 시도마다 토큰이 소모되므로 여기서 기록
         usage.record(
@@ -862,7 +909,16 @@ def _describe_error_reason(exc: Exception) -> str:
     status = getattr(response, "status_code", None)
     if isinstance(status, int):
         reason = _HTTP_REASONS.get(status)
-        return f"HTTP {status}: {reason}" if reason else f"HTTP {status}"
+        base = f"HTTP {status}: {reason}" if reason else f"HTTP {status}"
+        # Gemini 오류 본문의 error.message는 원인 파악에 유용하고 키 등 민감정보가 없다
+        try:
+            body = response.json()
+            message = str(((body or {}).get("error") or {}).get("message") or "").strip()
+            if message:
+                return f"{base} — {message[:140]}"
+        except Exception:
+            pass
+        return base
 
     name = exc.__class__.__name__
     if "Timeout" in name:

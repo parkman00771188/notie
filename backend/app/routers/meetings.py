@@ -698,11 +698,17 @@ def submit_manual_transcript(
 
 
 @router.get("/{meeting_id}/audio")
-def get_audio(meeting_id: int, user: dict = Depends(get_current_user)) -> FileResponse:
-    """오디오 스트리밍. get_current_user가 ?token= 쿼리 인증도 지원한다."""
+def get_audio(
+    meeting_id: int, download: int = 0, user: dict = Depends(get_current_user)
+) -> FileResponse:
+    """오디오 스트리밍. get_current_user가 ?token= 쿼리 인증도 지원한다.
+
+    ?download=1이면 회의 제목 기반 파일명으로 첨부(Content-Disposition) 다운로드.
+    """
     with closing(db.get_conn()) as conn:
         row = get_readable_meeting(conn, meeting_id, user["id"], user.get("role") or "user")
         audio_filename = row["audio_filename"]
+        title = str(row["title"] or "")
 
     if not audio_filename:
         raise HTTPException(status_code=404, detail="오디오 파일이 없습니다")
@@ -712,6 +718,10 @@ def get_audio(meeting_id: int, user: dict = Depends(get_current_user)) -> FileRe
 
     ext = path.suffix.lower()
     media_type = _MEDIA_BY_EXT.get(ext) or mimetypes.guess_type(str(path))[0] or "audio/webm"
+    if download:
+        # 파일시스템에서 문제되는 문자만 치환한 제목으로 저장 파일명 구성
+        safe_title = re.sub(r'[\\/:*?"<>|\r\n]+', " ", title).strip() or "회의 음성"
+        return FileResponse(path, media_type=media_type, filename=f"{safe_title}{ext}")
     return FileResponse(path, media_type=media_type)
 
 

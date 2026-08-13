@@ -37,6 +37,8 @@ export interface AudioPlayerCardProps {
   bookmarks: AudioPlayerCardBookmark[]
   /** 없으면 마크 버튼 숨김 */
   onAddMark?: (timeSec: number) => void
+  /** 음성 원본 다운로드 — 없으면 버튼 숨김 */
+  onDownload?: () => void
 }
 
 /** 점 지름(무음 시 기본 크기) */
@@ -135,7 +137,10 @@ function trackMetrics(width: number) {
  * - ref.seekTo(sec, autoplay)로 외부(스크립트/메모 시간 칩)에서 점프
  */
 export const AudioPlayerCard = forwardRef<AudioPlayerCardHandle, AudioPlayerCardProps>(
-  function AudioPlayerCard({ src, meetingId, title, durationSec, bookmarks, onAddMark }, ref) {
+  function AudioPlayerCard(
+    { src, meetingId, title, durationSec, bookmarks, onAddMark, onDownload },
+    ref,
+  ) {
     const audioRef = useRef<HTMLAudioElement | null>(null)
     const panelRef = useRef<HTMLDivElement | null>(null)
     const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -620,6 +625,15 @@ export const AudioPlayerCard = forwardRef<AudioPlayerCardHandle, AudioPlayerCard
               title="현재 재생 시간에 마크를 추가합니다"
             >
               🔖 마크 추가
+            </button>
+          )}
+          {onDownload && (
+            <button
+              className="btn btn-soft"
+              onClick={onDownload}
+              title="음성 파일을 다운로드합니다"
+            >
+              ⬇ 음성 저장
             </button>
           )}
         </div>

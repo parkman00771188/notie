@@ -401,6 +401,17 @@ export function MeetingDetailView({
     URL.revokeObjectURL(url)
   }
 
+  /** 음성 원본 다운로드 — 앵커 클릭으로 스트리밍 저장 (긴 회의도 메모리 부담 없음) */
+  const downloadAudio = () => {
+    if (!meeting) return
+    const a = document.createElement('a')
+    a.href = api.audioDownloadUrl(meeting.id)
+    a.download = '' // 파일명은 서버 Content-Disposition이 지정
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+  }
+
   /** 문서 다운로드 (브라우저 다운로드 폴더) — 회의록 Word/PDF, 스크립트/메모 PDF */
   const downloadExport = async (
     format: 'docx' | 'pdf',
@@ -1162,6 +1173,7 @@ export function MeetingDetailView({
           durationSec={meeting.duration_sec}
           bookmarks={timedBookmarks}
           onAddMark={isOwner ? (timeSec) => void handleAddMark(timeSec) : undefined}
+          onDownload={downloadAudio}
         />
       ) : null}
 

@@ -398,6 +398,16 @@ export const AudioPlayerCard = forwardRef<AudioPlayerCardHandle, AudioPlayerCard
 
     useImperativeHandle(ref, () => ({ seekTo: applySeek }), [applySeek])
 
+    /** 현재 위치에서 delta초 만큼 앞/뒤로 이동 (재생 상태 유지) */
+    const skipBy = useCallback(
+      (delta: number) => {
+        const audio = audioRef.current
+        if (!audio) return
+        applySeek(audio.currentTime + delta)
+      },
+      [applySeek],
+    )
+
     // ---- 파형 클릭/드래그 시크 ----
     const draggingRef = useRef(false)
 
@@ -556,11 +566,29 @@ export const AudioPlayerCard = forwardRef<AudioPlayerCardHandle, AudioPlayerCard
 
         <div className="audio-player-controls">
           <button
+            type="button"
+            className="audio-skip-btn"
+            onClick={() => skipBy(-10)}
+            title="10초 뒤로"
+            aria-label="10초 뒤로"
+          >
+            ↺10
+          </button>
+          <button
             className="btn btn-primary btn-lg audio-player-play"
             onClick={togglePlay}
             aria-busy={playBusy}
           >
             {playing ? '⏸ 일시정지' : playBusy ? '불러오는 중...' : '▶ 재생'}
+          </button>
+          <button
+            type="button"
+            className="audio-skip-btn"
+            onClick={() => skipBy(10)}
+            title="10초 앞으로"
+            aria-label="10초 앞으로"
+          >
+            10↻
           </button>
           {onAddMark && (
             <button
@@ -596,12 +624,30 @@ export const AudioPlayerCard = forwardRef<AudioPlayerCardHandle, AudioPlayerCard
               <div className="mini-player-body">
                 <button
                   type="button"
+                  className="mini-player-skip"
+                  onClick={() => skipBy(-10)}
+                  aria-label="10초 뒤로"
+                  title="10초 뒤로"
+                >
+                  ↺10
+                </button>
+                <button
+                  type="button"
                   className="mini-player-play"
                   onClick={togglePlay}
                   aria-busy={playBusy}
                   aria-label={playing ? '일시정지' : '재생'}
                 >
                   {playing ? '⏸' : '▶'}
+                </button>
+                <button
+                  type="button"
+                  className="mini-player-skip"
+                  onClick={() => skipBy(10)}
+                  aria-label="10초 앞으로"
+                  title="10초 앞으로"
+                >
+                  10↻
                 </button>
                 <div className="mini-player-info">
                   {title && <span className="mini-player-title">{title}</span>}

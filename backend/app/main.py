@@ -19,6 +19,22 @@ app.add_middleware(
 )
 
 
+@app.middleware("http")
+async def _spa_cache_headers(request, call_next):
+    """배포 후 브라우저가 옛 index.html을 캐시해 이미 사라진 번들을 요청하다가
+    "'text/html' is not a valid JavaScript MIME type" 오류가 나는 것을 방지한다.
+    - 파일명에 해시가 붙는 /assets/* 는 영구 캐시 (내용이 바뀌면 파일명이 바뀜)
+    - 그 외 HTML(index.html)은 항상 서버에 재검증(no-cache) — 새 배포 즉시 반영
+    """
+    response = await call_next(request)
+    path = request.url.path
+    if path.startswith("/assets/"):
+        response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    elif not path.startswith("/api/") and response.headers.get("content-type", "").startswith("text/html"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
 @app.on_event("startup")
 def _startup() -> None:
     db.init_db()

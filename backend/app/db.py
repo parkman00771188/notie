@@ -371,6 +371,26 @@ def _migrate(conn: sqlite3.Connection) -> None:
     if "engine_note" not in scols:
         conn.execute("ALTER TABLE summaries ADD COLUMN engine_note TEXT")
 
+    # 관리자 소유 org_options의 (kind, name) 중복 병합 — 사용자였다가 관리자로 승격되면
+    # 그 사람의 개인 옵션이 전체 공개로 바뀌면서 기존 관리자 옵션과 이름이 겹칠 수 있다.
+    # 가장 먼저 만든 행(min id)만 남긴다. 참석자는 소속을 이름 문자열로 참조하므로 안전.
+    conn.execute(
+        """
+        DELETE FROM org_options
+        WHERE id IN (
+          SELECT o.id
+          FROM org_options o
+          JOIN users u ON u.id = o.user_id AND u.role = 'admin'
+          WHERE o.id NOT IN (
+            SELECT MIN(o2.id)
+            FROM org_options o2
+            JOIN users u2 ON u2.id = o2.user_id AND u2.role = 'admin'
+            GROUP BY o2.kind, o2.name
+          )
+        )
+        """
+    )
+
     # org_options CHECK에 'organization' 추가 (SQLite는 CHECK 변경 불가 → 테이블 재생성)
     row = conn.execute(
         "SELECT sql FROM sqlite_master WHERE type='table' AND name='org_options'"

@@ -318,11 +318,18 @@ def serialize_meeting(conn: sqlite3.Connection, row: sqlite3.Row) -> dict:
 def _replace_participants(
     conn: sqlite3.Connection, meeting_id: int, user_id: int, participant_ids: List[int]
 ) -> None:
-    """meeting_participants 전체 교체. 현재 사용자 소유 참석자만 반영."""
+    """meeting_participants 전체 교체. 본인 소유 + 관리자가 공유한 참석자만 반영."""
     conn.execute("DELETE FROM meeting_participants WHERE meeting_id = ?", (meeting_id,))
     for pid in participant_ids:
         owned = conn.execute(
-            "SELECT id FROM participants WHERE id = ? AND user_id = ?",
+            """
+            SELECT p.id
+            FROM participants p
+            JOIN users ou ON ou.id = p.user_id
+            WHERE p.id = ?
+              AND (p.user_id = ?
+                   OR (ou.role = 'admin' AND ou.active = 1 AND p.source_user_id IS NULL))
+            """,
             (pid, user_id),
         ).fetchone()
         if owned is not None:

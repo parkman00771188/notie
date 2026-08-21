@@ -299,7 +299,8 @@ export default function ParticipantManagementPage() {
       else byOrg.set(key, [item])
     }
 
-    const registered = organizationOptions.map((option) => option.name)
+    // 같은 이름의 소속 옵션이 여러 개여도 그룹은 하나로 합쳐 보여준다
+    const registered = [...new Set(organizationOptions.map((option) => option.name))]
     const unknown = [...byOrg.keys()]
       .filter((key) => key !== '' && !organizationOptions.some((option) => option.name === key))
       .sort((a, b) => a.localeCompare(b, 'ko'))
@@ -522,6 +523,11 @@ export default function ParticipantManagementPage() {
 
   const renderRow = (item: Participant, index: number) => {
     const synced = item.source_user_id !== null && item.source_user_id !== undefined
+    const shared = item.is_shared === true
+    const locked = synced || shared
+    const lockedTitle = synced
+      ? '사용자 관리에서 수정되는 항목입니다.'
+      : '관리자가 공유한 참석자예요. 등록한 관리자만 수정/삭제할 수 있어요.'
     return (
       <tr key={item.id}>
         <td>{index}</td>
@@ -539,8 +545,8 @@ export default function ParticipantManagementPage() {
             <button
               type="button"
               className="btn-icon participant-edit-btn"
-              disabled={synced}
-              title={synced ? '사용자 관리에서 수정되는 항목입니다.' : '수정'}
+              disabled={locked}
+              title={locked ? lockedTitle : '수정'}
               aria-label={`${item.name} 참석자 수정`}
               onClick={() => openEdit(item)}
             >
@@ -549,8 +555,8 @@ export default function ParticipantManagementPage() {
             <button
               type="button"
               className="btn-icon user-delete-btn"
-              disabled={synced}
-              title={synced ? '사용자 계정에서 동기화된 참석자는 삭제할 수 없습니다.' : '삭제'}
+              disabled={locked}
+              title={locked ? lockedTitle : '삭제'}
               aria-label={`${item.name} 참석자 삭제`}
               onClick={() => void deleteParticipant(item)}
             >

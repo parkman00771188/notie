@@ -30,6 +30,8 @@ export interface Participant {
   email: string | null
   phone: string | null
   color: string
+  /** 관리자가 등록해 전 사용자에게 공유된 참석자 — 등록한 관리자만 수정/삭제 가능 */
+  is_shared?: boolean
   can_delete?: boolean
 }
 

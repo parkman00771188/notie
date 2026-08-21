@@ -47,8 +47,11 @@ class ParticipantUpdate(BaseModel):
     color: str | None = None
 
 
-def _to_participant(row: sqlite3.Row) -> dict:
+def _to_participant(row: sqlite3.Row, viewer_id: int | None = None) -> dict:
     keys = row.keys()
+    owner_id = row["user_id"] if "user_id" in keys else viewer_id
+    # 관리자가 등록해 전 사용자에게 공유된 참석자 — 소유자(등록한 관리자)만 수정/삭제 가능
+    is_shared = viewer_id is not None and owner_id is not None and owner_id != viewer_id
     return {
         "id": row["id"],
         "source_user_id": row["source_user_id"],
@@ -60,7 +63,8 @@ def _to_participant(row: sqlite3.Row) -> dict:
         "email": row["email"],
         "phone": row["phone"],
         "color": row["color"],
-        "can_delete": row["source_user_id"] is None,
+        "is_shared": is_shared,
+        "can_delete": row["source_user_id"] is None and not is_shared,
     }
 
 
@@ -158,25 +162,37 @@ def list_participants(user: dict = Depends(get_current_user)) -> list[dict]:
     try:
         with conn:
             _sync_user_participants(conn, user["id"], user.get("role"))
+        # 본인 참석자 + 관리자가 직접 등록한 공유 참석자(계정 동기화 항목 제외).
+        # 소속(org) 옵션의 '관리자 소유는 전체 공개' 규칙과 동일하게 맞춘다.
+        if user.get("role") == "other":
+            where = "p.user_id = ?"
+            params: tuple = (user["id"],)
+        else:
+            where = (
+                "(p.user_id = ? OR (ou.role = 'admin' AND ou.active = 1"
+                " AND p.source_user_id IS NULL AND p.user_id <> ?))"
+            )
+            params = (user["id"], user["id"])
         rows = conn.execute(
-            """
+            f"""
             SELECT
-              p.id, p.source_user_id, su.username AS source_username, p.name, p.role,
+              p.id, p.user_id, p.source_user_id, su.username AS source_username, p.name, p.role,
               p.department, p.organization, p.email, p.phone, COALESCE(o.color, p.color) AS color
             FROM participants p
+            JOIN users ou ON ou.id = p.user_id
             LEFT JOIN users su ON su.id = p.source_user_id
             LEFT JOIN org_options o
               ON o.user_id = p.user_id
              AND o.kind = 'organization'
              AND o.name = p.organization
-            WHERE p.user_id = ?
+            WHERE {where}
             ORDER BY p.id
             """,
-            (user["id"],),
+            params,
         ).fetchall()
     finally:
         conn.close()
-    return [_to_participant(r) for r in rows]
+    return [_to_participant(r, user["id"]) for r in rows]
 
 
 @router.post("")
@@ -231,6 +247,7 @@ def create_participant(
         "email": email,
         "phone": phone,
         "color": color,
+        "is_shared": False,
         "can_delete": True,
     }
 

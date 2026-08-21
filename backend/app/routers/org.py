@@ -422,7 +422,18 @@ def list_org_options(
             ).fetchall()
     finally:
         conn.close()
-    return [_to_org_option(row, user) for row in rows]
+    # 같은 (종류, 이름)의 옵션이 여러 소유자에게 있으면 하나만 노출 —
+    # 사용자였다가 관리자로 승격되면 그 사람의 개인 옵션이 전체 공개로 바뀌며
+    # 기존 관리자 옵션과 중복될 수 있다. 정렬상 관리자 소유가 먼저 오므로 첫 행을 유지.
+    seen: set[tuple[str, str]] = set()
+    deduped = []
+    for row in rows:
+        key = (row["kind"], row["name"])
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(row)
+    return [_to_org_option(row, user) for row in deduped]
 
 
 @router.post("/org-options")

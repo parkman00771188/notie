@@ -71,6 +71,23 @@ def append_live_chunk(meeting_id: int, data: bytes | None, offset: int) -> int:
     return offset + len(data)
 
 
+def finalize_now(meeting_id: int) -> None:
+    """부분 녹음을 즉시 확정(데이터 없으면 실패 처리).
+
+    탭/브라우저가 닫히는 순간의 live-abort 신호(sendBeacon)용 — 스위퍼의
+    끊김 판정(STALE_AFTER_SEC)을 기다리지 않고 바로 저장·처리로 넘어간다.
+    """
+    conn = db.get_conn()
+    try:
+        part = live_part_path(meeting_id)
+        if part.exists() and part.stat().st_size > 0:
+            _finalize_partial(conn, meeting_id, part)
+        else:
+            _mark_no_data(conn, meeting_id)
+    finally:
+        conn.close()
+
+
 def sweep_once() -> None:
     """신호가 끊긴 'recording' 회의를 찾아 확정하거나 실패 처리한다."""
     conn = db.get_conn()
@@ -94,8 +111,33 @@ def sweep_once() -> None:
                 created = _parse_local_ts(row["created_at"])
                 if created is None or now - created >= NO_DATA_GRACE_SEC:
                     _mark_no_data(conn, meeting_id)
+        _cleanup_orphan_parts(conn, now)
     finally:
         conn.close()
+
+
+def _cleanup_orphan_parts(conn, now: float) -> None:
+    """녹음 중이 아닌 회의의 임시 청크 파일 정리.
+
+    확정(finalize)과 마지막 청크 업로드가 아슬하게 겹치면 빈 part 파일이
+    다시 생길 수 있다 — 상태가 'recording'이 아닌 회의의 오래된 part는 지운다.
+    """
+    for part in config.AUDIO_DIR.glob("live_*.webm.part"):
+        try:
+            meeting_id = int(part.name.split("_")[1].split(".")[0])
+        except (IndexError, ValueError):
+            continue
+        try:
+            if now - part.stat().st_mtime < STALE_AFTER_SEC:
+                continue
+        except OSError:
+            continue
+        row = conn.execute("SELECT status FROM meetings WHERE id = ?", (meeting_id,)).fetchone()
+        if row is None or row["status"] != "recording":
+            try:
+                part.unlink(missing_ok=True)
+            except OSError:
+                pass
 
 
 def _finalize_partial(conn, meeting_id: int, part: Path) -> None:

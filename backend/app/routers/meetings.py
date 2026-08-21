@@ -640,6 +640,30 @@ def upload_live_chunk(
     return {"ok": True, "recording": True, "size": size}
 
 
+@router.post("/{meeting_id}/live-abort")
+def abort_live_recording(
+    meeting_id: int,
+    offset: int = Form(0),
+    file: Optional[UploadFile] = File(None),
+    user: dict = Depends(get_current_user),
+) -> dict:
+    """탭/브라우저가 닫히는 순간 sendBeacon으로 호출되는 즉시 종료 신호.
+
+    남은 청크(있으면)를 이어 붙인 뒤, 스위퍼의 끊김 판정을 기다리지 않고
+    바로 저장된 분량까지로 확정하고 STT/요약 파이프라인을 시작한다.
+    beacon은 응답을 읽을 수 없으므로 결과는 단순 ok만 반환한다.
+    """
+    with closing(db.get_conn()) as conn:
+        row = get_owned_meeting(conn, meeting_id, user["id"])
+        if row["status"] != "recording":
+            return {"ok": True}
+    data = file.file.read() if file is not None else None
+    if data:
+        recovery.append_live_chunk(meeting_id, data, max(offset, 0))
+    recovery.finalize_now(meeting_id)
+    return {"ok": True}
+
+
 @router.post("/{meeting_id}/audio")
 def upload_audio(
     meeting_id: int,

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, DragEvent, KeyboardEvent, MutableRefObject, ReactNode } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { api } from '../api'
+import { api, getToken } from '../api'
 import { AvatarStack } from '../components/Avatar'
 import { useConfirm } from '../components/confirm'
 import Modal from '../components/Modal'
@@ -529,6 +529,33 @@ export default function RecordPage() {
       cancelled = true
       window.clearInterval(timer)
     }
+  }, [isLive, meetingId])
+
+  // 녹음 중 탭/브라우저가 실제로 닫히면 sendBeacon으로 남은 청크와 함께 즉시 종료
+  // 신호를 보낸다 — 서버가 끊김 판정(3분)을 기다리지 않고 바로 그 시점까지의
+  // 녹음으로 확정해 STT/요약을 진행한다. (경고 창에서 '취소'하면 pagehide가
+  // 발생하지 않아 녹음은 그대로 이어진다)
+  useEffect(() => {
+    if (!isLive || meetingId == null) return
+    const onPageHide = () => {
+      const token = getToken()
+      if (!token) return
+      const url = `/api/meetings/${meetingId}/live-abort?token=${encodeURIComponent(token)}`
+      const total = new Blob(liveChunksRef.current)
+      const sent = liveSentBytesRef.current
+      const form = new FormData()
+      form.append('offset', String(sent))
+      if (total.size > sent) form.append('file', total.slice(sent), 'live.webm')
+      if (!navigator.sendBeacon(url, form)) {
+        // 남은 청크가 beacon 용량 제한을 넘으면 데이터 없이 종료 신호만 보낸다 —
+        // 서버는 이미 받아둔 분량까지로 확정한다
+        const bare = new FormData()
+        bare.append('offset', String(sent))
+        navigator.sendBeacon(url, bare)
+      }
+    }
+    window.addEventListener('pagehide', onPageHide)
+    return () => window.removeEventListener('pagehide', onPageHide)
   }, [isLive, meetingId])
 
   // 녹음/업로드 중 새로고침/탭 닫기 경고

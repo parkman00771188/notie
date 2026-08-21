@@ -26,6 +26,8 @@ export interface RecorderStartOptions {
   source?: RecordSource
   /** 녹음 설정에서 미리 연결해둔 화면 공유 스트림 — 살아있으면 시작 시 팝업 없이 재사용 */
   presetSystemStream?: MediaStream
+  /** 녹음 청크(1초 단위)가 생길 때마다 호출 — 라이브 서버 저장(비정상 종료 대비)용 */
+  onData?: (chunk: Blob) => void
 }
 
 export interface RecorderStartOutcome {
@@ -519,7 +521,10 @@ export function useRecorder(): UseRecorderReturn {
     const rec = new MediaRecorder(recordStream, mimeType ? { mimeType } : undefined)
     chunksRef.current = []
     rec.ondataavailable = (e: BlobEvent) => {
-      if (e.data && e.data.size > 0) chunksRef.current.push(e.data)
+      if (e.data && e.data.size > 0) {
+        chunksRef.current.push(e.data)
+        options.onData?.(e.data)
+      }
     }
     rec.start(1000) // 1초 단위로 청크 수집
     recorderRef.current = rec

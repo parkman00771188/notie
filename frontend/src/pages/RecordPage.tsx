@@ -187,6 +187,10 @@ export default function RecordPage() {
   const sysTestRafRef = useRef<number | null>(null)
   /** 모달 미터를 위해 도우미로 라우팅을 켜뒀는지 — 닫을 때 원래 출력으로 복귀시킨다 */
   const modalHelperEngagedRef = useRef(false)
+  /** 라이브 청크 스트리밍 — 녹음 중 서버에 지금까지의 음원을 계속 저장(비정상 종료 대비) */
+  const liveChunksRef = useRef<Blob[]>([])
+  const liveSentBytesRef = useRef(0)
+  const liveFlushBusyRef = useRef(false)
   /** 녹음 설정에서 미리 연결해둔 화면 공유 스트림 — 녹음 시작 시 팝업 없이 재사용 */
   const presetShareRef = useRef<MediaStream | null>(null)
   const [presetShareOn, setPresetShareOn] = useState(false)
@@ -497,6 +501,36 @@ export default function RecordPage() {
     }
   }, [clearPresetShare, releaseModalHelper, stopMicTest, stopSystemTest])
 
+  // 녹음 중 5초마다 지금까지의 음원을 서버에 이어 저장(+하트비트) —
+  // 컴퓨터가 꺼지는 등 비정상 종료 시 서버가 그 시점까지의 녹음으로 자동 복구한다.
+  useEffect(() => {
+    if (!isLive || meetingId == null) return
+    let cancelled = false
+    const flush = async () => {
+      if (liveFlushBusyRef.current) return
+      liveFlushBusyRef.current = true
+      try {
+        const total = new Blob(liveChunksRef.current)
+        const sent = liveSentBytesRef.current
+        // 새 바이트가 없어도(일시정지 등) 하트비트는 계속 보낸다
+        const payload = total.size > sent ? total.slice(sent) : null
+        const res = await api.uploadLiveChunk(meetingId, payload, sent)
+        // 서버가 알려준 저장량으로 동기화 — 서버 재시작 등으로 어긋나도 다음 틱에 이어 보낸다
+        if (!cancelled && res.ok) liveSentBytesRef.current = res.size
+      } catch {
+        /* 네트워크 오류 — 청크는 메모리에 남아 다음 틱에 다시 보낸다 */
+      } finally {
+        liveFlushBusyRef.current = false
+      }
+    }
+    void flush()
+    const timer = window.setInterval(() => void flush(), 5000)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [isLive, meetingId])
+
   // 녹음/업로드 중 새로고침/탭 닫기 경고
   useEffect(() => {
     if (!isLive && !processing) return
@@ -689,12 +723,15 @@ export default function RecordPage() {
     if (starting || isLive) return
     setRecordMode('idle')
     setStarting(true)
+    liveChunksRef.current = []
+    liveSentBytesRef.current = 0
     try {
       const outcome = await recorder.start({
         deviceId: confirmedMicId || undefined,
         source: recordSource,
         // 설정에서 미리 연결한 공유 스트림이 있으면 팝업 없이 그대로 사용 (소유권 이전)
         presetSystemStream: recordSource !== 'mic' ? takePresetShare() : undefined,
+        onData: (chunk) => liveChunksRef.current.push(chunk),
       })
       if (!outcome.started) {
         // 컴퓨터 소리 전용 모드에서 소리를 얻지 못해 녹음이 시작되지 않음

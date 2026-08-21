@@ -21,7 +21,7 @@ from pydantic import BaseModel
 
 from .. import config, db
 from ..auth_utils import get_current_user
-from ..services import pipeline, waveform
+from ..services import pipeline, recovery, waveform
 
 router = APIRouter()
 
@@ -612,7 +612,32 @@ def purge_meeting(meeting_id: int, user: dict = Depends(get_current_user)) -> di
         with conn:
             conn.execute("DELETE FROM meetings WHERE id = ?", (meeting_id,))
     _delete_audio_file(audio_filename)
+    recovery.discard_live_part(meeting_id)
     return {"ok": True}
+
+
+@router.post("/{meeting_id}/live-chunk")
+def upload_live_chunk(
+    meeting_id: int,
+    offset: int = Form(...),
+    file: Optional[UploadFile] = File(None),
+    user: dict = Depends(get_current_user),
+) -> dict:
+    """녹음 중 라이브 청크 저장 + 하트비트.
+
+    브라우저/컴퓨터가 꺼져도 서버에 그 시점까지의 음원이 남아 자동 복구된다
+    (services/recovery.py 스위퍼). 반환 size는 서버에 저장된 총 바이트 —
+    클라이언트는 이 값 이후의 바이트부터 이어 보낸다. file 없이 offset만 보내면
+    하트비트로 동작한다.
+    """
+    with closing(db.get_conn()) as conn:
+        row = get_owned_meeting(conn, meeting_id, user["id"])
+        if row["status"] != "recording":
+            # 이미 확정(정상 업로드/자동 복구)된 회의 — 클라이언트는 스트리밍을 멈춘다
+            return {"ok": False, "recording": False, "size": 0}
+    data = file.file.read() if file is not None else None
+    size = recovery.append_live_chunk(meeting_id, data, max(offset, 0))
+    return {"ok": True, "recording": True, "size": size}
 
 
 @router.post("/{meeting_id}/audio")
@@ -649,6 +674,8 @@ def upload_audio(
         row = get_owned_meeting(conn, meeting_id, user["id"])
         result = serialize_meeting(conn, row)
 
+    # 정상 종료 — 전체 음원이 저장됐으므로 라이브 청크 임시 파일은 정리
+    recovery.discard_live_part(meeting_id)
     pipeline.enqueue(meeting_id)
     return result
 

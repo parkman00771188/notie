@@ -6,6 +6,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import config, db
 from .routers import admin_users, auth, bookmarks, meetings, org, participants, projects, settings, usage
+from .services import recovery
 
 app = FastAPI(title="Notie", version="0.1.0")
 
@@ -21,6 +22,8 @@ app.add_middleware(
 @app.on_event("startup")
 def _startup() -> None:
     db.init_db()
+    # 비정상 종료된 녹음 자동 복구 — '녹음 중'으로 멈춘 회의를 저장된 분량으로 확정
+    recovery.start_sweeper()
 
 
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])

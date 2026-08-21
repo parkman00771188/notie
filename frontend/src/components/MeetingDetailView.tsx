@@ -1161,7 +1161,10 @@ export function MeetingDetailView({
           <div className="audio-unavailable-icon">🎙️</div>
           <div className="audio-unavailable-copy">
             <strong>지금 회의 기록 중이라 음원 재생은 사용할 수 없어요.</strong>
-            <p>녹음을 종료한 뒤 다시 열면 음원을 재생할 수 있습니다.</p>
+            <p>
+              녹음을 종료한 뒤 다시 열면 음원을 재생할 수 있습니다. 녹음이 예기치 않게
+              끊긴 경우에는 몇 분 안에 끊긴 시점까지의 녹음으로 자동 복구돼요.
+            </p>
           </div>
         </div>
       ) : meeting.audio_filename ? (

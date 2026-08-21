@@ -395,6 +395,22 @@ export const api = {
     return request<{ ok: boolean }>(`/api/meetings/${id}/permanent`, { method: 'DELETE' })
   },
 
+  /**
+   * 녹음 중 라이브 청크 저장/하트비트 — 비정상 종료(컴퓨터 꺼짐 등) 대비.
+   * size는 서버에 저장된 총 바이트로, 다음 전송은 이 값 이후부터 이어 보낸다.
+   * data 없이 호출하면 하트비트만 보낸다.
+   */
+  uploadLiveChunk(
+    meetingId: number,
+    data: Blob | null,
+    offset: number,
+  ): Promise<{ ok: boolean; recording: boolean; size: number }> {
+    const form = new FormData()
+    form.append('offset', String(offset))
+    if (data && data.size > 0) form.append('file', data, 'live.webm')
+    return request(`/api/meetings/${meetingId}/live-chunk`, { method: 'POST', body: form })
+  },
+
   uploadAudio(meetingId: number, blob: Blob, durationSec: number): Promise<Meeting> {
     const form = new FormData()
     const filename = blob instanceof File && blob.name ? blob.name : 'recording.webm'
